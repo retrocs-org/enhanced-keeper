@@ -405,7 +405,7 @@ void change(int row,int direction){
 void activate(int action){
     if(browser_action(action)||feature_action(action)||polish_action(action))return;
     focus_action=action;
-    if(action==901){if(page==8)close_panel();else{int previous=page;if(previous==19)kfx_readiness_cancel();page=previous>=21&&previous<=24?20:previous==25?22:previous==20?6:previous==15?0:previous==16?7:previous==17?12:previous==18?17:previous==19?6:previous==14?help_parent:previous==12?2:(previous>=9&&previous<=11?6:8);selected=0;
+    if(action==901){if(page==8)close_panel();else{int previous=page;if(previous==19)kfx_readiness_cancel();page=previous==26?15:previous>=21&&previous<=24?20:previous==25?22:previous==20?6:previous==15?0:previous==16?7:previous==17?12:previous==18?17:previous==19?6:previous==14?help_parent:previous==12?2:(previous>=9&&previous<=11?6:8);selected=0;
         if(page==8){const int order[]={5,0,1,2,3,4,6,7,13};for(int i=0;i<9;i++)if(order[i]==previous)selected=i;}
         else if(page==6)selected=previous==9?1:previous==10?2:3;else if(page==13)selected=3;
         editing=0;SDL_StopTextInput(SDL_GetKeyboardFocus());focus_action=-1;}return;}
@@ -468,8 +468,9 @@ void navigate(int direction){
     if(page==8){if(direction>0){if(selected<8&&selected%4==3)selected=8;else if(selected==8)selected=9;else if(selected==9)selected=0;else selected++;}else{if(selected==9)selected=8;else if(selected==8)selected=3;else if(selected%4==0)selected=9;else selected--;}return;}
     if(page==9){report_offset=std::max(0,report_offset+direction);return;}
     if(page==10)return;
+    if(page==26){selected=(selected+direction+2)%2;return;}
     if(page>=20){int count=page==20?13:page==21?6:page==22?4:page==23?4:page==24?5:2;selected=(selected+direction+count)%count;return;}
-    if(page>=15){int count=page==15?7:page==16?6:page==17?4:page==18?2:3;selected=(selected+direction+count)%count;return;}
+    if(page>=15){int count=page==15?8:page==16?6:page==17?4:page==18?2:3;selected=(selected+direction+count)%count;return;}
     if(page==13){selected=(selected+direction+4)%4;return;}
     if(page==14){selected=(selected+direction+2)%2;return;}
     if(page==11){selected=(selected+direction+2)%2;return;}
@@ -500,7 +501,8 @@ void confirm_control(){
     else if(page==4)activate(705);
     else if(page==13){const int commands[]={810,811,813,814};activate(commands[selected]);}
     else if(page==14)activate(selected?812:811);
-    else if(page==15){const int actions[]={860,861,862,863,864,895,894};activate(actions[selected]);}
+    else if(page==15){const int actions[]={860,861,862,863,864,895,894,896};activate(actions[selected]);}
+    else if(page==26)activate(selected?898:897);
     else if(page==16)activate(selected<4?880+selected:selected==4?891:893);
     else if(page==17){const int actions[]={1000,1001,1003,1004};activate(actions[selected]);}
     else if(page==18)activate(selected?1006:1005);
@@ -661,7 +663,7 @@ void kfx_options_display(struct GuiButton *button){(void)button;open_panel(5);}
 void kfx_options_hide(void){if(kfx_controller_guide_visible)close_panel();}
 void kfx_options_open(struct GuiButton *button){(void)button;open_panel(8);}
 void kfx_options_preview(int number){capture_preview=true;kfx_options_show_page(number);}
-void kfx_options_show_page(int number){open_panel(std::clamp(number,0,25));if(page==2||page==12||page==17||page==18)scan_saves();if(page==20){browser_filter();browser_refresh();}if(page==25)hub_edit=kfx_hub_url();if(page==24)community_request();}
+void kfx_options_show_page(int number){open_panel(std::clamp(number,0,26));if(page==2||page==12||page==17||page==18)scan_saves();if(page==20){browser_filter();browser_refresh();}if(page==25)hub_edit=kfx_hub_url();if(page==24)community_request();}
 void kfx_options_button(struct GuiButton *button){
     if(frontend_menu_state==FeSt_FEOPTIONS)frontend_draw_button(button,1,"More Options",Lb_TEXT_HALIGN_CENTER);
     else{
@@ -740,8 +742,8 @@ void kfx_options_draw(void){
     if(!canvas)canvas=SDL_CreateSurface(WIDTH,HEIGHT,SDL_PIXELFORMAT_RGBA32);if(!canvas)return;
     if(label_model<0){int model=controller_device_model();if(model>=0)kfx_controller_guide_ps5=model;}else kfx_controller_guide_ps5=label_model;
     update_hover();hits.clear();background();
-    const char *names[]={"Controller Options","Performance","Saved Games","Remap Controller","Controller Guide","Display Options","Network Options","Accessibility","More Options","Connection Test","Game Versions","Join by IP","Saved Game","About & Diagnostics","Saving Help","Connected Controllers","Accessibility Presets","Manage Saved Game","Delete Saved Game","Multiplayer Readiness","Server Browser","Server Details","Community Account","Host Public Game","Community","Community Service"};
-    title(names[std::clamp(page,0,25)]);
+    const char *names[]={"Controller Options","Performance","Saved Games","Remap Controller","Controller Guide","Display Options","Network Options","Accessibility","More Options","Connection Test","Game Versions","Join by IP","Saved Game","About & Diagnostics","Saving Help","Connected Controllers","Accessibility Presets","Manage Saved Game","Delete Saved Game","Multiplayer Readiness","Server Browser","Server Details","Community Account","Host Public Game","Community","Community Service","Controller Test"};
+    title(names[std::clamp(page,0,26)]);
     if(page==8){
         const char *sections[]={"Display","Controller","Performance","Saved Games","Remap","Controller Guide","Network","Accessibility"};const int pages[]={5,0,1,2,3,4,6,7};
         for(int i=0;i<8;i++)button(i<4?50:338,104+(i%4)*72,252,sections[i],100+pages[i],selected==i,46);
@@ -811,7 +813,7 @@ void kfx_options_draw(void){
         centered(106,"Hostname / IP address and UDP port",24);button(64,163,512,join_ip+(editing==3?"|":""),602,selected==0||editing==3,46);button(134,250,372,"Join Game",603,selected==1,46);centered(330,"Example: 192.168.1.20:5556",22);centered(368,"The host must have a LAN lobby open.",20);
     }
     polish_draw_page();feature_draw();browser_draw();
-    if(page!=8&&page!=12)button(134,426,372,page==25?"Return to Account":page>=21&&page<=24?"Return to Browser":page==20?"Return to Network":page==15?"Return to Controller":page==16?"Return to Accessibility":page==17?"Return to Save":page==18?"Return to Management":page==19?"Return to Network":page==14?(help_parent==13?"Return to About":"Return to Saves"):page>=9&&page<=11?"Return to Network":"Return to Sections",901,false,42);
+    if(page!=8&&page!=12)button(134,426,372,page==26?"Return to Devices":page==25?"Return to Account":page>=21&&page<=24?"Return to Browser":page==20?"Return to Network":page==15?"Return to Controller":page==16?"Return to Accessibility":page==17?"Return to Save":page==18?"Return to Management":page==19?"Return to Network":page==14?(help_parent==13?"Return to About":"Return to Saves"):page>=9&&page<=11?"Return to Network":"Return to Sections",901,false,42);
     if(!notice.empty()&&page<20&&page!=8&&page!=12&&page!=4&&page!=16&&page!=19)status_line(notice);
     if(preview_large&&page==12&&!saves.empty()){
         hits.clear();background();frame(18,82,604,328);if(preview){double scale=std::min(592.0/preview->w,316.0/preview->h);SDL_Rect to={24+(592-(int)(preview->w*scale))/2,88+(316-(int)(preview->h*scale))/2,(int)(preview->w*scale),(int)(preview->h*scale)};SDL_BlitSurfaceScaled(preview,nullptr,canvas,&to,SDL_SCALEMODE_LINEAR);}else centered(225,"No preview available",26);button(134,426,372,"Return to Saved Game",308,false,42);

@@ -300,8 +300,12 @@ TbBool LbSleepFor(TbClockMSec delay)
         LbDoMultitasking();
         currclk = LbTimerClock();
   }
-  while (currclk < endclk)
+  while (currclk < endclk) {
+#if defined(__APPLE__)
+    SDL_DelayNS((Uint64)(endclk-currclk)*1000000ULL);
+#endif
     currclk=LbTimerClock();
+  }
   return true;
 }
 
@@ -313,8 +317,12 @@ TbBool LbSleepUntil(TbClockMSec endtime)
         LbDoMultitasking();
         currclk = LbTimerClock();
   }
-  while (currclk < endtime)
+  while (currclk < endtime) {
+#if defined(__APPLE__)
+    SDL_DelayNS((Uint64)(endtime-currclk)*1000000ULL);
+#endif
     currclk=LbTimerClock();
+  }
   return true;
 }
 
@@ -353,10 +361,15 @@ TbBool LbSleepUntilExt(long double tick_ns_end)
     if (tick_ns_cur >= tick_ns_end)
       break;
     long double tick_ns_delay = tick_ns_end - tick_ns_cur;
+#if defined(__APPLE__)
+    // Mach-backed SDL sleep avoids spinning a core for the sub-millisecond tail.
+    SDL_DelayNS((Uint64)tick_ns_delay);
+#else
     if (tick_ns_delay > sleep_precision_ns) {
       int ms_delay = (int)(tick_ns_delay/1000000);
       SDL_Delay(ms_delay);
     }
+#endif
   }
   return true;
 }

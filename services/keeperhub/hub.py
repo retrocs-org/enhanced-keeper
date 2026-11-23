@@ -83,11 +83,13 @@ class Relay:
 
 class Hub:
     def __init__(self,db,relay=None,admin_key=None,clock=time.time):
-        self.db=str(db);self.relay=relay;self.clock=clock;self.admin_key=admin_key or secrets.token_urlsafe(32);self.rates={};self.lock=threading.RLock()
+        self.db=str(db);self.relay=relay;self.clock=clock;self.admin_key=admin_key or secrets.token_urlsafe(32);self.rates={};self.last_cleanup=0;self.lock=threading.RLock()
         with self.connect() as c:c.executescript('''
         PRAGMA journal_mode=WAL;
         CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY,name TEXT UNIQUE COLLATE NOCASE,salt TEXT,password TEXT,public INTEGER DEFAULT 0,created REAL);
+        CREATE TABLE IF NOT EXISTS recovery(user TEXT,code TEXT UNIQUE,PRIMARY KEY(user,code));
         CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY,user TEXT,csrf TEXT,expires REAL);
+        CREATE INDEX IF NOT EXISTS session_expiry ON sessions(expires);
         CREATE TABLE IF NOT EXISTS devices(code TEXT PRIMARY KEY,user_code TEXT UNIQUE,user TEXT,expires REAL,last_poll REAL DEFAULT 0);
         CREATE TABLE IF NOT EXISTS servers(id TEXT PRIMARY KEY,name TEXT,endpoint TEXT,engine TEXT,map TEXT,mods TEXT,players INTEGER,capacity INTEGER,password INTEGER,region TEXT,kind TEXT,owner TEXT,secret TEXT,last_seen REAL,status TEXT,rotation TEXT);
         CREATE TABLE IF NOT EXISTS friends(a TEXT,b TEXT,status TEXT,PRIMARY KEY(a,b));
@@ -109,6 +111,7 @@ class Hub:
         now=self.clock();key=(peer,bucket)
         with self.lock:
             if len(self.rates)>4096:self.rates={k:v for k,v in self.rates.items() if v[0]>now-3600}
+            require(key in self.rates or len(self.rates)<8192,'Service is busy; retry later',503)
             start,count=self.rates.get(key,(now,0));count=count+1 if now-start<seconds else 1;start=start if now-start<seconds else now;self.rates[key]=(start,count)
         require(count<=maximum,'Too many requests; try again later',429)
     def session(self,c,token):return c.execute('SELECT s.*,u.name FROM sessions s JOIN users u ON u.id=s.user WHERE token=? AND expires>?',(digest(token),self.clock())).fetchone() if token else None
@@ -120,11 +123,15 @@ class Hub:
         now=self.clock();url=urlsplit(path);route=url.path;parts=route.strip('/').split('/');query=parse_qs(url.query)
         require(method in ('GET','POST'),'Unsupported method',405)
         with self.lock,self.connect() as c:
+            if now-self.last_cleanup>=60:
+                c.execute('DELETE FROM sessions WHERE expires<?',(now,));c.execute('DELETE FROM devices WHERE expires<?',(now,));c.execute('DELETE FROM tickets WHERE expires<?',(now,));self.last_cleanup=now
             session=self.session(c,token);uid=session['user'] if session else None
             if cookie and method=='POST':require(session and hmac.compare_digest(csrf,session['csrf']),'Reload the page before submitting',403)
             def auth():require(uid,'Sign in first',401);return uid
             if method=='GET':
-                if route=='/api/health':return {'ok':True,'protocol':1,'relay':bool(self.relay),'authority':'client-simulated'}
+                if route=='/api/health':
+                    require(not self.relay or self.relay.alive and self.relay.thread.is_alive(),'Relay service unavailable',503)
+                    return {'ok':True,'protocol':1,'relay':bool(self.relay and self.relay.alive and self.relay.thread.is_alive()),'authority':'client-simulated'}
                 if route=='/api/session':return {'signed_in':bool(session),'name':session['name'] if session else '', 'csrf':session['csrf'] if session else ''}
                 if route=='/api/me':
                     auth();row=c.execute('SELECT id,name,public FROM users WHERE id=?',(uid,)).fetchone();return dict(row)
@@ -167,6 +174,26 @@ class Hub:
                 else:
                     row=c.execute('SELECT * FROM users WHERE name=?',(name,)).fetchone();salt=row['salt'] if row else '00'*16;hashed=hashlib.pbkdf2_hmac('sha256',password.encode(),bytes.fromhex(salt),310000).hex();require(row and hmac.compare_digest(hashed,row['password']),'Name or password is incorrect',401);uid=row['id']
                 value,csrf=self.new_session(c,uid);return {'token':value,'csrf':csrf,'name':name}
+            if route=='/api/recovery/codes':
+                auth();self.limit(uid,'recovery-issue',3,3600)
+                password=clean(data.get('password'),128);owner=c.execute('SELECT salt,password FROM users WHERE id=?',(uid,)).fetchone()
+                require(hmac.compare_digest(hashlib.pbkdf2_hmac('sha256',password.encode(),bytes.fromhex(owner['salt']),310000).hex(),owner['password']),'Current password is incorrect',401)
+                c.execute('DELETE FROM recovery WHERE user=?',(uid,))
+                codes=[secrets.token_hex(12) for _ in range(8)]
+                c.executemany('INSERT INTO recovery VALUES(?,?)',[(uid,digest(code)) for code in codes])
+                return {'codes':codes,'message':'Store these codes offline. Each code can be used once. Previous codes are invalid.'}
+            if route=='/api/recovery/reset':
+                self.limit(peer,'recovery',5,3600)
+                name=clean(data.get('name'),24);code=clean(data.get('code'),64);password=clean(data.get('password'),128)
+                require(len(password)>=12,'Use at least 12 password characters')
+                row=c.execute('SELECT u.id FROM users u JOIN recovery r ON r.user=u.id WHERE u.name=? AND r.code=?',(name,digest(code))).fetchone()
+                require(row,'Account or recovery code is incorrect',401)
+                salt=secrets.token_hex(16);hashed=hashlib.pbkdf2_hmac('sha256',password.encode(),bytes.fromhex(salt),310000).hex()
+                c.execute('UPDATE users SET salt=?,password=? WHERE id=?',(salt,hashed,row['id']))
+                c.execute('DELETE FROM recovery WHERE user=?',(row['id'],))
+                c.execute('DELETE FROM sessions WHERE user=?',(row['id'],))
+                c.execute('DELETE FROM devices WHERE user=?',(row['id'],))
+                return {'ok':True,'message':'Password changed. All sessions and recovery codes were revoked. Sign in and generate new codes.'}
             if route=='/api/logout':auth();c.execute('DELETE FROM sessions WHERE token=?',(digest(token),));return {'ok':True}
             if route=='/api/device/start':
                 self.limit(peer,'device',10);code=secrets.token_urlsafe(32);user_code=secrets.token_hex(4).upper();c.execute('DELETE FROM devices WHERE expires<?',(now,));c.execute('INSERT INTO devices(code,user_code,expires) VALUES(?,?,?)',(digest(code),user_code,now+600));return {'device_code':code,'user_code':user_code,'verification_path':'/device','expires_in':600,'interval':3}

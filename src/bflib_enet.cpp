@@ -13,6 +13,7 @@
 /******************************************************************************/
 
 #include "pre_inc.h"
+#include "macos_network_diagnostics.h"
 #include "bflib_enet.h"
 #include "bflib_datetm.h"
 #include "net_main.h"
@@ -588,6 +589,7 @@ namespace
                 const char *disconnect_reason = "timed out";
                 if (enet_event.type == ENET_EVENT_TYPE_DISCONNECT)
                     disconnect_reason = "disconnected (clean)";
+                kfx_network_issue(enet_event.type==ENET_EVENT_TYPE_DISCONNECT?"peer-left":"peer-timeout",0,0,0);
                 destroy_incoming_queue(user_id);
                 LbNetLog("ENet: peer %d %s\n", (int)user_id, disconnect_reason);
                 g_drop_callback(user_id, NETDROP_ERROR);

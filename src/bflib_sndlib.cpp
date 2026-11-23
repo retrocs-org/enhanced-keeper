@@ -23,7 +23,7 @@
 #define DRMP3_API static
 #endif
 #define DR_MP3_IMPLEMENTATION
-#include "../deps/dr_mp3.h"
+#include "dr_mp3.h"
 #include <memory>
 #include <vector>
 #include <fstream>

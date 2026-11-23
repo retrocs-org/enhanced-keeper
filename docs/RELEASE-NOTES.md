@@ -17,6 +17,15 @@
 - Connection diagnostics, version comparison and direct IPv4 joining.
 
 ## Enhancements
+- Make source-only macOS builds fetch pinned vendor source and packaging art locally.
+- Add Developer ID signing preflight before package assembly.
+- Add bounded frame-time/CPU/memory capture and sleeping macOS frame waits.
+- Limit interpolated menus to 60 FPS and reduce background/minimized dungeon drawing.
+- Add live controller testing and resting-stick drift calibration with cancellation.
+- Handle Retina scale changes and window restoration through existing display recovery.
+- Record bounded desync/disconnect diagnostics without player credentials.
+- Add password-confirmed offline recovery codes, session revocation and verified SQLite backups.
+- Show checksum-verified published release downloads from a private website cache.
 - Add a new KeeperFX-E landing page and PHP-hosted community website, with a
   same-origin API gateway and documented Apache/Nginx deployment.
 - Rename the application, website branding and release packages to KeeperFX-E.

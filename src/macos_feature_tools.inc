@@ -1,3 +1,7 @@
+// Calibration samples resting sticks only; a moving/disconnected pad is rejected.
+Uint64 calibration_until=0;
+float calibration_peak=0;
+unsigned int calibration_owner=0;
 // Save management, controller selection, accessibility presets and the quick wheel.
 std::string save_base(const Save &entry){char name[40];snprintf(name,sizeof(name),"fx1g%04ld.sav",entry.slot);return path(name);}
 std::string read_save_alias(const std::string &base){size_t length=0;char *bytes=(char*)SDL_LoadFile((base+".label").c_str(),&length);if(!bytes)return {};std::string result(bytes,std::min(length,(size_t)128));SDL_free(bytes);while(!result.empty()&&(result.back()=='\n'||result.back()=='\r'))result.pop_back();return result;}
@@ -20,6 +24,9 @@ void apply_access_preset(int preset){
 }
 void feature_init(){size_t length=0;char *data=(char*)SDL_LoadFile(path("controller-guid.cfg").c_str(),&length);if(data){std::string guid(data,length);SDL_free(data);while(!guid.empty()&&(guid.back()=='\n'||guid.back()=='\r'))guid.pop_back();controller_prefer_guid(guid.c_str());}}
 bool feature_action(int action){
+    if(action==896){page=26;selected=0;focus_action=-1;notice="Move sticks and press buttons to test. Rest both sticks before calibrating.";return true;}
+    if(action==897){if(!controller_connected()){notice="Connect a controller first.";return true;}calibration_owner=controller_active_id();calibration_peak=0;calibration_until=SDL_GetTicks()+2000;notice="Leave both sticks untouched for two seconds.";return true;}
+    if(action==898){env_number("KFX_CONTROLLER_DEADZONE",8000.0/32767);persist();notice="Default stick dead zone restored.";return true;}
     if(action==840){page=15;selected=0;device_offset=0;focus_action=-1;return true;}
     if(action==841){page=16;selected=0;focus_action=-1;return true;}
     if(action==842&&!saves.empty()){page=17;selected=0;focus_action=-1;return true;}
@@ -43,13 +50,20 @@ bool feature_action(int action){
     return false;
 }
 void feature_draw(){
-    if(page==15){
+    if(page==26){
+        centered(90,controller_device_name(),22);
+        const char *names[]={"Left X","Left Y","Right X","Right Y","Left trigger","Right trigger"};
+        for(int i=0;i<6;i++){int y=128+i*30;char value[64];snprintf(value,sizeof(value),"%+.2f",controller_raw_axis(i));text(42,y,names[i],20,260);text(330,y,value,20,240);}
+        text(42,315,"Buttons: "+(controller_raw_buttons()?binding_name(controller_raw_buttons()):std::string("None")),18,560);
+        button(24,350,284,calibration_until?"Measuring...":"Calibrate sticks",897,selected==0,40);
+        button(332,350,284,"Restore dead zone",898,selected==1,40);
+    }else if(page==15){
         int count=controller_device_count();device_offset=std::min(device_offset,std::max(0,((count-1)/3)*3));
         if(!count)centered(160,"Connect a controller by USB or Bluetooth.",22);
         for(int i=0;i<3&&device_offset+i<count;i++){unsigned int id=controller_device_id(device_offset+i);button(24,98+i*52,592,std::string(id==controller_active_id()?"Using: ":"Select: ")+controller_name_for_id(id),860+i,selected==i,42);}
         button(24,258,160,"Previous",863,selected==3,40);button(456,258,160,"Next",864,selected==4,40);centered(268,std::to_string(count)+" connected",20);
         button(24,312,284,label_model<0?"Labels: Auto":label_model?"Labels: DualSense":"Labels: Xbox",895,selected==5,40);button(332,312,284,quick_wheel_enabled?"R3 wheel: On":"R3 wheel: Off",894,selected==6,40);
-        small_line(24,370,std::string("Active: ")+controller_device_name(),592);
+        button(24,366,592,"Test and calibrate controller",896,selected==7,40);
     }else if(page==16){
         const char *names[]={"Standard","Large Text and Cursor","Captions and Comfort","Reduced Camera Movement"};for(int i=0;i<4;i++)button(50,98+i*56,540,names[i],880+i,selected==i,44);
         text(24,337,"Caption duration",20,280);text(330,337,std::to_string(kfx_caption_seconds)+" sec",20,170);button(524,330,40,"-",890,false,36);button(572,330,40,"+",891,selected==4,36);
@@ -69,12 +83,28 @@ bool quick_context(){return frontend_menu_state==FeSt_INITIAL&&game.game_kind!=G
 void wheel_close(bool accept){int choice=wheel_choice;wheel_open=false;kfx_controller_guide_visible=0;clear_controller_input();repeat_button=255;controller_suppress_until_neutral();if(SDL_GetKeyboardFocus())LbGrabMouseCheck(MG_OnFocusGained);else SDL_ShowCursor();if(accept&&quick_context()&&choice>=0&&choice<7)quick_pending=choice;wheel_choice=-1;}
 int wheel_sector(float x,float y){if(x*x+y*y<.16f)return -1;double angle=atan2(y,x)+M_PI/2;if(angle<0)angle+=2*M_PI;return ((int)floor(angle/(M_PI/4)+.5))%8;}
 void feature_tick(){
+    if(calibration_until){
+        if(page!=26||controller_active_id()!=calibration_owner){calibration_until=0;notice="Calibration cancelled: the active controller changed.";}
+        else{for(int i=0;i<4;i++)calibration_peak=std::max(calibration_peak,std::abs(controller_raw_axis(i)));
+            if(SDL_GetTicks()>=calibration_until){calibration_until=0;if(calibration_peak>.4f)notice="Stick movement detected. Rest the sticks and try again.";
+                else{env_number("KFX_CONTROLLER_DEADZONE",std::clamp(calibration_peak+.03f,.05f,.5f));persist();notice="Resting drift measured. Dead zone saved; test the sticks below.";}}}
+    }
+
     kfx_readiness_tick();
     if(wheel_open&&(!quick_context()||controller_active_id()!=wheel_owner))wheel_close(false);
     if(quick_pending<0)return;int action=quick_pending;quick_pending=-1;if(!quick_context())return;
     const int menus[]={GMnu_ROOM,GMnu_SPELL,0,0,0,GMnu_CREATURE,GMnu_TRAP};if(menus[action])set_menu_mode(menus[action]);else{quick_key=action==2?Gkey_SwitchToMap:action==3?Gkey_ZoomRoomHeart:Gkey_ZoomToFight;quick_key_until=SDL_GetTicks()+300;}
 }
 bool feature_event(const SDL_Event *event){
+    if(page==26&&kfx_controller_guide_visible&&(event->type==SDL_EVENT_GAMEPAD_BUTTON_DOWN||event->type==SDL_EVENT_GAMEPAD_BUTTON_UP)){
+        if(event->type==SDL_EVENT_GAMEPAD_BUTTON_DOWN&&controller_owns_event(event->gbutton.which)){
+            if(event->gbutton.button==SDL_GAMEPAD_BUTTON_START)activate(901);
+            else if(event->gbutton.button==SDL_GAMEPAD_BUTTON_NORTH)feature_action(897);
+            else if(event->gbutton.button==SDL_GAMEPAD_BUTTON_WEST)feature_action(898);
+        }
+        return true;
+    }
+
     if(wheel_open){
         if(event->type==SDL_EVENT_WINDOW_FOCUS_LOST||(event->type==SDL_EVENT_GAMEPAD_REMOVED&&event->gdevice.which==wheel_owner)){wheel_close(false);return false;}
         if(event->type==SDL_EVENT_KEY_DOWN){if(event->key.key==SDLK_ESCAPE)wheel_close(false);else if(event->key.key==SDLK_F9){wheel_close(false);return false;}return !(event->key.key==SDLK_Q&&(event->key.mod&SDL_KMOD_GUI));}

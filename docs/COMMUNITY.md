@@ -203,3 +203,45 @@ requests and unexpected hosts; forwards account cookies/CSRF and game bearer
 authentication; refuses redirects from the upstream; and returns generic errors
 when the service is offline. Both the browser and game can use the same HTTPS
 origin. PHP's built-in server is used only for local development.
+
+## Account recovery and operations
+
+Signed-in players can generate eight offline recovery codes after confirming
+their current password. Store the codes privately. Only hashes are stored on the
+service. Password recovery revokes every browser/game session, approved pairing
+and remaining recovery code; sign in again and issue a fresh set. The service
+uses offline codes rather than claiming to send recovery email.
+
+Use the online SQLite backup command instead of copying a live database file:
+
+```sh
+python3 services/keeperhub/maintenance.py backup --db /var/lib/keeperfx-e/community.sqlite3 --output /var/backups/keeperfx-e --keep 7
+python3 services/keeperhub/maintenance.py check --db /var/backups/keeperfx-e/SELECTED-BACKUP.sqlite3
+```
+
+Backups are verified, standalone SQLite files with private permissions. Retention
+prunes only this tool's own named backups. To restore, stop KeeperHub, keep a copy
+of the current database and its WAL/SHM files, replace the stopped database with a
+verified backup, then restart. Backups contain private accounts and sessions;
+keep them outside Git and the website, with an independently protected offsite
+copy. Arrange the backup command through your server's scheduler before launch.
+
+Monitor `/api/health`: database failures return an error, and an expected relay
+that has stopped returns 503. Expired sessions, pairing requests and identity
+tickets are cleaned up; recovery generation/reset is rate limited and the
+in-memory abuse table has a hard bound. These are local-tested service features;
+public HTTPS, backups/alerts and mail policy still need an operated server.
+
+Run `python3 scripts/update-web-releases.py` after publishing a stable release,
+and periodically from the website host's scheduler. It atomically refreshes
+`.local/web/releases.json` (or `--output` outside the document root), verifies
+both DMG/ZIP checksum files and host digests when present, and ignores draft or
+prerelease releases. PHP can use `KFX_RELEASE_MANIFEST` to select that private
+cache. Missing releases retain the normal release-page link; no invented version
+or download is advertised. An update failure leaves the last valid cache intact.
+
+On a desync or peer departure, the game writes one bounded
+`save/network-diagnostics.json` report and includes it in Copy Diagnostics.
+Existing automatic state resynchronization remains in use. A fully disconnected
+player can rejoin a lobby; reconnecting into an already-running match is not
+supported by the current lockstep protocol and is not attempted automatically.

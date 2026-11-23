@@ -1,5 +1,7 @@
 <?php
 if (!defined('KFX_WEB_PAGE')) { http_response_code(404); exit; }
+$release=current_release();
+function escape(string $value): string { return htmlspecialchars($value,ENT_QUOTES,'UTF-8'); }
 ?>
 <!doctype html>
 <html lang="en">
@@ -21,6 +23,10 @@ if (!defined('KFX_WEB_PAGE')) { http_response_code(404); exit; }
   <h1>Your dungeon.<br><span>Your rules.</span></h1>
   <p class="hero-copy">Return underground with KeeperFX-E. A native macOS take on KeeperFX, with modern controls, a familiar dungeon and more ways to play together.</p>
   <div class="actions"><a class="button primary" href="https://github.com/retrocs-org/KeeperFX-E/releases">Browse downloads <span aria-hidden="true">↗</span></a><a class="button secondary" href="/community">Explore the community <span aria-hidden="true">→</span></a></div>
+  <?php if ($release): ?>
+  <section class="release-downloads" aria-label="Latest release"><h2>Latest release: <?= escape($release['version']) ?></h2>
+  <?php foreach ($release['assets'] as $asset): ?><p><a href="<?= escape($asset['url']) ?>">Download <?= strtoupper(escape($asset['type'])) ?></a><br><small>SHA-256: <code><?= escape($asset['sha256']) ?></code></small></p><?php endforeach; ?>
+  </section><?php endif; ?>
   <p class="compatibility">macOS 13+ <span>·</span> Apple Silicon &amp; Intel <span>·</span> Open source</p>
   <div class="hero-note"><span class="note-index">01 / THE PROJECT</span><p>The dungeon you remember, with room to grow.<br>Built for mouse, keyboard and controller.</p><span class="note-glyph" aria-hidden="true">↘</span></div>
 </section>

@@ -16,6 +16,7 @@
 #include "bflib_vidraw.h"   // LbSpriteDraw*Immediate, setup_vecs (world-view immediate fallback)
 #include "front_simple.h"   // copy_raw8_image_buffer (RendererPresentImage's software fallback)
 #include "engine_render.h"  // display_drawlist/display_fast_drawlist (world-view immediate fallback)
+#include "macos_frame_profile.h"
 #include "macos_controls.h"
 #include "macos_game_options.h"
 #include "bflib_fileio.h"
@@ -152,6 +153,7 @@ void RendererClearScreen(unsigned char colour)
 
 void RendererPresentFrame(void)
 {
+    kfx_profile_present();
     if (s_active_renderer != nullptr)
         s_active_renderer->PresentFrame();
 }

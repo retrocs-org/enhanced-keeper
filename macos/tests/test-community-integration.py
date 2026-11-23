@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """Real loopback hub + headless host + game browser join + read-only spectator."""
 from pathlib import Path
-import importlib.util,json,os,re,signal,socket,subprocess,tempfile,threading,time,traceback
+import importlib.util,json,os,re,signal,socket,subprocess,tempfile,threading,time,traceback,plistlib
 root=Path(__file__).resolve().parents[2]
 def module(name,file):
  s=importlib.util.spec_from_file_location(name,file);m=importlib.util.module_from_spec(s);s.loader.exec_module(m);return m
 hubmod=module('keeperhub',root/'services/keeperhub/hub.py');ded=module('dedicated',root/'services/keeperhub/dedicated.py')
 work=Path(tempfile.mkdtemp(prefix='kfx-community-e2e-'));Path('/tmp/kfx-community-e2e-profile').write_text(str(work));relay=hubmod.Relay();hub=hubmod.Hub(work/'hub.sqlite3',relay,'test-'+os.urandom(24).hex());http=hubmod.serve(hub,port=0);threading.Thread(target=http.serve_forever,daemon=True).start();base=http.origin;processes=[];supervisor=None;hostthread=None
-app=Path('/Applications/KeeperFX-E.app');engine=root/'build-mac-universal/keeperfx'
+app=Path(os.environ.get('KFX_TEST_APP','/Applications/KeeperFX-E.app'));launcher=app/'Contents/MacOS'/plistlib.loads((app/'Contents/Info.plist').read_bytes())['CFBundleExecutable'];engine=root/'build-mac-universal/keeperfx'
 def port(udp=False):
  with socket.socket(socket.AF_INET,socket.SOCK_DGRAM if udp else socket.SOCK_STREAM) as s:s.bind(('127.0.0.1',0));return s.getsockname()[1]
 def profile(name):
- p=work/name;env=dict(os.environ,KFX_USER_DATA_DIR=str(p));subprocess.run([str(app/'Contents/MacOS/KeeperFXE'),'--import',str(root/'.local/keeperfx')],env=env,check=True,stdout=subprocess.DEVNULL);subprocess.run([str(app/'Contents/MacOS/KeeperFXE'),'--prepare-only'],env=env,check=True,stdout=subprocess.DEVNULL);return p
+ p=work/name;env=dict(os.environ,KFX_USER_DATA_DIR=str(p));subprocess.run([str(launcher),'--import',str(root/'.local/keeperfx')],env=env,check=True,stdout=subprocess.DEVNULL);subprocess.run([str(launcher),'--prepare-only'],env=env,check=True,stdout=subprocess.DEVNULL);return p
 def config_api(p,apiport):
  f=p/'GameData/keeperfx.cfg';s=f.read_text();s=re.sub(r'(?m)^API_ENABLED=.*$','API_ENABLED=TRUE',s);s=re.sub(r'(?m)^API_PORT=.*$',f'API_PORT={apiport}',s);f.write_text(s)
 connections={};buffers={};serial=0

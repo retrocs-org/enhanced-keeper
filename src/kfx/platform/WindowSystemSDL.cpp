@@ -254,6 +254,7 @@ unsigned int WindowSystemSDL::GetWindowFlags() const
             kfx_flags |= KFX_WF_FULLSCREEN_EXCLUSIVE;
     }
     if (sdl_flags & SDL_WINDOW_BORDERLESS) kfx_flags |= KFX_WF_BORDERLESS;
+    if (sdl_flags & SDL_WINDOW_MINIMIZED) kfx_flags |= KFX_WF_MINIMIZED;
     if (sdl_flags & SDL_WINDOW_HIDDEN)     kfx_flags |= KFX_WF_HIDDEN;
     return kfx_flags;
 }
@@ -589,6 +590,8 @@ void WindowSystemSDL::HandleWindowEvent(const SDL_Event* ev)
         break;
     case SDL_EVENT_WINDOW_ENTER_FULLSCREEN:
     case SDL_EVENT_WINDOW_DISPLAY_CHANGED:
+    case SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED:
+    case SDL_EVENT_WINDOW_RESTORED:
         EnsureWindowVisible();KeepFullscreenComposited();ApplyOsCursorPolicy();
         break;
     default:

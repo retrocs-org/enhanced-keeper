@@ -278,6 +278,13 @@ void init_controller_input()
     open_next_controller();
 }
 
+TbControllerButtons controller_raw_buttons(void){TbControllerButtons result=0;if(controller)for(int i=0;i<SDL_GAMEPAD_BUTTON_COUNT;i++)if(SDL_GetGamepadButton(controller,(SDL_GamepadButton)i))result|=SDL_gamepadbutton_to_controllerbutton((SDL_GamepadButton)i);return result;}
+float controller_raw_axis(int axis)
+{
+    if (!controller || axis < 0 || axis >= SDL_GAMEPAD_AXIS_COUNT) return 0;
+    return SDL_GetGamepadAxis(controller,(SDL_GamepadAxis)axis)/32767.0f;
+}
+
 float cbtn_axis_value(TbControllerButtons btn)
 {
     if (controller == NULL || kfx_controller_guide_visible) {

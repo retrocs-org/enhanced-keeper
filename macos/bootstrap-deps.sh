@@ -15,6 +15,8 @@ clone_at() {
   git -C "$dst" checkout --detach "$rev"
 }
 
+# Keep upstream build-only vendor sources outside the source-only repository.
+clone_at keeperfx-source https://github.com/lurcheous73/keeperfx-macos.git bb65dafd7d430a80fb22a426abf6a1c7354fb441
 clone_at centijson https://github.com/mity/centijson.git 8c7a5fb
 clone_at astronomy https://github.com/cosinekitty/astronomy.git 865d3da
 clone_at enet6 https://github.com/SirLynix/enet6.git bf0003f

@@ -1,7 +1,7 @@
 # Releasing KeeperFX-E
 
 This macOS workflow adapts the supplied Beam68 release system. Python 3.9+,
-Xcode command-line tools, CMake and Ninja are required. The runtime requires
+Xcode command-line tools, CMake, Ninja and PHP 8.1+ CLI are required. The runtime requires
 macOS 13+. Public releases use a clean committed checkout; local review builds
 can use `--allow-dirty` and are deliberately ineligible for publication.
 
@@ -163,3 +163,24 @@ build/import/release tools, website/service code, and the supplied controller UI
 illustrations. Local imports and dependency bootstrapping are required before
 building/packaging from this source-only copy. The app icon under `res/` stays a
 local packaging input rather than repository content.
+
+## Source-only build verification and signing
+
+`macos/bootstrap-deps.sh` retrieves build-only upstream vendor files at a pinned
+commit into ignored `third_party/keeperfx-source/`. CMake uses that copy when the
+vendored `deps/` tree is absent. The MP3 decoder include and embedded window icon
+also use the pinned vendor source. Controller mapping data and app icon are
+obtained there during packaging; no imported game assets are committed.
+
+A source-only checkout was configured and built for arm64 and x86_64 using an
+existing universal binary dependency cache. To build dependencies on a new Mac,
+run `macos/build-universal.sh`; it builds missing dependency prefixes first.
+The assembled runtime directory is a separate local input: set `KFX_GAME_DIR`
+for packaging and use the app's import tools for your original Dungeon Keeper
+files. Set `KFX_MAC_DEPS_ROOT` only if reusing another dependency cache.
+
+Run `macos/signing-preflight.sh IDENTITY` to test the private key before a long
+build. Packaging runs this check before copying game data or compiling helpers.
+If it fails, unlock the keychain containing the Developer ID private key and
+allow codesign access through Keychain Access. The scripts do not change ACLs,
+unlock keychains with stored passwords or disable signing verification.

@@ -25,7 +25,9 @@ std::string build_field(const char *key){
     if(pos==std::string::npos)return "development";pos=data.find(':',pos+field.size());if(pos==std::string::npos)return "development";pos=data.find('"',pos+1);if(pos==std::string::npos)return "development";size_t end=data.find('"',pos+1);return end==std::string::npos?"development":data.substr(pos+1,end-pos-1);
 }
 std::string diagnostic_report(){
-    return "KeeperFX-E "+build_field("appVersion")+" (build "+build_field("appBuild")+")\nEngine: "+VER_STRING+"\nPlatform: "+SDL_GetPlatform()+"\nSDL: "+std::to_string(SDL_MAJOR_VERSION)+"."+std::to_string(SDL_MINOR_VERSION)+"."+std::to_string(SDL_MICRO_VERSION)+"\nController: "+controller_device_name()+"\nButton labels: "+(kfx_controller_guide_ps5?"DualSense":"Xbox")+"\nDisplay: "+std::to_string(RendererScreenWidth())+" x "+std::to_string(RendererScreenHeight())+"\nMultiplayer: "+(network_is_active()?"connected":"not connected")+"\nHost address: "+join_ip+"\nData folder: "+data_folder()+"\n\n"+network_report;
+    std::string last_issue;size_t size=0;void *bytes=SDL_LoadFile(path("network-diagnostics.json").c_str(),&size);if(bytes){last_issue.assign((char*)bytes,std::min(size,(size_t)2048));SDL_free(bytes);}
+
+    return "KeeperFX-E "+build_field("appVersion")+" (build "+build_field("appBuild")+")\nEngine: "+VER_STRING+"\nPlatform: "+SDL_GetPlatform()+"\nSDL: "+std::to_string(SDL_MAJOR_VERSION)+"."+std::to_string(SDL_MINOR_VERSION)+"."+std::to_string(SDL_MICRO_VERSION)+"\nController: "+controller_device_name()+"\nButton labels: "+(kfx_controller_guide_ps5?"DualSense":"Xbox")+"\nDisplay: "+std::to_string(RendererScreenWidth())+" x "+std::to_string(RendererScreenHeight())+"\nMultiplayer: "+(network_is_active()?"connected":"not connected")+"\nHost address: "+join_ip+"\nData folder: "+data_folder()+"\n\nLast network issue: "+last_issue+"\n"+network_report;
 }
 void copy_report(){notice=SDL_SetClipboardText(diagnostic_report().c_str())?"Report copied. Paste it into your message.":"Clipboard unavailable. Try again with the game focused.";}
 bool persist_endpoint(const std::string &endpoint){

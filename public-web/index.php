@@ -115,4 +115,5 @@ if (!in_array($path, ['/', '/index.php', '/community', '/servers', '/events', '/
 }
 header('Content-Type: text/html; charset=utf-8');
 define('KFX_WEB_PAGE', true);
+require __DIR__.'/releases.php';
 require __DIR__ . (in_array($path, ['/', '/index.php'], true) ? '/home.php' : '/community.php');

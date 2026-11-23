@@ -18,6 +18,7 @@
 /******************************************************************************/
 #include "pre_inc.h"
 #include "net_checksums.h"
+#include "macos_network_diagnostics.h"
 #include "bflib_dernc.h"
 #include "config.h"
 #include "game_legacy.h"
@@ -216,11 +217,13 @@ short checksums_different(void)
         struct Packet* packet = get_packet(i);
         if (is_packet_empty(packet)) {
             ERRORLOG("Missing checksum packet for user %d; host turn: %d", i, host_packet->turn);
+            kfx_network_issue("missing-packet",host_packet->turn,host_checksum,0);
             desync_turn = host_packet->turn;
             mismatch = true;
             continue;
         }
         if (packet->checksum != host_checksum) {
+            kfx_network_issue("checksum-mismatch",host_packet->turn,host_checksum,packet->checksum);
             ERRORLOG("Checksums %08x(Host) != %08x(Client) turn: %d vs %d", host_checksum, packet->checksum, host_packet->turn, packet->turn);
             desync_turn = host_packet->turn;
             mismatch = true;

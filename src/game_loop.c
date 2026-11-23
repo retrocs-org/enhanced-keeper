@@ -12,6 +12,7 @@
 /******************************************************************************/
 #include "pre_inc.h"
 #include "net_hub.h"
+#include "kfx/platform/PlatformManager.h"
 #include "kfx/renderer/RendererManager.h"
 #include "keeperfx.hpp"
 
@@ -488,8 +489,15 @@ void gameplay_loop_draw()
     // Floats are used a lot in the drawing related functions. But keep in mind integers are typically preferred for logic related functions.
     frametime_start_measurement(Frametime_Draw);
 
-    // Update lights
-    update_light_render_area();
+#if defined(__APPLE__)
+    // Skip redundant rendering only; input/network exchange and simulation still run.
+    static uint64_t last_background_draw=0;
+    uint64_t background_now=SDL_GetTicksNS();
+    uint64_t interval=(PlatformManager_GetWindowFlags()&KFX_WF_MINIMIZED)?100000000ULL:(!LbIsActive()?33333333ULL:0);
+    if(!getenv("KFX_HEADLESS")&&interval){if(background_now-last_background_draw<interval)do_draw=false;else last_background_draw=background_now;}
+#endif
+    // Lights need updating only for a rendered frame.
+    if(do_draw)update_light_render_area();
 
     if (quit_game || exit_keeper) {
         do_draw = false;
@@ -934,6 +942,10 @@ static TbBool wait_at_frontend(void)
         fade_palette_in = 0;
       } else {
         if (is_feature_on(Ft_DeltaTime) == true && should_use_delta_time_on_menu()) {
+#if defined(__APPLE__)
+          int menu_fps=LbIsActive()?min(60,fps_limit_main>0?fps_limit_main:60):15;
+          LbSleepUntil(fe_last_loop_time+max(1,1000/menu_fps));
+#endif
           update_frontend_delta_time();
         } else {
           int32_t frame_time;

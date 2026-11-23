@@ -46,7 +46,7 @@ int main(){
  button(sony+999,SDL_EVENT_GAMEPAD_BUTTON_UP,SDL_GAMEPAD_BUTTON_SOUTH);assert(controller_button_state&CBtn_A);
  button(sony,SDL_EVENT_GAMEPAD_BUTTON_UP,SDL_GAMEPAD_BUTTON_SOUTH);assert(!(controller_button_state&CBtn_A));
  last_used_input_device=ID_Keyboard_Mouse;
- SDL_SetJoystickVirtualAxis(raw,SDL_GAMEPAD_AXIS_LEFTX,1000);pump();assert(cbtn_axis_value(CBtn_LS_RIGHT)==0);assert(last_used_input_device==ID_Keyboard_Mouse);
+ SDL_SetJoystickVirtualAxis(raw,SDL_GAMEPAD_AXIS_LEFTX,1000);pump();assert(std::abs(controller_raw_axis(SDL_GAMEPAD_AXIS_LEFTX)-1000.0f/32767)<.001f);assert(cbtn_axis_value(CBtn_LS_RIGHT)==0);assert(last_used_input_device==ID_Keyboard_Mouse);
  SDL_SetJoystickVirtualAxis(raw,SDL_GAMEPAD_AXIS_LEFTX,8100);pump();float near=cbtn_axis_value(CBtn_LS_RIGHT);assert(near>0 && near<0.02f);
  SDL_SetJoystickVirtualAxis(raw,SDL_GAMEPAD_AXIS_LEFTX,32767);pump();assert(cbtn_axis_value(CBtn_LS_RIGHT)>0.99f);
  SDL_SetJoystickVirtualAxis(raw,SDL_GAMEPAD_AXIS_LEFTX,-32768);pump();assert(cbtn_axis_value(CBtn_LS_LEFT)>0.99f);assert(!(controller_button_state&CBtn_LS_RIGHT));

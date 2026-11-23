@@ -11,14 +11,21 @@ set(KFX_DEPS_BASE "https://github.com/dkfans/kfx-deps/releases/download")
 # Downloaded deps live under the BUILD dir, not the source tree, so Windows and
 # Linux builds in one checkout get their own deps and never collide.
 set(D "${CMAKE_BINARY_DIR}/deps")
-set(KFX_CENTITOML_SRC "${CMAKE_SOURCE_DIR}/deps/centitoml")
+set(KFX_VENDOR_ROOT "${CMAKE_SOURCE_DIR}/deps")
+if(NOT EXISTS "${KFX_VENDOR_ROOT}/glad/src/glad.c")
+    set(KFX_VENDOR_ROOT "${CMAKE_SOURCE_DIR}/third_party/keeperfx-source/deps")
+endif()
+if(NOT EXISTS "${KFX_VENDOR_ROOT}/glad/src/glad.c" OR NOT EXISTS "${KFX_VENDOR_ROOT}/centitoml/toml_api.c")
+    message(FATAL_ERROR "Missing pinned vendor source. Run macos/bootstrap-deps.sh first.")
+endif()
+set(KFX_CENTITOML_SRC "${KFX_VENDOR_ROOT}/centitoml")
 
 # GL renderer backend: always built.
 find_package(OpenGL REQUIRED)
 
 # Vendored glad loader -- outside src/, so BuildTargets' glob won't pick it up.
-add_library(glad STATIC "${CMAKE_SOURCE_DIR}/deps/glad/src/glad.c")
-target_include_directories(glad PUBLIC "${CMAKE_SOURCE_DIR}/deps/glad/include")
+add_library(glad STATIC "${KFX_VENDOR_ROOT}/glad/src/glad.c")
+target_include_directories(glad PUBLIC "${KFX_VENDOR_ROOT}/glad/include")
 
 # kfx_fetch(<dir> <url>): download + extract into <builddir>/deps/<dir>/ once.
 function(kfx_fetch dir url)

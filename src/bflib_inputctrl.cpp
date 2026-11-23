@@ -499,6 +499,7 @@ static void process_event(const SDL_Event *ev)
     case SDL_EVENT_WINDOW_MOUSE_LEAVE:
     {
         isMouseActive = false;
+        SDL_ShowCursor();
         break;
     }
     case SDL_EVENT_WINDOW_MOVED:
@@ -512,9 +513,12 @@ static void process_event(const SDL_Event *ev)
     case SDL_EVENT_WINDOW_RESIZED:
     case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
     case SDL_EVENT_WINDOW_DISPLAY_CHANGED:
+    case SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED:
         redetect_screen_refresh_rate_for_draw();
         break;
+    case SDL_EVENT_WINDOW_RESTORED:
     case SDL_EVENT_DISPLAY_REMOVED:
+        clear_controller_input();
         redetect_screen_refresh_rate_for_draw();break;
 
     case SDL_EVENT_WINDOW_ENTER_FULLSCREEN:

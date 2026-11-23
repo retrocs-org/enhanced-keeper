@@ -78,6 +78,8 @@ void controller_suppress_until_neutral(void);
 void controller_prefer_guid(const char *guid);
 void controller_guid_for_id(unsigned int id,char *buffer,int size);
 TbBool take_controller_disconnect(void);
+TbControllerButtons controller_raw_buttons(void);
+float controller_raw_axis(int axis);
 float cbtn_axis_value(TbControllerButtons btn);
 TbBool controller_connected();
 

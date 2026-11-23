@@ -12,6 +12,8 @@ APP="$OUT/KeeperFX-E.app"
 DMG="$OUT/KeeperFX-E-$VERSION-macOS-Universal.dmg"
 [[ -x "$ENGINE" && -f "$GAME/keeperfx.cfg" ]] || { echo "Missing engine or KeeperFX runtime data" >&2; exit 1; }
 [[ ! -e "$APP" && ! -e "$DMG" ]] || { echo "Output exists; choose a new KFX_PACKAGE_DIR" >&2; exit 1; }
+# Check keychain access before copying assets or compiling helpers.
+"$ROOT/macos/signing-preflight.sh" "$IDENTITY"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 ditto "$GAME" "$APP/Contents/Resources/game"
 # A distributable package must not contain files imported from the owner's CD,
@@ -47,7 +49,10 @@ clang -O2 -arch arm64 -arch x86_64 -mmacosx-version-min=13.0 \
   -lz -framework Security -framework CoreFoundation -framework SystemConfiguration \
   -o "$APP/Contents/Resources/connection-check"
 # Refresh the supplemental mapping database used by both engine and diagnostic.
-cp "$ROOT/config/fxdata/gamecontrollerdb.txt" "$APP/Contents/Resources/game/fxdata/gamecontrollerdb.txt"
+CONTROLLER_DB="$ROOT/config/fxdata/gamecontrollerdb.txt"
+[[ -f "$CONTROLLER_DB" ]] || CONTROLLER_DB="$ROOT/third_party/keeperfx-source/config/fxdata/gamecontrollerdb.txt"
+[[ -f "$CONTROLLER_DB" ]] || { echo 'Run macos/bootstrap-deps.sh to obtain the pinned controller database.' >&2; exit 1; }
+cp "$CONTROLLER_DB" "$APP/Contents/Resources/game/fxdata/gamecontrollerdb.txt"
 PKG_CONFIG_PATH="$D/sdl-prefix/lib/pkgconfig" pkg-config --static --libs sdl3 > "$OUT/sdl-link-flags.txt"
 sdl_flags=(${(z)$(cat "$OUT/sdl-link-flags.txt")})
 clang -O2 -arch arm64 -arch x86_64 -mmacosx-version-min=13.0 \
@@ -73,12 +78,14 @@ game='.'.join(version[k] for k in ('VER_MAJOR','VER_MINOR','VER_RELEASE','VER_BU
 (out/'build-info.json').write_text(json.dumps({'gameVersion':game,'appBuild':app_build,'appVersion':app_version,'product':'KeeperFX-E','website':'https://keeperfx-e.retrocs.org','engineSHA':hashlib.sha256(engine.read_bytes()).hexdigest(),'git':subprocess.check_output(['git','rev-parse','--short','HEAD'],cwd=root,text=True).strip()},indent=2))
 META
 shasum -a 256 "$ENGINE" | cut -d ' ' -f 1 > "$APP/Contents/Resources/asset-version.txt"
+ICON="${KFX_ICON_PNG:-$ROOT/third_party/keeperfx-source/res/keeperfx_icon512-24bpp.png}"
+[[ -f "$ICON" ]] || { echo 'Missing packaging icon. Run macos/bootstrap-deps.sh or set KFX_ICON_PNG.' >&2; exit 1; }
 ICONSET="$OUT/KeeperFX.iconset";mkdir -p "$ICONSET"
 for size in 16 32 128 256 512; do
-  sips -z "$size" "$size" "$ROOT/res/keeperfx_icon512-24bpp.png" --out "$ICONSET/icon_${size}x${size}.png" >/dev/null
+  sips -z "$size" "$size" "$ICON" --out "$ICONSET/icon_${size}x${size}.png" >/dev/null
   if (( size < 512 )); then
     double=$((size * 2))
-    sips -z "$double" "$double" "$ROOT/res/keeperfx_icon512-24bpp.png" --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null
+    sips -z "$double" "$double" "$ICON" --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null
   fi
 done
 iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/KeeperFX.icns"

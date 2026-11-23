@@ -31,6 +31,7 @@ enum KfxWindowFlags {
     KFX_WF_FULLSCREEN_EXCLUSIVE = 0x1,  // fullscreen at a specific video mode
     KFX_WF_FULLSCREEN_DESKTOP   = 0x2,  // borderless fullscreen at native resolution
     KFX_WF_BORDERLESS           = 0x4,  // borderless window (also FILL ALL)
+    KFX_WF_MINIMIZED            = 0x80,
     KFX_WF_HIDDEN               = 0x8,  // created hidden
     KFX_WF_OPENGL               = 0x10, // window must be OpenGL-capable at creation
     KFX_WF_KEEP_COMPOSITED      = 0x20, // desktop fullscreen must stay composited by the OS compositor

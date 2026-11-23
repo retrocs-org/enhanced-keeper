@@ -116,11 +116,16 @@ TbBool LbTextDrawResized(int,int,int,const char*){return 1;}
 }
 static void key(SDL_Keycode code){SDL_Event event={};event.type=SDL_EVENT_KEY_DOWN;event.key.key=code;assert(kfx_options_event(&event));}
 static void pad(Uint8 button){SDL_Event event={};event.type=SDL_EVENT_GAMEPAD_BUTTON_DOWN;event.gbutton.which=42;event.gbutton.button=button;assert(kfx_options_event(&event));}
+extern "C" TbControllerButtons controller_raw_buttons(void){return 0;}
+extern "C" float controller_raw_axis(int){return 0;}
 int main(){
  char folder[]="/tmp/kfx-ingame-options-XXXXXX";assert(mkdtemp(folder));test_folder=folder;art_folder=getenv("KFX_TEST_ART")?getenv("KFX_TEST_ART"):"macos/packaging/controllers";
  kfx_options_initialize();assert(!actions.empty());
  game.game_kind=GKind_LocalGame;frontend_menu_state=FeSt_INITIAL;kfx_options_open(nullptr);assert(kfx_controller_guide_visible);assert(game.operation_flags&GOF_Paused);
- for(int i=0;i<26;i++){page=i;render_file="/tmp/kfx-options-page-"+std::to_string(i)+".png";kfx_options_draw();}
+ for(int i=0;i<27;i++){page=i;render_file="/tmp/kfx-options-page-"+std::to_string(i)+".png";kfx_options_draw();}
+ page=26;kfx_controller_guide_visible=1;pad(SDL_GAMEPAD_BUTTON_EAST);assert(page==26);calibration_owner=42;calibration_peak=.08f;calibration_until=SDL_GetTicks()?SDL_GetTicks():1;SDL_Delay(2);feature_tick();assert(!calibration_until);assert(std::abs(kfx_controller_deadzone()-.11f)<.001f);
+ calibration_peak=.8f;calibration_until=SDL_GetTicks();feature_tick();assert(std::abs(kfx_controller_deadzone()-.11f)<.001f);assert(notice.find("movement")!=std::string::npos);
+ calibration_owner=999;calibration_until=SDL_GetTicks()+100;feature_tick();assert(!calibration_until);
  page=0;float before=kfx_controller_deadzone();change(1,1);assert(kfx_controller_deadzone()>before);close_panel();assert(!(game.operation_flags&GOF_Paused));
  online=true;kfx_options_open(nullptr);assert(!(game.operation_flags&GOF_Paused));close_panel();online=false;
  game.operation_flags|=GOF_Paused;kfx_options_open(nullptr);close_panel();assert(game.operation_flags&GOF_Paused);game.operation_flags=0;
