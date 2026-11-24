@@ -23,3 +23,27 @@ with tempfile.TemporaryDirectory(prefix='kfx-import-fixture-') as folder:
  (disc/'DATA/SLAB0-0.DAT').write_bytes(b'');call('--import',folder/'Disc',ok=False)
  assert (prefs/'OriginalData/data/slab0-0.dat').read_bytes()==b'fixture'
  print('PASS: uppercase mounted-CD layout, updates refresh assets and preserve settings/cache, zero-length file rejected without losing existing import')
+
+ # Content profiles share only imported originals; runtime, saves and settings stay separate.
+ (prefs/'save').mkdir(exist_ok=True);(prefs/'save/main-save.fixture').write_bytes(b'main save unchanged')
+ alternative=prefs/'ContentProfiles/mod-test';(alternative/'EnhancedData/mods/example').mkdir(parents=True)
+ (alternative/'EnhancedData/mods/example/config.cfg').write_text('first overlay')
+ (prefs/'content-profile.cfg').write_text('mod-test\n');call('--prepare-only')
+ assert (alternative/'GameData/data/slab0-0.dat').read_bytes()==b'fixture'
+ assert (alternative/'GameData/mods/example/config.cfg').read_text()=='first overlay'
+ assert (runtime/'keeperfx.cfg').read_text()=='RENDERER=OPENGL\n'
+ (alternative/'EnhancedData/mods/example/config.cfg').unlink()
+ (alternative/'EnhancedData/mods/example/new.cfg').write_text('replacement overlay')
+ call('--prepare-only');assert not (alternative/'GameData/mods/example/config.cfg').exists()
+ assert (alternative/'GameData/mods/example/new.cfg').read_text()=='replacement overlay'
+ assert (prefs/'save/main-save.fixture').read_bytes()==b'main save unchanged'
+ import shutil
+ shutil.rmtree(alternative/'GameData/mods');linked_target=folder/'linked-target';linked_target.mkdir()
+ (alternative/'GameData/mods').symlink_to(linked_target,target_is_directory=True)
+ (alternative/'EnhancedData/mods/example/new.cfg').write_text('updated overlay content')
+ call('--prepare-only',ok=False);assert not list(linked_target.iterdir())
+ (alternative/'GameData/mods').unlink();call('--prepare-only')
+ (prefs/'content-profile.cfg').write_text('../../escape\n');call('--prepare-only')
+ outside=folder/'outside';outside.mkdir();(prefs/'ContentProfiles/linked').symlink_to(outside,target_is_directory=True)
+ (prefs/'content-profile.cfg').write_text('linked\n');call('--prepare-only');assert not list(outside.iterdir())
+ print('PASS: separate profile runtime/save paths, shared imported originals, overlay replacement/removal and invalid/link selection rejection')

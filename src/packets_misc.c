@@ -18,6 +18,7 @@
 /******************************************************************************/
 #include "net_game.h"
 #include "pre_inc.h"
+#include "macos_replay.h"
 #include "net_hub.h"
 #include "kfx/renderer/RendererManager.h"
 #include "packets.h"
@@ -144,6 +145,7 @@ TbBool open_packet_file_for_load(char *fname, struct CatalogueEntry *centry)
 {
     memset(centry, 0, sizeof(struct CatalogueEntry));
     if(!fname||strnlen(fname,sizeof(game.packet_fname))>=sizeof(game.packet_fname))return false;
+    char replay_report[512];if(!kfx_replay_validate_file(fname,replay_report,sizeof(replay_report))){WARNLOG("%s",replay_report);return false;}
     memmove(game.packet_fname,fname,strlen(fname)+1);
     game.packet_save_fp = LbFileOpen(game.packet_fname, Lb_FILE_MODE_READ_ONLY);
     if (!game.packet_save_fp)
@@ -174,6 +176,7 @@ TbBool open_packet_file_for_load(char *fname, struct CatalogueEntry *centry)
         game.log_things_end_turn = game.turns_stored + 1;
     }
     game.packet_fopened = 1;
+    kfx_replay_begin(game.packet_fname);
     return true;
 }
 

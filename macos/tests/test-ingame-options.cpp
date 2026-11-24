@@ -1,5 +1,6 @@
 #include "../../src/macos_game_options.cpp"
 #include <cassert>
+#include <fstream>
 #include "../../src/macos_window_placement.h"
 extern "C" {
 int GetRemoteUserCount(){return 0;}
@@ -27,6 +28,9 @@ TbControllerButtons controller_button_state=0;
 short is_key_pressed(TbKeyCode key,TbKeyMods){return lbKeyOn[key];}
 void clear_key_pressed(long key){lbKeyOn[key]=0;}
 static std::string test_folder,art_folder,render_file;
+const char *PlatformManager_GetUserPrefDir(void){return test_folder.c_str();}
+char keeper_runtime_directory[152]={};
+uint16_t enet_port=5556;
 static bool online=false;
 static long loaded_slot=-1;
 static int save_settings_count=0;
@@ -122,18 +126,19 @@ int main(){
  char folder[]="/tmp/kfx-ingame-options-XXXXXX";assert(mkdtemp(folder));test_folder=folder;art_folder=getenv("KFX_TEST_ART")?getenv("KFX_TEST_ART"):"macos/packaging/controllers";
  kfx_options_initialize();assert(!actions.empty());
  game.game_kind=GKind_LocalGame;frontend_menu_state=FeSt_INITIAL;kfx_options_open(nullptr);assert(kfx_controller_guide_visible);assert(game.operation_flags&GOF_Paused);
- for(int i=0;i<27;i++){page=i;render_file="/tmp/kfx-options-page-"+std::to_string(i)+".png";kfx_options_draw();}
+ for(int i=0;i<30;i++){page=i;render_file="/tmp/kfx-options-page-"+std::to_string(i)+".png";kfx_options_draw();}
  page=26;kfx_controller_guide_visible=1;pad(SDL_GAMEPAD_BUTTON_EAST);assert(page==26);calibration_owner=42;calibration_peak=.08f;calibration_until=SDL_GetTicks()?SDL_GetTicks():1;SDL_Delay(2);feature_tick();assert(!calibration_until);assert(std::abs(kfx_controller_deadzone()-.11f)<.001f);
  calibration_peak=.8f;calibration_until=SDL_GetTicks();feature_tick();assert(std::abs(kfx_controller_deadzone()-.11f)<.001f);assert(notice.find("movement")!=std::string::npos);
  calibration_owner=999;calibration_until=SDL_GetTicks()+100;feature_tick();assert(!calibration_until);
  page=0;float before=kfx_controller_deadzone();change(1,1);assert(kfx_controller_deadzone()>before);close_panel();assert(!(game.operation_flags&GOF_Paused));
+ game.packet_load_enable=1;game.packet_fopened=1;open_panel(28);assert(!(game.operation_flags&GOF_Paused));close_panel();game.packet_load_enable=0;game.packet_fopened=0;
  online=true;kfx_options_open(nullptr);assert(!(game.operation_flags&GOF_Paused));close_panel();online=false;
  game.operation_flags|=GOF_Paused;kfx_options_open(nullptr);close_panel();assert(game.operation_flags&GOF_Paused);game.operation_flags=0;
  open_panel(3);activate(402);pad(SDL_GAMEPAD_BUTTON_EAST);assert(capturing&&captured==CBtn_B);pad(SDL_GAMEPAD_BUTTON_LEFT_SHOULDER);key(SDLK_RETURN);assert(settings.kbkeys[0].controller_buttons==(CBtn_B|CBtn_LEFTSHOULDER));assert(save_settings_count==1);
  preset=0;page=1;change(0,1);assert(fps_limit_main==30);change(1,1);assert(debug_display_frametime==1);close_panel();
  preset=0;debug_display_frametime=0;kfx_options_initialize();assert(preset==1&&debug_display_frametime==1);
  FILE *file=fopen((test_folder+"/fx1g0005.sav.backup1").c_str(),"wb");assert(file);FileChunkHeader header={sizeof(CatalogueEntry),SGC_InfoBlock,1};CatalogueEntry entry={};strcpy(entry.textname,"Backup test");strcpy(entry.campaign_name,"Test campaign");entry.level_num=7;fwrite(&header,sizeof(header),1,file);fwrite(&entry,sizeof(entry),1,file);fclose(file);
- scan_saves();assert(saves.size()==1&&saves[0].backup==1&&saves[0].level==7);open_panel(2);render_file="/tmp/kfx-options-page-2.png";kfx_options_draw();load_selected();assert(loaded_slot==0);assert(access((test_folder+"/fx1g0000.sav").c_str(),F_OK)==0);assert(access((test_folder+"/fx1g0005.sav.backup1").c_str(),F_OK)==0);
+ scan_saves();assert(saves.size()==1&&saves[0].backup==1&&saves[0].level==7);open_panel(2);render_file="/tmp/kfx-options-page-2.png";kfx_options_draw();load_selected();assert(page==29&&loaded_slot==-1);render_file="/tmp/kfx-save-requirements.png";kfx_options_draw();activate(1401);assert(loaded_slot==0);assert(access((test_folder+"/fx1g0000.sav").c_str(),F_OK)==0);assert(access((test_folder+"/fx1g0005.sav.backup1").c_str(),F_OK)==0);
  assert(!kfx_allow_cursor_grab(1,0,0));assert(kfx_allow_cursor_grab(1,1,0));assert(!kfx_allow_cursor_grab(1,1,1));
  kfx_window_cursor_lock=1;assert(kfx_allow_cursor_grab(1,0,0));assert(!kfx_allow_cursor_grab(0,0,0));assert(!kfx_allow_cursor_grab(1,0,1));kfx_window_cursor_lock=0;
  assert(!kfx_options_set_display(0,9999,9999));assert(kfx_options_set_display(0,800,600));kfx_options_apply_display();assert(display_confirmation&&!pending_display);assert(saved_display_mode==-1);
@@ -178,7 +183,7 @@ int main(){
  SDL_Point point;assert(menu_point(640,400,1280,800,point)&&point.x==320&&point.y==240);assert(!menu_point(0,0,1280,800,point));
  // Controller model follows the active hardware in Auto, and explicit label choices survive.
  label_model=-1;test_device_model=1;open_panel(0);kfx_options_draw();assert(kfx_controller_guide_ps5==1);test_device_model=0;kfx_options_draw();assert(!kfx_controller_guide_ps5);label_model=1;kfx_options_draw();assert(kfx_controller_guide_ps5);label_model=-1;
- open_panel(8);selected=8;confirm_control();assert(page==13);selected=3;confirm_control();assert(page==14);activate(901);assert(page==13);
+ open_panel(8);selected=10;confirm_control();assert(page==13);selected=3;confirm_control();assert(page==14);activate(901);assert(page==13);
  // Remember a validated host, reject invalid edits, and preserve the previous on-disk value.
  open_panel(11);start_edit(3);append_input("192.168.1.44:6000");finish_edit();assert(!editing&&join_ip=="192.168.1.44:6000");join_ip.clear();load_network_profile();assert(join_ip=="192.168.1.44:6000");start_edit(3);append_input("not an address");finish_edit();assert(editing==3);editing=0;load_network_profile();assert(join_ip=="192.168.1.44:6000");
  open_panel(6);activate(611);append_input("Keeper Tester");finish_edit();assert(!strcmp(net_player_name,"Keeper Tester"));
@@ -206,5 +211,6 @@ int main(){
  BrowserServer alpha;alpha.id="fixture-id";alpha.name="Alpha";alpha.address="127.0.0.1:5556";alpha.engine="1.4.0.0";BrowserServer beta=alpha;beta.name="Beta";beta.address="127.0.0.1:5557";beta.engine="9.9.9.9";public_servers={alpha,beta};browser_pings[alpha.address]=1;browser_pings[beta.address]=2;browser_tab=0;browser_search.clear();browser_compatible=true;browser_filter();assert(browser_servers.size()==1);browser_compatible=false;browser_search="Beta";browser_filter();assert(browser_servers.size()==1&&browser_servers[0].name=="Beta");browser_search.clear();browser_filter();browser_index=0;favourite_servers.clear();browser_action(2042);std::vector<BrowserServer> remembered;browser_load("servers-favourites.cfg",remembered);assert(remembered.size()==1&&remembered[0].id=="fixture-id");server_password="old password";browser_action(2010);assert(page==21&&server_password.empty());open_panel(20);selected=10;confirm_control();assert(editing==6);editing=0;selected=11;confirm_control();assert(browser_sort==1);close_panel();
  mouse_navigation=false;focus_action=-1;focus_animation[2500]=123;button(1,1,100,"A",2500,true);button(110,1,100,"B",2501,true);assert(focus_animation[2500]==123&&focus_animation.count(2501));
  kfx_hub_new_match();kfx_hub_record_terminal(1,1);kfx_hub_record_departure(1);assert(kfx_hub_terminal_verified(1));kfx_hub_record_departure(2);kfx_hub_record_terminal(2,2);assert(!kfx_hub_terminal_verified(2));
+ std::string isolated=test_folder+"/profile-tests";SDL_CreateDirectory(isolated.c_str());setenv("KFX_BASE_USER_DATA_DIR",isolated.c_str(),1);open_panel(27);activate(1200);assert(content_profiles.size()==1);new_profile="test-mod";assert(create_profile());assert(access((isolated+"/ContentProfiles/test-mod/EnhancedData").c_str(),F_OK)==0);activate(1204);std::ifstream chosen(isolated+"/content-profile.cfg");std::string name;std::getline(chosen,name);assert(name=="test-mod");new_profile="../outside";assert(!create_profile());render_file="/tmp/kfx-content-profiles.png";kfx_options_draw();unsetenv("KFX_BASE_USER_DATA_DIR");
  puts("PASS: in-game pages, persistent options, pause ownership, multiplayer continues, physical-button chord remapping, legacy-save metadata and nondestructive backup restoration");
 }

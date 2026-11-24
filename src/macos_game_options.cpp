@@ -2,6 +2,9 @@
 #include "pre_inc.h"
 #include "macos_game_options.h"
 #include "macos_controls.h"
+#include "macos_save_compat.h"
+#include "macos_replay.h"
+#include "kfx/platform/PlatformManager.h"
 #include "bflib_joyst.h"
 #include "bflib_inputctrl.h"
 #include "bflib_planar.h"
@@ -54,6 +57,8 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <mutex>
+#include <filesystem>
 #include <dirent.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -177,7 +182,7 @@ void close_panel(){
 }
 void open_panel(int new_page){
     if(!kfx_controller_guide_visible){
-        owns_pause=game.game_kind==GKind_LocalGame && !network_is_active() && !(game.operation_flags&GOF_Paused);
+        owns_pause=game.game_kind==GKind_LocalGame && !game.packet_load_enable && !network_is_active() && !(game.operation_flags&GOF_Paused);
         if(owns_pause)game.operation_flags|=GOF_Paused;
         clear_controller_input();
         for(int key=0;key<KC_LIST_END;key++)if(lbKeyOn[key])keyboardControl(KActn_KEYUP,key,0,0);
@@ -314,15 +319,18 @@ bool copy_exclusive(const std::string &source,const std::string &dest){
     if(ferror(input)||fflush(output)!=0||fsync(fd)!=0)ok=false;fclose(input);if(fclose(output)!=0)ok=false;
     if(!ok)unlink(dest.c_str());return ok;
 }
-void load_selected(){
+void inspect_save();
+void load_selected(bool checked=false){
     if(network_is_active()){notice="Saved games cannot be loaded during multiplayer.";return;}
     if(saves.empty())return;Save entry=selected_save();long slot=entry.slot;
+    if(!checked){inspect_save();return;}
+    if(!kfx_save_preserve_before_load(entry.path.c_str())){notice="Could not preserve the save. Check disk space and permissions.";return;}
     if(entry.backup){
         slot=-1;
         for(int i=0;i<SAVE_SLOTS_LIMIT;i++){char name[32];snprintf(name,sizeof(name),"fx1g%04d.sav",i);std::string target=path(name);
             if(access(target.c_str(),F_OK)==0)continue;
             if(!copy_exclusive(entry.path,target)){notice="Backup restore failed. Existing saves are unchanged.";return;}
-            for(const char *suffix:{".png",".json"})if(access((entry.path+suffix).c_str(),R_OK)==0)copy_exclusive(entry.path+suffix,target+suffix);
+            for(const char *suffix:{".png",".json",".requirements"})if(access((entry.path+suffix).c_str(),R_OK)==0)copy_exclusive(entry.path+suffix,target+suffix);
             if(access((save_base(entry)+".label").c_str(),R_OK)==0)copy_exclusive(save_base(entry)+".label",target+".label");
             slot=i;break;
         }
@@ -374,6 +382,7 @@ void save_feedback_draw();
 void finish_edit();
 void load_network_profile();
 std::string autosave_status();
+bool play_tools_action(int);void play_tools_draw();void scan_profiles();bool create_profile();void play_tools_tick();extern std::string new_profile;extern int requirements_state;
 void change(int row,int direction){
     if(page==0){
         if(row==0)env_number("KFX_CONTROLLER_CURSOR_SPEED",std::clamp(kfx_controller_cursor_speed()+direction*.25,.25,3.0));
@@ -403,10 +412,11 @@ void change(int row,int direction){
     if(page==5 && row<2)notice="Choose Apply Display to use and save these display settings.";
 }
 void activate(int action){
-    if(browser_action(action)||feature_action(action)||polish_action(action))return;
+    if(play_tools_action(action)||browser_action(action)||feature_action(action)||polish_action(action))return;
     focus_action=action;
-    if(action==901){if(page==8)close_panel();else{int previous=page;if(previous==19)kfx_readiness_cancel();page=previous==26?15:previous>=21&&previous<=24?20:previous==25?22:previous==20?6:previous==15?0:previous==16?7:previous==17?12:previous==18?17:previous==19?6:previous==14?help_parent:previous==12?2:(previous>=9&&previous<=11?6:8);selected=0;
-        if(page==8){const int order[]={5,0,1,2,3,4,6,7,13};for(int i=0;i<9;i++)if(order[i]==previous)selected=i;}
+    if(action==901){if(page==8)close_panel();else{int previous=page;if(previous==19)kfx_readiness_cancel();page=previous==29?12:previous>=27?8:previous==26?15:previous>=21&&previous<=24?20:previous==25?22:previous==20?6:previous==15?0:previous==16?7:previous==17?12:previous==18?17:previous==19?6:previous==14?help_parent:previous==12?2:(previous>=9&&previous<=11?6:8);selected=0;
+        if(page==8){const int order[]={5,0,1,2,3,4,6,7,13};for(int i=0;i<9;i++)if(order[i]==previous)selected=i;
+            if(previous==27)selected=8;else if(previous==28)selected=9;else if(previous==13)selected=10;}
         else if(page==6)selected=previous==9?1:previous==10?2:3;else if(page==13)selected=3;
         editing=0;SDL_StopTextInput(SDL_GetKeyboardFocus());focus_action=-1;}return;}
     if(action>=100 && action<=107){page=action-100;selected=0;capturing=false;editing=0;preview_large=false;repeat_button=255;focus_action=-1;SDL_StopTextInput(SDL_GetKeyboardFocus());notice.clear();if(page==2)scan_saves();return;}
@@ -446,7 +456,7 @@ void start_edit(int field){editing=field;edit_selected=true;repeat_button=255;SD
 void start_diagnostics(){
     if(diagnostic_process){notice="A connection check is already running.";return;}
     const char *resources=getenv("KFX_APP_RESOURCES");std::string executable=resources?std::string(resources)+"/connection-check":std::string(SDL_GetBasePath()?SDL_GetBasePath():"")+"../connection-check";
-    const char *args[]={executable.c_str(),nullptr};diagnostic_process=SDL_CreateProcess(args,true);network_report.clear();
+    std::string port=std::to_string(enet_port);const char *args[]={executable.c_str(),"--service",kfx_hub_url(),"--endpoint",host_address.c_str(),"--port",port.c_str(),"--hosting",network_is_host()?"1":"0",nullptr};diagnostic_process=SDL_CreateProcess(args,true);network_report.clear();
     notice=diagnostic_process?"Checking lobby reachability and the local UDP port...":"Connection helper unavailable. Use the packaged Mac app for this check.";
 }
 bool valid_endpoint(const std::string &input,std::string &normalized){
@@ -465,7 +475,8 @@ std::string normalized_version(const std::string &value){
 void backup_step(int direction);
 void navigate(int direction){
     mouse_navigation=false;focus_action=-1;
-    if(page==8){if(direction>0){if(selected<8&&selected%4==3)selected=8;else if(selected==8)selected=9;else if(selected==9)selected=0;else selected++;}else{if(selected==9)selected=8;else if(selected==8)selected=3;else if(selected%4==0)selected=9;else selected--;}return;}
+    if(page==8){selected=(selected+direction+12)%12;return;}
+    if(page>=27&&page<=29){int count=page==27?6:page==28?6:requirements_state>=0?2:1;selected=(selected+direction+count)%count;return;}
     if(page==9){report_offset=std::max(0,report_offset+direction);return;}
     if(page==10)return;
     if(page==26){selected=(selected+direction+2)%2;return;}
@@ -479,7 +490,7 @@ void navigate(int direction){
     else if(page==3){if(!actions.empty())action_index=(action_index+direction+(int)actions.size())%actions.size();}
     else {int count=page==0||page==7?6:page==6?6:4;selected=(selected+direction+count)%count;}
 }
-void switch_tab(int direction){if(page==8){selected=(selected+direction+10)%10;return;}if(page>=9&&page<=11)page=6;else if(page==12)page=2;else if(page==14)page=help_parent;const int order[]={5,0,1,2,3,4,6,7,13};int index=0;for(int i=0;i<9;i++)if(order[i]==page)index=i;int next=order[(index+direction+9)%9];activate(next==13?800:100+next);}
+void switch_tab(int direction){if(page==8){selected=(selected+direction+12)%12;return;}if(page>=9&&page<=11)page=6;else if(page==12)page=2;else if(page==14)page=help_parent;const int order[]={5,0,1,2,3,4,6,7,13};int index=0;for(int i=0;i<9;i++)if(order[i]==page)index=i;int next=order[(index+direction+9)%9];activate(next==13?800:100+next);}
 
 void backup_step(int direction){
     if(saves.empty())return;
@@ -487,7 +498,10 @@ void backup_step(int direction){
 }
 void confirm_control(){
     mouse_navigation=false;
-    if(page==8){const int sections[]={5,0,1,2,3,4,6,7};activate(selected==8?800:selected==9?901:100+sections[selected]);return;}
+    if(page==8){const int sections[]={5,0,1,2,3,4,6,7};const int extra[]={1200,1300,800,901};activate(selected<8?100+sections[selected]:extra[selected-8]);return;}
+    if(page==27){const int choices[]={1201,1202,1203,1204,1205,1206};activate(choices[selected]);return;}
+    if(page==28){activate(selected==5?1306:1301+selected);return;}
+    if(page==29){activate(selected?1401:1402);return;}
     if((page==0||page==7)&&selected==5)activate(page==0?840:841);
     else if(page==0||page==1||page==7)change(selected,1);
     else if(page==5){if(selected==3)activate(500);else change(selected,1);}
@@ -528,19 +542,20 @@ void direction_control(int direction){
     else if(page==16&&selected>=4)activate(selected==4?(direction<0?890:891):(direction<0?892:893));
 }
 void append_input(std::string value){
-    std::string *target=editing==1?&save_search:editing==2?&peer_version:editing==4?&network_name:editing==5?&save_alias:editing==6?&browser_search:editing==7?&host_title:editing==8?&host_address:editing==9?&hub_edit:editing==10?&server_password:&join_ip;size_t limit=editing==1?64:editing==2?24:editing==4?19:editing==5?63:editing==6?64:editing==7?64:editing==8?120:editing==9?240:editing==10?31:120;
+    std::string *target=editing==1?&save_search:editing==2?&peer_version:editing==4?&network_name:editing==5?&save_alias:editing==6?&browser_search:editing==7?&host_title:editing==8?&host_address:editing==9?&hub_edit:editing==10?&server_password:editing==11?&new_profile:&join_ip;size_t limit=editing==1?64:editing==2?24:editing==4?19:editing==5?63:editing==6?64:editing==7?64:editing==8?120:editing==9?240:editing==10?31:editing==11?32:120;
     if(edit_selected){target->clear();edit_selected=false;}
     std::string clean;for(unsigned char c:value)if(c>=32&&c!=127&&(editing!=4||c<128))clean.push_back(c);
     size_t length=std::min(clean.size(),limit-target->size());while(length>0&&length<clean.size()&&(((unsigned char)clean[length]&0xc0)==0x80))length--;target->append(clean.data(),length);
     if(editing==1){save_index=0;filter_saves();}if(editing==6)browser_filter();
 }
 void delete_input(){
-    std::string *target=editing==1?&save_search:editing==2?&peer_version:editing==4?&network_name:editing==5?&save_alias:editing==6?&browser_search:editing==7?&host_title:editing==8?&host_address:editing==9?&hub_edit:editing==10?&server_password:&join_ip;
+    std::string *target=editing==1?&save_search:editing==2?&peer_version:editing==4?&network_name:editing==5?&save_alias:editing==6?&browser_search:editing==7?&host_title:editing==8?&host_address:editing==9?&hub_edit:editing==10?&server_password:editing==11?&new_profile:&join_ip;
     if(edit_selected){target->clear();edit_selected=false;}
     else if(!target->empty()){size_t index=target->size()-1;while(index>0&&(((unsigned char)(*target)[index]&0xc0)==0x80))index--;target->erase(index);}
     if(editing==1){save_index=0;filter_saves();}if(editing==6)browser_filter();
 }
 #include "macos_options_polish.inc"
+#include "macos_play_tools.inc"
 #include "macos_feature_tools.inc"
 #include "macos_server_browser.inc"
 
@@ -559,6 +574,7 @@ void kfx_save_feedback(int success,int automatic,const char *reason){
     if(success){if(automatic)last_autosave=time(nullptr);}else save_error=reason?reason:"Could not write the saved game.";
 }
 void kfx_save_display_label(long slot,const char *fallback,char *buffer,unsigned int size){if(!buffer||!size)return;char name[40];snprintf(name,sizeof(name),"fx1g%04ld.sav",slot);std::string alias=slot>=0&&slot<SAVE_SLOTS_LIMIT?read_save_alias(path(name)):"";snprintf(buffer,size,"%s",alias.empty()?(fallback?fallback:""):alias.c_str());}
+int kfx_options_select_replay(const char *file){if(!file||!*file||strlen(file)>=sizeof(game.packet_fname)||network_is_active()||game.game_kind!=GKind_Unset)return 0;std::lock_guard<std::mutex> lock(replay_selection_lock);replay_selection=file;return 1;}
 int kfx_options_community_action(int action){if(action<2000||action>2084)return 0;if(!kfx_controller_guide_visible)open_panel(20);return browser_action(action);}
 const char *kfx_options_community_status(void){static std::string output;output="{\"page\":"+std::to_string(page)+",\"servers\":"+std::to_string(browser_servers.size())+",\"status\":"+hub_quote(hub_message)+",\"account\":"+hub_quote(kfx_hub_account_name())+",\"busy\":"+(kfx_hub_busy()?"true":"false")+"}";return output.c_str();}
 void kfx_options_initialize(void){
@@ -598,7 +614,7 @@ void process_network(){
         if(count&&network_report.size()<16384)network_report.append(buffer,std::min(count,16384-network_report.size()));
         int code;if(SDL_WaitProcess(diagnostic_process,false,&code)){
             while(output&&(count=SDL_ReadIO(output,buffer,sizeof(buffer)))>0)if(network_report.size()<16384)network_report.append(buffer,std::min(count,16384-network_report.size()));
-            SDL_DestroyProcess(diagnostic_process);diagnostic_process=nullptr;notice=code==0?"Connection check finished. Peer reachability still requires a host/join test.":"Connection check finished with an error. See the report below.";
+            SDL_DestroyProcess(diagnostic_process);diagnostic_process=nullptr;notice=code==0?"Connection test finished. See service, relay and direct-hosting results below.":"Connection check finished with an error. See the report below.";
         }
     }
     if(pending_join){
@@ -628,7 +644,7 @@ void kfx_caption_speech(int sample){
 }
 
 void kfx_options_apply_display(void){
-    feature_tick();browser_tick();process_network();
+    play_tools_tick();feature_tick();browser_tick();process_network();
     if(display_confirmation && SDL_GetTicks()>=display_deadline){display_confirmation=false;rollback_display=true;}
     if(rollback_display){
         rollback_display=false;display_confirmation=false;
@@ -663,7 +679,7 @@ void kfx_options_display(struct GuiButton *button){(void)button;open_panel(5);}
 void kfx_options_hide(void){if(kfx_controller_guide_visible)close_panel();}
 void kfx_options_open(struct GuiButton *button){(void)button;open_panel(8);}
 void kfx_options_preview(int number){capture_preview=true;kfx_options_show_page(number);}
-void kfx_options_show_page(int number){open_panel(std::clamp(number,0,26));if(page==2||page==12||page==17||page==18)scan_saves();if(page==20){browser_filter();browser_refresh();}if(page==25)hub_edit=kfx_hub_url();if(page==24)community_request();}
+void kfx_options_show_page(int number){open_panel(std::clamp(number,0,29));if(page==2||page==12||page==17||page==18)scan_saves();if(page==20){browser_filter();browser_refresh();}if(page==25)hub_edit=kfx_hub_url();if(page==24)community_request();}
 void kfx_options_button(struct GuiButton *button){
     if(frontend_menu_state==FeSt_FEOPTIONS)frontend_draw_button(button,1,"More Options",Lb_TEXT_HALIGN_CENTER);
     else{
@@ -672,6 +688,13 @@ void kfx_options_button(struct GuiButton *button){
     }
 }
 bool kfx_options_event(const SDL_Event *event){
+    if(kfx_replay_available()){
+        if(event->type==SDL_EVENT_KEY_DOWN&&!event->key.repeat){
+            if(event->key.key==SDLK_F10){if(kfx_controller_guide_visible&&page==28)close_panel();else open_panel(28);return true;}
+            if(!kfx_controller_guide_visible){if(event->key.key==SDLK_SPACE){kfx_replay_control(0);return true;}if(event->key.key==SDLK_LEFTBRACKET){kfx_replay_control(-1);return true;}if(event->key.key==SDLK_RIGHTBRACKET){kfx_replay_control(1);return true;}if(event->key.key==SDLK_B){kfx_replay_control(2);return true;}}
+        }
+        if(event->type==SDL_EVENT_GAMEPAD_BUTTON_DOWN&&controller_owns_event(event->gbutton.which)&&event->gbutton.button==SDL_GAMEPAD_BUTTON_START&&(!kfx_controller_guide_visible||page==28)){if(kfx_controller_guide_visible)close_panel();else open_panel(28);return true;}
+    }
     if(feature_event(event))return true;
     if(event->type==SDL_EVENT_WINDOW_FOCUS_LOST || (event->type==SDL_EVENT_GAMEPAD_REMOVED && controller_owns_event(event->gdevice.which)))repeat_button=255;
     if(event->type==SDL_EVENT_GAMEPAD_BUTTON_UP && controller_owns_event(event->gbutton.which) && event->gbutton.button==repeat_button)repeat_button=255;
@@ -742,13 +765,13 @@ void kfx_options_draw(void){
     if(!canvas)canvas=SDL_CreateSurface(WIDTH,HEIGHT,SDL_PIXELFORMAT_RGBA32);if(!canvas)return;
     if(label_model<0){int model=controller_device_model();if(model>=0)kfx_controller_guide_ps5=model;}else kfx_controller_guide_ps5=label_model;
     update_hover();hits.clear();background();
-    const char *names[]={"Controller Options","Performance","Saved Games","Remap Controller","Controller Guide","Display Options","Network Options","Accessibility","More Options","Connection Test","Game Versions","Join by IP","Saved Game","About & Diagnostics","Saving Help","Connected Controllers","Accessibility Presets","Manage Saved Game","Delete Saved Game","Multiplayer Readiness","Server Browser","Server Details","Community Account","Host Public Game","Community","Community Service","Controller Test"};
-    title(names[std::clamp(page,0,26)]);
+    const char *names[]={"Controller Options","Performance","Saved Games","Remap Controller","Controller Guide","Display Options","Network Options","Accessibility","More Options","Connection Test","Game Versions","Join by IP","Saved Game","About & Diagnostics","Saving Help","Connected Controllers","Accessibility Presets","Manage Saved Game","Delete Saved Game","Multiplayer Readiness","Server Browser","Server Details","Community Account","Host Public Game","Community","Community Service","Controller Test","Content Profiles","Replay Controls","Save Requirements"};
+    title(names[std::clamp(page,0,29)]);
     if(page==8){
         const char *sections[]={"Display","Controller","Performance","Saved Games","Remap","Controller Guide","Network","Accessibility"};const int pages[]={5,0,1,2,3,4,6,7};
         for(int i=0;i<8;i++)button(i<4?50:338,104+(i%4)*72,252,sections[i],100+pages[i],selected==i,46);
-        button(134,382,372,"About & Diagnostics",800,selected==8,34);
-        button(134,426,372,"Return to Options",901,selected==9,42);
+        button(24,382,184,"Content",1200,selected==8,34);button(228,382,184,"Replays",1300,selected==9,34);button(432,382,184,"About",800,selected==10,34);
+        button(134,426,372,"Return to Options",901,selected==11,42);
     }else if(page==5){
         frame(24,90,592,166);row(0,"Display mode",display_mode==1?"Fullscreen":"Windowed");row(1,"Window size",std::to_string(resolutions[resolution_index][0])+" x "+std::to_string(resolutions[resolution_index][1]));row(2,"Lock mouse in window",kfx_window_cursor_lock?"On":"Off");
         button(134,282,372,"Apply Display",500,selected==3,46);
@@ -770,7 +793,7 @@ void kfx_options_draw(void){
             Save entry=selected_save();centered(83,short_text(entry.title,36),24);
             if(preview_path!=entry.path){SDL_DestroySurface(preview);preview=IMG_Load((entry.path+".png").c_str());preview_path=entry.path;}
             frame(24,120,426,194);if(preview){double scale=std::min(414.0/preview->w,182.0/preview->h);SDL_Rect to={30+(414-(int)(preview->w*scale))/2,126+(182-(int)(preview->h*scale))/2,(int)(preview->w*scale),(int)(preview->h*scale)};SDL_BlitSurfaceScaled(preview,nullptr,canvas,&to,SDL_SCALEMODE_LINEAR);}else text(62,196,"No preview available",22,350);
-            text(472,132,"Slot "+std::to_string(entry.slot),22,144);button(472,186,144,"Enlarge",307);button(472,304,144,"Manage",842,false,36);text(472,254,entry.backup?"Backup "+std::to_string(entry.backup):automatic_save(entry)?"Automatic":"Manual",20,144);
+            text(472,132,"Slot "+std::to_string(entry.slot),22,144);button(472,176,144,"Enlarge",307,false,36);button(472,222,144,"Check",1400,false,36);button(472,268,144,"Manage",842,false,36);text(472,306,entry.backup?"Backup "+std::to_string(entry.backup):automatic_save(entry)?"Automatic":"Manual",20,144);
             text(24,323,entry.campaign+" - Level "+std::to_string(entry.level),20,426);text(24,350,entry.date+"  |  "+(entry.seconds>=0?std::to_string(entry.seconds/60)+" min":"Time unknown"),18,592);
             const Save &group=saves[save_index];if(!group.backup)button(24,376,140,"Current",340,backup_choice==0,36);
             for(int number=1;number<=3;number++){bool exists=false;for(const Save &older:all_saves)if(older.slot==group.slot&&older.backup==number)exists=true;if(exists)button(24+number*148,376,140,"Backup "+std::to_string(number),340+number,entry.backup==number,36);}
@@ -812,8 +835,8 @@ void kfx_options_draw(void){
     }else if(page==11){
         centered(106,"Hostname / IP address and UDP port",24);button(64,163,512,join_ip+(editing==3?"|":""),602,selected==0||editing==3,46);button(134,250,372,"Join Game",603,selected==1,46);centered(330,"Example: 192.168.1.20:5556",22);centered(368,"The host must have a LAN lobby open.",20);
     }
-    polish_draw_page();feature_draw();browser_draw();
-    if(page!=8&&page!=12)button(134,426,372,page==26?"Return to Devices":page==25?"Return to Account":page>=21&&page<=24?"Return to Browser":page==20?"Return to Network":page==15?"Return to Controller":page==16?"Return to Accessibility":page==17?"Return to Save":page==18?"Return to Management":page==19?"Return to Network":page==14?(help_parent==13?"Return to About":"Return to Saves"):page>=9&&page<=11?"Return to Network":"Return to Sections",901,false,42);
+    polish_draw_page();feature_draw();browser_draw();play_tools_draw();
+    if(page!=8&&page!=12)button(134,426,372,page==29?"Return to Saved Game":page==26?"Return to Devices":page==25?"Return to Account":page>=21&&page<=24?"Return to Browser":page==20?"Return to Network":page==15?"Return to Controller":page==16?"Return to Accessibility":page==17?"Return to Save":page==18?"Return to Management":page==19?"Return to Network":page==14?(help_parent==13?"Return to About":"Return to Saves"):page>=9&&page<=11?"Return to Network":"Return to Sections",901,false,42);
     if(!notice.empty()&&page<20&&page!=8&&page!=12&&page!=4&&page!=16&&page!=19)status_line(notice);
     if(preview_large&&page==12&&!saves.empty()){
         hits.clear();background();frame(18,82,604,328);if(preview){double scale=std::min(592.0/preview->w,316.0/preview->h);SDL_Rect to={24+(592-(int)(preview->w*scale))/2,88+(316-(int)(preview->h*scale))/2,(int)(preview->w*scale),(int)(preview->h*scale)};SDL_BlitSurfaceScaled(preview,nullptr,canvas,&to,SDL_SCALEMODE_LINEAR);}else centered(225,"No preview available",26);button(134,426,372,"Return to Saved Game",308,false,42);
@@ -828,6 +851,7 @@ void kfx_options_draw(void){
 }
 
 #else
+int kfx_options_select_replay(const char*){return 0;}
 int kfx_options_community_action(int){return 0;}
 const char *kfx_options_community_status(void){return "{}";}
 void kfx_save_display_label(long,const char *fallback,char *buffer,unsigned int size){if(buffer&&size)snprintf(buffer,size,"%s",fallback?fallback:"");}

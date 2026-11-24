@@ -1,4 +1,9 @@
 ## Features
+- Check saved-game engine versions and content before loading; preserve a
+  content-addressed copy and record campaign/map/configuration/mod requirements.
+- Add offline replay pause, 0.5x–4x speed, persistent bookmarks and a local file picker.
+- Add restart-safe content profiles with separate runtimes, saves and settings.
+- Add service/relay readiness and requester-pinned incoming UDP connection tests.
 - Add an optional community service and original-style in-game server browser with
   Internet, LAN, favourites, recent connections, search, sorting and engine filters.
 - Add hostname/IPv6 direct joining, password entry, no-slot latency queries and
@@ -17,6 +22,7 @@
 - Connection diagnostics, version comparison and direct IPv4 joining.
 
 ## Enhancements
+- Remove all five hosted GitHub Actions workflows; CI/runners are deferred.
 - Make source-only macOS builds fetch pinned vendor source and packaging art locally.
 - Add Developer ID signing preflight before package assembly.
 - Add bounded frame-time/CPU/memory capture and sleeping macOS frame waits.

@@ -17,6 +17,7 @@
  */
 /******************************************************************************/
 #include "pre_inc.h"
+#include "macos_save_compat.h"
 #include "game_saves.h"
 #include "macos_savefile.h"
 #include "macos_game_options.h"
@@ -376,11 +377,11 @@ static void save_json_string(FILE *file,const char *text,size_t capacity)
     }
     fputc('"',file);
 }
-static void save_preview(const char *destination,long slot)
+static void save_preview(const char *destination,long slot,TbBool rotate)
 {
     char from[1200],to[1200];
-    for(int ext=0;ext<2;ext++){
-        const char *suffix=ext?"png":"json";
+    for(int ext=0;rotate&&ext<3;ext++){
+        const char *suffix=ext==2?"requirements":ext?"png":"json";
         for(int n=3;n>=1;n--){
             if(n==1)snprintf(from,sizeof(from),"%s.%s",destination,suffix);
             else snprintf(from,sizeof(from),"%s.backup%d.%s",destination,n-1,suffix);
@@ -399,6 +400,7 @@ static void save_preview(const char *destination,long slot)
     }
     snprintf(to,sizeof(to),"%s.png",destination);
     RendererScheduleScreenshot(to,1);
+    kfx_save_write_requirements(destination,&save_game_catalogue[slot]);
 }
 TbBool save_game(long slot_num)
 {
@@ -408,9 +410,10 @@ TbBool save_game(long slot_num)
         kfx_save_feedback(0,0,"No free save slot is available.");
         return false;
     }
-    char destination[1024], temporary[1100];
+    char destination[1024], temporary[1100];TbBool rotate_preview=false;
     snprintf(destination,sizeof(destination),"%s",prepare_file_fmtpath(FGrp_Save, saved_game_filename, slot_num));
 #if defined(__APPLE__)
+    rotate_preview=LbFileExists(destination);
     if(kfx_save_is_protected(destination)){kfx_save_feedback(0,0,"This favourite is protected. Unprotect it before overwriting.");return false;}
     snprintf(temporary,sizeof(temporary),"%s.pending",destination);
     const char *fname=temporary;
@@ -446,7 +449,7 @@ TbBool save_game(long slot_num)
 #else
     LbFileClose(handle);
 #endif
-    save_preview(destination,slot_num);
+    save_preview(destination,slot_num,rotate_preview);
     kfx_save_feedback(1,strncmp(save_game_catalogue[slot_num].textname,"Automatic save ",15)==0,NULL);
     api_event("GAME_SAVED");
     return true;
@@ -478,6 +481,11 @@ TbBool load_game(long slot_num)
         ERRORLOG("Outranged slot index %d",(int)slot_num);
         return false;
     }
+#if defined(__APPLE__)
+    char source[2048],compatibility[512];snprintf(source,sizeof(source),"%s",prepare_file_fmtpath(FGrp_Save,saved_game_filename,slot_num));
+    if(kfx_save_check_requirements(source,compatibility,sizeof(compatibility))<0){kfx_save_feedback(0,0,compatibility);return false;}
+    if(!kfx_save_preserve_before_load(source)){kfx_save_feedback(0,0,"Could not preserve the save before loading. Check disk space and permissions.");return false;}
+#endif
     TbFileHandle fh;
 //  unsigned char buf[14];
 //  char cmpgn_fname[CAMPAIGN_FNAME_LEN];

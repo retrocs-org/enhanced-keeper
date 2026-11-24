@@ -4,6 +4,7 @@
 extern "C" {
 #endif
 struct GuiButton;
+int kfx_options_select_replay(const char *file);
 int kfx_options_community_action(int action);
 const char *kfx_options_community_status(void);
 void kfx_options_initialize(void);

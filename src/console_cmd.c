@@ -522,6 +522,7 @@ TbBool cmd_mac_display_keep(PlayerNumber player,char *args){return kfx_options_c
 TbBool cmd_mac_display_revert(PlayerNumber player,char *args){return kfx_options_confirm_display(0);}
 TbBool cmd_mac_display(PlayerNumber plyr_idx,char *args){int fullscreen,width,height;return args && sscanf(args,"%d %d %d",&fullscreen,&width,&height)==3 && kfx_options_set_display(fullscreen,width,height);}
 
+TbBool cmd_mac_replay_open(PlayerNumber player,char *args){return args&&kfx_options_select_replay(args);}
 TbBool cmd_mac_options(PlayerNumber plyr_idx,char *args){if(args&&strstr(args,"capture"))kfx_options_preview(atoi(args));else kfx_options_show_page(args?atoi(args):0);return true;}
 
 TbBool cmd_frametime(PlayerNumber plyr_idx, char * args)
@@ -2761,6 +2762,7 @@ static const struct ConsoleCommand console_commands[] = {
     { "fps", cmd_fps_turn, NULL },
     { "fps.draw", cmd_fps_draw, NULL },
     { "mac.options", cmd_mac_options, NULL },
+    { "mac.replay.open", cmd_mac_replay_open, NULL },
     { "mac.display", cmd_mac_display, NULL },
     { "mac.display.keep", cmd_mac_display_keep, NULL },
     { "mac.display.revert", cmd_mac_display_revert, NULL },

@@ -184,3 +184,10 @@ build. Packaging runs this check before copying game data or compiling helpers.
 If it fails, unlock the keychain containing the Developer ID private key and
 allow codesign access through Keychain Access. The scripts do not change ACLs,
 unlock keychains with stored passwords or disable signing verification.
+
+## Local checks only
+
+GitHub Actions workflows have been removed. No GitLab CI configuration or hosted
+runner configuration is supplied. Build, test and release commands remain manual;
+CI and runner provisioning are deferred. The local release command invokes the
+native and service checks directly, without registering or contacting a runner.

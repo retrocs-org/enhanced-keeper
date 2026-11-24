@@ -1,16 +1,29 @@
 #include "../../src/game_saves.h"
 #import <Cocoa/Cocoa.h>
+#import <CommonCrypto/CommonDigest.h>
 #include <spawn.h>
 #include <sys/wait.h>
 extern char **environ;
 
 static NSFileManager *FM(void) { return NSFileManager.defaultManager; }
-static NSString *Prefs(void) {
-    NSString *override = NSProcessInfo.processInfo.environment[@"KFX_USER_DATA_DIR"];
-    return override.length ? override : [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Application Support/keeperfx/keeperfx"];
+static NSString *BasePrefs(void) {
+    NSDictionary *env=NSProcessInfo.processInfo.environment;
+    NSString *override=env[@"KFX_BASE_USER_DATA_DIR"]?:env[@"KFX_USER_DATA_DIR"];
+    return override.length?override:[NSHomeDirectory() stringByAppendingPathComponent:@"Library/Application Support/keeperfx/keeperfx"];
 }
+static NSString *ProfileID(void) {
+    NSString *value=NSProcessInfo.processInfo.environment[@"KFX_CONTENT_PROFILE"];
+    if(!value)value=[NSString stringWithContentsOfFile:[BasePrefs() stringByAppendingPathComponent:@"content-profile.cfg"] encoding:NSUTF8StringEncoding error:nil];
+    value=[value stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    NSCharacterSet *invalid=[[NSCharacterSet characterSetWithCharactersInString:@"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"] invertedSet];
+    if(!value.length||value.length>32||[value rangeOfCharacterFromSet:invalid].location!=NSNotFound)return @"default";
+    if(![value isEqual:@"default"]){NSString *parent=[BasePrefs() stringByAppendingPathComponent:@"ContentProfiles"],*folder=[parent stringByAppendingPathComponent:value];
+        for(NSString *path in @[parent,folder])if([[[FM() attributesOfItemAtPath:path error:nil] objectForKey:NSFileType] isEqual:NSFileTypeSymbolicLink])return @"default";}
+    return value;
+}
+static NSString *Prefs(void) { NSString *name=ProfileID();return [name isEqual:@"default"]?BasePrefs():[[BasePrefs() stringByAppendingPathComponent:@"ContentProfiles"] stringByAppendingPathComponent:name]; }
 static NSString *Runtime(void) { return [Prefs() stringByAppendingPathComponent:@"GameData"]; }
-static NSString *Owned(void) { return [Prefs() stringByAppendingPathComponent:@"OriginalData"]; }
+static NSString *Owned(void) { return [BasePrefs() stringByAppendingPathComponent:@"OriginalData"]; }
 static NSString *Resources(void) {
     return NSProcessInfo.processInfo.environment[@"KFX_RESOURCES_DIR"] ?: NSBundle.mainBundle.resourcePath;
 }
@@ -39,6 +52,7 @@ static BOOL ValidOriginal(NSString *base) {
     return YES;
 }
 static BOOL Directory(NSString *path, NSError **error) {
+    if([[[FM() attributesOfItemAtPath:path error:nil] objectForKey:NSFileType] isEqual:NSFileTypeSymbolicLink]){if(error)*error=[NSError errorWithDomain:@"KeeperFX" code:4 userInfo:@{NSLocalizedDescriptionKey:@"A profile directory is linked. Use a regular directory to keep saves and content isolated."}];return NO;}
     return [FM() createDirectoryAtPath:path withIntermediateDirectories:YES attributes:nil error:error];
 }
 static BOOL CopyFile(NSString *source, NSString *destination, NSError **error) {
@@ -85,23 +99,52 @@ static BOOL Import(NSString *selection, NSError **error) {
 static NSString *AssetVersion(void) {
     return [NSString stringWithContentsOfFile:[Resources() stringByAppendingPathComponent:@"asset-version.txt"] encoding:NSUTF8StringEncoding error:nil] ?: @"dev";
 }
+static BOOL ReservedRuntimePath(NSString *name) {
+    NSString *first=name.pathComponents.firstObject;
+    return [@[@"save",@"scrshots",@"keeperfx",@".asset-version",@".profile-overlay-files.json"] containsObject:first];
+}
+static NSString *SafeRuntimePath(NSString *relative) {
+    if(relative.isAbsolutePath||![relative.stringByStandardizingPath isEqual:relative]||[relative.pathComponents containsObject:@".."]||[relative.pathComponents containsObject:@"."]||ReservedRuntimePath(relative))return nil;
+    NSString *path=Runtime();for(NSString *part in relative.pathComponents){path=[path stringByAppendingPathComponent:part];if([[[FM() attributesOfItemAtPath:path error:nil] objectForKey:NSFileType] isEqual:NSFileTypeSymbolicLink])return nil;}return path;
+}
+static NSArray<NSString *> *OverlayFiles(void) {
+    NSString *root=[Prefs() stringByAppendingPathComponent:@"EnhancedData"];NSMutableArray *files=[NSMutableArray new];
+    for(NSString *name in [FM() enumeratorAtPath:root]){
+        if([name isEqual:@"keeperfx.cfg"]||ReservedRuntimePath(name))continue;
+        if([[[FM() attributesOfItemAtPath:[root stringByAppendingPathComponent:name] error:nil] objectForKey:NSFileType] isEqual:NSFileTypeRegular])[files addObject:name];
+    }
+    return [files sortedArrayUsingSelector:@selector(compare:)];
+}
+static NSString *OverlayVersion(NSArray<NSString *> *files) {
+    CC_SHA256_CTX context;CC_SHA256_Init(&context);NSString *root=[Prefs() stringByAppendingPathComponent:@"EnhancedData"];
+    for(NSString *name in files){NSDictionary *attrs=[FM() attributesOfItemAtPath:[root stringByAppendingPathComponent:name] error:nil];NSString *line=[NSString stringWithFormat:@"%@:%@:%.9f\n",name,attrs[NSFileSize],[attrs[NSFileModificationDate] timeIntervalSince1970]];NSData *data=[line dataUsingEncoding:NSUTF8StringEncoding];CC_SHA256_Update(&context,data.bytes,(CC_LONG)data.length);}
+    unsigned char bytes[CC_SHA256_DIGEST_LENGTH];CC_SHA256_Final(bytes,&context);NSMutableString *result=[NSMutableString new];for(int i=0;i<CC_SHA256_DIGEST_LENGTH;i++)[result appendFormat:@"%02x",bytes[i]];return result;
+}
 static BOOL Prepare(NSError **error) {
     for (NSString *sub in @[@"", @"save", @"scrshots", @"GameData"])
         if (!Directory([Prefs() stringByAppendingPathComponent:sub], error)) return NO;
+    NSArray *overlay=OverlayFiles();NSString *desired=[NSString stringWithFormat:@"%@\nOverlay:%@\nOriginal:%.9f",AssetVersion(),OverlayVersion(overlay),[[[FM() attributesOfItemAtPath:Owned() error:nil] objectForKey:NSFileModificationDate] timeIntervalSince1970]];
     NSString *stamp = [Runtime() stringByAppendingPathComponent:@".asset-version"];
     NSString *old = [NSString stringWithContentsOfFile:stamp encoding:NSUTF8StringEncoding error:nil];
-    if (![old isEqual:AssetVersion()]) {
+    if (![old isEqual:desired]) {
+        NSString *manifest=[Runtime() stringByAppendingPathComponent:@".profile-overlay-files.json"];
+        NSData *record=[NSData dataWithContentsOfFile:manifest];id previous=record?[NSJSONSerialization JSONObjectWithData:record options:0 error:nil]:nil;
+        if([previous isKindOfClass:NSArray.class])for(id item in previous){
+            if(![item isKindOfClass:NSString.class]||[item isEqual:@"keeperfx.cfg"])continue;
+            NSString *destination=SafeRuntimePath(item);if(destination&&[[[FM() attributesOfItemAtPath:destination error:nil] objectForKey:NSFileType] isEqual:NSFileTypeRegular])[FM() removeItemAtPath:destination error:nil];
+        }
         NSString *assets = [Resources() stringByAppendingPathComponent:@"game"];
         for (NSString *base in @[assets, Owned(), [Prefs() stringByAppendingPathComponent:@"EnhancedData"]]) {
             NSDirectoryEnumerator *files = [FM() enumeratorAtPath:base];
             for (NSString *relative in files) {
-                if ([relative isEqual:@"keeperfx"] || [relative hasPrefix:@"save/"] || [relative hasPrefix:@"scrshots/"]) continue;
+                if (ReservedRuntimePath(relative)) continue;
                 NSString *source = [base stringByAppendingPathComponent:relative];
                 NSDictionary *attrs = [FM() attributesOfItemAtPath:source error:error];
                 if (!attrs) return NO;
                 if ([attrs[NSFileType] isEqual:NSFileTypeDirectory]) continue;
                 if (![attrs[NSFileType] isEqual:NSFileTypeRegular]) continue;
-                NSString *dest = [Runtime() stringByAppendingPathComponent:relative];
+                NSString *dest = SafeRuntimePath(relative);
+                if(!dest){if(error)*error=[NSError errorWithDomain:@"KeeperFX" code:3 userInfo:@{NSLocalizedDescriptionKey:@"The runtime contains a linked or invalid content path. Remove links from GameData before preparing this profile."}];return NO;}
                 if ([relative isEqual:@"keeperfx.cfg"] && [FM() fileExistsAtPath:dest]) continue;
                 if (!CopyFile(source, dest, error)) return NO;
             }
@@ -110,7 +153,9 @@ static BOOL Prepare(NSError **error) {
             if (error) *error = [NSError errorWithDomain:@"KeeperFX" code:2 userInfo:@{NSLocalizedDescriptionKey:@"Original Dungeon Keeper files have not been imported. Choose Import Original Game first."}];
             return NO;
         }
-        if (![AssetVersion() writeToFile:stamp atomically:YES encoding:NSUTF8StringEncoding error:error]) return NO;
+        NSData *recorded=[NSJSONSerialization dataWithJSONObject:overlay options:0 error:error];
+        if(!recorded||![recorded writeToFile:manifest options:NSDataWritingAtomic error:error])return NO;
+        if (![desired writeToFile:stamp atomically:YES encoding:NSUTF8StringEncoding error:error]) return NO;
     }
     return YES;
 }
@@ -160,6 +205,9 @@ static pid_t Launch(NSArray<NSString *> *extra, NSNumber *slot, NSError **error)
     pid_t pid = -1;
     NSMutableDictionary *environment=[NSProcessInfo.processInfo.environment mutableCopy];
     environment[@"KFX_APP_RESOURCES"]=Resources();
+    environment[@"KFX_BASE_USER_DATA_DIR"]=BasePrefs();
+    environment[@"KFX_USER_DATA_DIR"]=Prefs();
+    environment[@"KFX_CONTENT_PROFILE"]=ProfileID();
     if(slot)environment[@"KFX_LOAD_SAVE_SLOT"]=slot.stringValue;else[environment removeObjectForKey:@"KFX_LOAD_SAVE_SLOT"];
     char **envp=calloc(environment.count+1,sizeof(char *));NSUInteger envIndex=0;
     if(!envp){for(NSUInteger i=0;i<args.count;i++)free(argv[i]);free(argv);return -1;}

@@ -12,6 +12,7 @@
  */
 /******************************************************************************/
 #include "pre_inc.h"
+#include "macos_replay.h"
 
 #if defined(__APPLE__)
 #include <unistd.h>
@@ -1651,7 +1652,7 @@ void update_gameplay_delta_time()
         prev = now;
 
         const long double seconds = max(ns / 1e9L, 0.L);
-        const long double turns = seconds * turns_per_second;
+        const long double turns = seconds * turns_per_second * kfx_replay_speed();
         const long double frames = seconds * fps_limit_current;
 
         game.process_turn_time += turns * multiplayer_clock_adjust * max(game.frame_skip, 1);

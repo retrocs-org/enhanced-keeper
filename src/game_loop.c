@@ -12,6 +12,7 @@
 /******************************************************************************/
 #include "pre_inc.h"
 #include "net_hub.h"
+#include "macos_replay.h"
 #include "kfx/platform/PlatformManager.h"
 #include "kfx/renderer/RendererManager.h"
 #include "keeperfx.hpp"
@@ -544,6 +545,8 @@ void network_yield_waiting_gameplay_packets()
 
 static void gameplay_loop_logic()
 {
+    if(kfx_replay_should_hold()){do_draw=true;poll_inputs();api_update_server();update_gameplay_delta_time();game.process_turn_time=0;SDL_Delay(8);return;}
+
     if(flag_is_set(start_params.debug_flags, DFlg_PauseAtGameTurn))
     {
         static GameTurn previous_gameturn = 0;
@@ -642,7 +645,7 @@ static TbBool keeper_wait_for_next_turn(void)
         if (game.frame_skip > 0)
             num_fps *= game.frame_skip;
 
-        tick_ns_one_frame = tick_ns_one_sec/num_fps;
+        tick_ns_one_frame = tick_ns_one_sec/num_fps/kfx_replay_speed();
     }
 
     if (tick_ns_one_frame >= 0) {

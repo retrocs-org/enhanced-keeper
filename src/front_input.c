@@ -17,6 +17,7 @@
  */
 /******************************************************************************/
 #include "pre_inc.h"
+#include "macos_replay.h"
 #include "macos_game_options.h"
 #include "net_hub.h"
 #include "macos_controls.h"
@@ -2876,7 +2877,7 @@ static short get_inputs(void)
 {
     move_camera_this_turn = game.frame_skip == 0 || game.play_gameturn % game.frame_skip == 0;
 
-    if ((game.mode_flags & MFlg_IsDemoMode) != 0)
+    if ((game.mode_flags & MFlg_IsDemoMode) != 0 && !kfx_replay_available())
     {
         SYNCDBG(5,"Starting for demo mode");
         load_packets_for_turn(game.pckt_gameturn);

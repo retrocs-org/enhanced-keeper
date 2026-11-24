@@ -3,7 +3,7 @@
 KeeperFX has two independent build paths. Pick either one - they don't need to
 agree, and most contributors will only ever touch one:
 
-- **Makefile** - the canonical build. CI and releases use it. GCC/MinGW-w64
+- **Makefile** - the canonical build. It is available for manual builds. GCC/MinGW-w64
   (i686), same as it's always been.
 - **CMake** - an alternative build for the same code, via `CMakeLists.txt` +
   `CMakePresets.json`. Same GCC/MinGW-w64 toolchain is the default preset
@@ -86,7 +86,7 @@ personal) and set `CMAKE_INSTALL_PREFIX` there instead.
 
 ## What's out of scope here
 
-- CI still builds via the Makefile only; this doesn't change that.
+- Builds and tests are run locally; CI and hosted runners are deferred.
 - No new CMake toolchains were added - only VS Code / VS 2026 wiring for the
   presets that already existed (MSVC x86, Clang-cl x86, MinGW32 x86).
 - Make and CMake are not unified into one build; both stay independent,

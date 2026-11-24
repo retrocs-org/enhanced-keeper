@@ -97,3 +97,22 @@ results, tournament advancement, stream offsets, cookies and CSRF.
 a player joining through automatic relay fallback and a real spectator, all on
 loopback with isolated game profiles. It requires imported assets and a built
 engine and stops only its own processes.
+
+## Save checks, content profiles, replay playback and connectivity (manual)
+
+```sh
+python3 macos/tests/check-play-tools.py
+python3 macos/tests/run-ingame-options-tests.py
+python3 macos/tests/test-connectivity.py
+KFX_TEST_BOOTSTRAP=/path/to/new/KeeperFXE python3 macos/tests/test-importer-fixtures.py
+python3 macos/tests/test-playback-integration.py
+```
+
+Set `KFX_MAC_DEPS_ROOT` if using a separate dependency cache. The native tests
+exercise version/content mismatches, immutable copies, bookmark persistence and
+network isolation. The profile importer fixture checks overlay updates/removal
+and rejects linked destinations. The real playback test uses a temporary imported
+profile to save/reload a dungeon, record a replay and compare world checksums at
+a bookmark reached at different speeds. It also verifies that pause holds turns
+and the replay controls do not alter recorded simulation state. Imported assets
+and captured files remain local. These commands are not hosted CI jobs.

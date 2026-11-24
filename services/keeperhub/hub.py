@@ -21,6 +21,30 @@ def endpoint(value):
     require(match and 0<int(match[2])<65536,'Use hostname:port or [IPv6]:port')
     return value
 
+def udp_peer_probe(address, peer):
+    """Probe only the requester's public address; never arbitrary/internal targets."""
+    value=endpoint(address)
+    host,port=value.rsplit(':',1);host=host.strip('[]');port=int(port)
+    try:
+        owner=ipaddress.ip_address(peer)
+        if not owner.is_global or owner.is_multicast or owner.is_reserved:
+            return {'reachable':None,'reason':'A loopback/LAN service cannot verify Internet reachability. Use a public service or a second machine.'}
+        destinations=socket.getaddrinfo(host,port,type=socket.SOCK_DGRAM)
+        require(destinations and all(ipaddress.ip_address(row[4][0])==owner for row in destinations),'The endpoint must resolve only to this connection’s public address. Check DNS/NAT settings.',400)
+        family,kind,protocol,_,destination=destinations[0]
+        nonce=secrets.token_hex(16).encode();packet=b'KFXQ1 '+nonce
+        with socket.socket(family,kind,protocol) as sock:
+            sock.settimeout(.8);sock.connect(destination);sock.send(packet)
+            try:reachable=sock.recv(128)==b'KFXA1 '+nonce
+            except (socket.timeout,ConnectionError,OSError):reachable=False
+        return {'reachable':reachable,'reason':'Incoming UDP challenge answered by the game.' if reachable else 'No valid UDP reply. Open a lobby, then retry. Firewall, NAT or CGNAT may block direct hosting; try relay.'}
+    except socket.gaierror:
+        raise Problem(400,'The host name could not be resolved') from None
+    except ValueError:
+        raise Problem(400,'Invalid peer address') from None
+    except OSError:
+        return {'reachable':False,'reason':'The UDP probe could not reach the host. Open a lobby or try relay.'}
+
 class Relay:
     """One UDP socket per client. Both endpoints authenticate from their ENet socket.
     Forwarding only begins after two registrations; this is not an open UDP proxy.
@@ -122,6 +146,11 @@ class Hub:
     def handle(self,method,path,data,token='',peer='local',csrf='',cookie=False):
         now=self.clock();url=urlsplit(path);route=url.path;parts=route.strip('/').split('/');query=parse_qs(url.query)
         require(method in ('GET','POST'),'Unsupported method',405)
+        if method=='POST' and route=='/api/connectivity':
+            self.limit(peer,'connectivity',5,60)
+            result=udp_peer_probe(data.get('endpoint',''),peer)
+            return {**result,'relay_available':bool(self.relay and self.relay.alive and self.relay.thread.is_alive()),'relay_path_verified':False}
+
         with self.lock,self.connect() as c:
             if now-self.last_cleanup>=60:
                 c.execute('DELETE FROM sessions WHERE expires<?',(now,));c.execute('DELETE FROM devices WHERE expires<?',(now,));c.execute('DELETE FROM tickets WHERE expires<?',(now,));self.last_cleanup=now

@@ -45,6 +45,8 @@
 #include "player_instances.h"
 #include "game_legacy.h"
 #include "console_cmd.h"
+#include "macos_replay.h"
+#include "packets.h"
 #include "post_inc.h"
 #include "value_util.h"
 #include "keeperfx.hpp"
@@ -1102,6 +1104,11 @@ static void api_process_buffer(const char *buffer, size_t buf_size)
     // Commands that always work
     // ==================================================================================================================================
 
+    if(strcasecmp("open_local_replay",action)==0){VALUE *file=value_dict_get(value,"file");if(!file||value_type(file)!=VALUE_STRING){api_err("INVALID_FILE",ack_id);value_fini(&json_data);return;}int ok=kfx_options_select_replay(value_string(file));VALUE reply;value_init_dict(&reply);value_init_bool(value_dict_add(&reply,"accepted"),ok);api_return_data(ok,reply,ack_id);value_fini(&json_data);return;}
+    if(strcasecmp("get_replay_info",action)==0){
+        VALUE result;value_init_dict(&result);value_init_bool(value_dict_add(&result,"available"),kfx_replay_available());value_init_bool(value_dict_add(&result,"paused"),kfx_replay_paused());value_init_double(value_dict_add(&result,"speed"),kfx_replay_speed());value_init_int32(value_dict_add(&result,"index"),game.pckt_gameturn);value_init_int32(value_dict_add(&result,"turn"),get_gameturn());value_init_int32(value_dict_add(&result,"stored"),game.turns_stored);char checksum[32];snprintf(checksum,sizeof(checksum),"%llx",(unsigned long long)(kfx_replay_available()?compute_replay_integrity():0));value_init_string(value_dict_add(&result,"checksum"),checksum);api_return_data(true,result,ack_id);value_fini(&json_data);return;
+    }
+    if(strcasecmp("replay_control",action)==0){VALUE *command=value_dict_get(value,"command");if(!command||value_type(command)!=VALUE_INT32||value_int32(command)<-1||value_int32(command)>3){api_err("INVALID_COMMAND",ack_id);value_fini(&json_data);return;}int ok=kfx_replay_control(value_int32(command));VALUE result;value_init_dict(&result);value_init_bool(value_dict_add(&result,"accepted"),ok);api_return_data(ok,result,ack_id);value_fini(&json_data);return;}
     if(strcasecmp("get_network_info",action)==0){
         VALUE result;value_init_dict(&result);value_init_int32(value_dict_add(&result,"frontend"),frontend_menu_state);value_init_int32(value_dict_add(&result,"players"),GetRemoteUserCount()+1);value_init_bool(value_dict_add(&result,"spectating"),kfx_hub_spectator_active()&&game.packet_load_enable);value_init_bool(value_dict_add(&result,"active"),network_is_active());value_init_bool(value_dict_add(&result,"host"),network_is_host());value_init_int32(value_dict_add(&result,"turn"),get_gameturn());value_init_int32(value_dict_add(&result,"local_outcome"),get_my_player()->victory_state);value_init_int32(value_dict_add(&result,"dedicated_player"),kfx_dedicated_player);VALUE *users=value_dict_add(&result,"users");value_init_array(users);for(int i=0;i<MAX_NET_USERS;i++){if(!network_user_active(i)&&!kfx_hub_peer_account(i)[0]&&!kfx_hub_terminal_outcome(i)&&!kfx_hub_peer_departed(i))continue;VALUE *user=value_array_append(users);value_init_dict(user);value_init_int32(value_dict_add(user,"peer"),i);value_init_string(value_dict_add(user,"name"),network_user_name(i));value_init_string(value_dict_add(user,"account"),kfx_hub_peer_account(i));value_init_bool(value_dict_add(user,"verified_finish"),kfx_hub_terminal_verified(i));int player=get_net_user_player_number(i);value_init_int32(value_dict_add(user,"outcome"),kfx_hub_terminal_outcome(i)?kfx_hub_terminal_outcome(i):player>=0?get_player(player)->victory_state:0);}api_return_data(true,result,ack_id);value_fini(&json_data);return;
     }
