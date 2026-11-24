@@ -36,7 +36,6 @@ h2 { margin: 13px 0 23px; font-size: clamp(30px, 3.2vw, 42px); }
 h3 { margin: 17px 0 14px; font-size: 23px; letter-spacing: -.5px; }
 .eyebrow { margin: 0; color: #d4b379; font: 12px/1.7 var(--mono); letter-spacing: 1.5px; text-transform: uppercase; }
 .hero { padding: 76px 0 62px; text-align: center; position: relative; isolation: isolate; overflow: hidden; }
-.hero::before { content: ''; position: absolute; inset: 10% -15% -20% 35%; z-index: -1; opacity: .14; background: url('/assets/dungeon-heart.svg') center right / contain no-repeat; pointer-events: none; }
 .hero-content { position: relative; }
 .hero-content { max-width: 960px; margin-inline: auto; }
 .hero h1 { font-size: clamp(49px, 6vw, 77px); line-height: 1.15; letter-spacing: -.025em; }
