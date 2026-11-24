@@ -1,4 +1,6 @@
 ## Features
+- Add a sourced visual project timeline, original-game overview and detailed
+  Keeper Enhanced feature chapters to the website Features page.
 - Rename the project to keeper-enhanced while preserving existing service URLs,
   repository addresses, save paths and database settings.
 - Add private/public dedicated-host modes, optional passwords, native Linux server

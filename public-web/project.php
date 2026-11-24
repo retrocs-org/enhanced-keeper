@@ -5,7 +5,7 @@ $titles=['/features'=>'Features','/leaderboard'=>'Leaderboard','/downloads'=>'Do
 <!doctype html><html lang="en"><head><meta charset="utf-8"><script src="/routes.js"></script><meta name="viewport" content="width=device-width,initial-scale=1"><title><?= web_escape($titles[$path]) ?> · Keeper-Enhanced</title><link rel="icon" type="image/svg+xml" href="/assets/keeper-mask.svg"><link rel="stylesheet" href="/site.css"><link rel="stylesheet" href="/style.css"><?php if($path==='/leaderboard'): ?><script src="/community-pages.js" defer></script><?php endif; ?></head><body>
 <?php site_header($path); ?>
 <?php if($path==='/features'): ?>
-<main id="main"><?php $standaloneFeatures=true;require __DIR__.'/feature-section.php'; ?></main>
+<main id="main"><?php require __DIR__.'/features-page.php'; ?></main>
 <?php else: ?>
 <main id="main" class="wrap portal-main">
 <?php if($path==='/leaderboard'): ?>
