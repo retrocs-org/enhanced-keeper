@@ -12,7 +12,7 @@ void update_hover(){
     for(const Hit &hit:hits)if(SDL_PointInRect(&point,&hit.rect)){hovered_action=hit.action;break;}
     if(hovered_action!=previous)focus_animation.erase(hovered_action);
 }
-std::string data_folder(){std::string folder=path("");while(!folder.empty()&&folder.back()=='/')folder.pop_back();return folder.substr(0,folder.find_last_of('/'));}
+std::string data_folder(){const char *root=getenv("KFX_USER_DATA_DIR");if(root&&*root)return root;std::string folder=path("");while(!folder.empty()&&folder.back()=='/')folder.pop_back();return folder.substr(0,folder.find_last_of('/'));}
 std::string file_url(const std::string &folder){
     std::string result="file://";const char hex[]="0123456789ABCDEF";
     for(unsigned char c:folder){if(std::isalnum(c)||c=='/'||c=='-'||c=='_'||c=='.'||c=='~')result+=c;else{result+='%';result+=hex[c>>4];result+=hex[c&15];}}return result;
@@ -40,6 +40,7 @@ void load_network_profile(){
     if(fgets(line,sizeof(line),file)){std::string input=line;while(!input.empty()&&(input.back()=='\r'||input.back()=='\n'))input.pop_back();if(valid_endpoint(input,endpoint))join_ip=endpoint;}fclose(file);
 }
 void finish_edit(){
+    if(editing==12){library_rename();return;}
     if(editing==11){if(!create_profile())return;editing=0;SDL_StopTextInput(SDL_GetKeyboardFocus());return;}
     if(editing>=6){editing=0;browser_filter();SDL_StopTextInput(SDL_GetKeyboardFocus());return;}
     if(editing==5){if(saves.empty()||save_alias.empty()){notice="Enter a name for the saved game.";return;}std::string base=save_base(selected_save());if(!write_small_file(base+".label",save_alias)){notice="Could not rename this saved game.";return;}refresh_save(base);}
@@ -75,7 +76,7 @@ void status_line(const std::string &value){small_line(24,401,value,592);}
 void polish_draw_page(){
     if(page==13){
         frame(24,90,592,116);text(42,100,"KeeperFX-E "+build_field("appVersion"),24,556);text(42,137,"Build "+build_field("appBuild")+" / Engine "+VER_STRING,20,556);text(42,173,controller_device_name(),20,556);
-        button(134,214,372,"Open Logs Folder",810,selected==0,40);button(134,262,372,"Open Save Folder",811,selected==1,40);button(134,310,372,"Copy Diagnostics",813,selected==2,40);button(134,358,372,"Saving Help",814,selected==3,40);
+        button(134,214,372,"Open Logs Folder",810,selected==0,40);button(134,262,372,"Open Save Folder",811,selected==1,40);button(134,310,372,"Copy Diagnostics",813,selected==2,40);button(24,354,184,"Saving Help",814,selected==3,38);button(228,354,184,"Data Tools",1510,selected==4,38);button(432,354,184,"Setup",1520,selected==5,38);
     }else if(page==14){
         frame(24,90,592,214);text(42,102,save_error.empty()?"Save recovery":save_error,20,548);text(42,146,"1. Check free disk space.",22,548);text(42,184,"2. Check save-folder permissions.",22,548);text(42,222,"3. Open a save and choose a backup.",22,548);text(42,266,"Restoring keeps the original backup.",20,548);
         button(134,312,372,"Open Save Folder",811,selected==0,40);button(134,360,372,"Browse Saved Games",812,selected==1,40);

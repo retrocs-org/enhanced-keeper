@@ -32,6 +32,10 @@
 #include <enet6/enet.h>
 #include <cstddef>
 #include <climits>
+#include <array>
+#include <map>
+#include <cstring>
+#include <random>
 
 #include "post_inc.h"
 
@@ -65,6 +69,45 @@ namespace
     ENetAddress pending_punch_ipv6 = {};
     TbClockMSec next_punch_time = 0;
     TbClockMSec host_punch_learn_deadline = 0;
+
+    // A resumed transport keeps its existing gameplay user and repair history.
+    constexpr enet_uint32 RESUME_CAPABLE=0x4b465832,RESUME_CONNECTION=0x4b465852;
+    std::array<std::array<unsigned char,32>,MAX_NET_USERS> resume_keys={};
+    std::array<TbClockMSec,MAX_NET_USERS> reserved_until={};
+    std::array<unsigned char,32> client_resume_key={};
+    std::map<ENetPeer*,TbClockMSec> resume_pending;
+    TbClockMSec recovered_until=0;bool has_resume_key=false,resuming=false;TbClockMSec resume_deadline=0,resume_retry=0;
+    ENetAddress resume_address={};
+    void send_resume(ENetPeer *peer,const char *kind,const unsigned char *key){unsigned char bytes[38];memcpy(bytes,kind,6);memcpy(bytes+6,key,32);enet_peer_send(peer,ENET_CHANNEL_RELIABLE,enet_packet_create(bytes,sizeof(bytes),ENET_PACKET_FLAG_RELIABLE));enet_host_flush(host);}
+    bool equal_resume(const unsigned char *a,const unsigned char *b){unsigned char diff=0;for(int i=0;i<32;i++)diff|=a[i]^b[i];return diff==0;}
+    void new_resume_key(NetUserId user,ENetPeer *peer){
+#ifdef __APPLE__
+        arc4random_buf(resume_keys[user].data(),32);
+#else
+        std::random_device random;for(auto &b:resume_keys[user])b=(unsigned char)random();
+#endif
+        reserved_until[user]=0;send_resume(peer,"KFXRT1",resume_keys[user].data());
+    }
+    bool resume_packet(ENetEvent &event){
+        auto *packet=event.packet;
+        if(packet->dataLength!=38||memcmp(packet->data,"KFXR",4))return false;
+        if(client_peer==event.peer&&!memcmp(packet->data,"KFXRT1",6)){memcpy(client_resume_key.data(),packet->data+6,32);has_resume_key=true;if(resuming)recovered_until=LbTimerClock()+5000;resuming=false;enet_packet_destroy(packet);return true;}
+        if(!client_peer&&resume_pending.count(event.peer)&&!memcmp(packet->data,"KFXRR1",6)){
+            bool accepted=false;for(int i=1;i<MAX_NET_USERS;i++)if(reserved_until[i]>LbTimerClock()&&equal_resume(resume_keys[i].data(),packet->data+6)){event.peer->data=reinterpret_cast<void*>((ptrdiff_t)i);reserved_until[i]=0;resume_pending.erase(event.peer);send_resume(event.peer,"KFXRT1",resume_keys[i].data());recovered_until=LbTimerClock()+5000;kfx_network_issue("peer-resumed",0,0,0);accepted=true;break;}
+            if(!accepted){resume_pending.erase(event.peer);enet_peer_disconnect_now(event.peer,0);}
+            enet_packet_destroy(packet);return true;
+        }
+        return false;
+    }
+    void resume_tick(){
+        auto now=LbTimerClock();
+        for(auto it=resume_pending.begin();it!=resume_pending.end();)if(now>=it->second){enet_peer_disconnect_now(it->first,0);it=resume_pending.erase(it);}else ++it;
+        for(int i=1;i<MAX_NET_USERS;i++)if(reserved_until[i]&&now>=reserved_until[i]){reserved_until[i]=0;resume_keys[i].fill(0);if(g_drop_callback)g_drop_callback(i,NETDROP_ERROR);}
+        if(resuming){
+            if(now>=resume_deadline){resuming=false;has_resume_key=false;if(g_drop_callback)g_drop_callback(SERVER_ID,NETDROP_ERROR);}
+            else if(now>=resume_retry){resume_retry=now+2000;if(client_peer)enet_peer_reset(client_peer);client_peer=enet_host_connect(host,&resume_address,NUM_CHANNELS,RESUME_CONNECTION);}
+        }
+    }
 
     // List
     ENetPacket *oldest_packet[MAX_NET_USERS] = {nullptr};
@@ -151,6 +194,7 @@ namespace
 
     void host_destroy()
     {
+        resume_keys={};reserved_until={};resume_pending.clear();client_resume_key.fill(0);has_resume_key=false;resuming=false;recovered_until=0;
         destroy_incoming_queue();
         download_rate_tracker = TransferRateTracker();
         upload_rate_tracker = TransferRateTracker();
@@ -321,7 +365,7 @@ namespace
             return Lb_FAIL;
         enet_host_compress_with_range_coder(host);
         hub_relay_keepalive(true);
-        client_peer = enet_host_connect(host, connect_address, NUM_CHANNELS, 0);
+        client_peer = enet_host_connect(host, connect_address, NUM_CHANNELS, RESUME_CAPABLE);
         if (!client_peer) {
             LbNetLog("Join: enet_host_connect returned NULL\n");
             host_destroy();
@@ -480,9 +524,9 @@ namespace
         ENetPeer *ipv4_peer = nullptr;
         ENetPeer *ipv6_peer = nullptr;
         if (has_ipv6) {
-            ipv6_peer = enet_host_connect(ipv6_host, &ipv6_address, NUM_CHANNELS, 0);
+            ipv6_peer = enet_host_connect(ipv6_host, &ipv6_address, NUM_CHANNELS, RESUME_CAPABLE);
         } else if (has_ipv4) {
-            ipv4_peer = enet_host_connect(host, &ipv4_address, NUM_CHANNELS, 0);
+            ipv4_peer = enet_host_connect(host, &ipv4_address, NUM_CHANNELS, RESUME_CAPABLE);
         }
         TbClockMSec connection_start = LbTimerClock();
         TbClockMSec holepunch_stage_start = connection_start;
@@ -494,7 +538,7 @@ namespace
         ENetEvent enet_event;
         while (LbTimerClock() < holepunch_deadline) {
             if (has_ipv4 && ipv4_peer == nullptr && LbTimerClock() >= ipv4_delay_end) {
-                ipv4_peer = enet_host_connect(host, &ipv4_address, NUM_CHANNELS, 0);
+                ipv4_peer = enet_host_connect(host, &ipv4_address, NUM_CHANNELS, RESUME_CAPABLE);
             }
             if (ipv6_peer && enet_host_service(ipv6_host, &enet_event, 0) > 0 && enet_event.type == ENET_EVENT_TYPE_CONNECT) {
                 LbNetLog("Join: TIMEOUT_CONNECT_HOLEPUNCH took %d ms (connected)\n", (int)(LbTimerClock() - holepunch_stage_start));
@@ -570,10 +614,13 @@ namespace
         switch (enet_event.type)
         {
             case ENET_EVENT_TYPE_CONNECT:
+                if(client_peer==enet_event.peer&&resuming){send_resume(client_peer,"KFXRR1",client_resume_key.data());break;}
+                if(!client_peer&&enet_event.data==RESUME_CONNECTION){enet_event.peer->data=reinterpret_cast<void*>((ptrdiff_t)-2);resume_pending[enet_event.peer]=LbTimerClock()+1500;break;}
                 LbNetLog("ENet: incoming connection accepted\n");
                 if (new_user(&user_id)) {
                     enet_peer_timeout(enet_event.peer, PEER_TIMEOUT_LIMIT, PEER_TIMEOUT_MIN_MS, PEER_TIMEOUT_MAX_MS);
                     enet_event.peer->data = reinterpret_cast<void *>(user_id);
+                    if(enet_event.data==RESUME_CAPABLE)new_resume_key(user_id,enet_event.peer);
                 } else {
                     LbNetLog("ENet: rejecting peer, no user slot available\n");
                     enet_peer_disconnect_now(enet_event.peer, 0);
@@ -586,6 +633,12 @@ namespace
                 } else {
                     user_id = NetUserId(reinterpret_cast<ptrdiff_t>(enet_event.peer->data));
                 }
+                if(resume_pending.erase(enet_event.peer)||user_id<0||user_id>=MAX_NET_USERS)break;
+                if(enet_event.type==ENET_EVENT_TYPE_DISCONNECT_TIMEOUT&&game.game_kind==GKind_MultiGame){
+                    if(client_peer==enet_event.peer&&has_resume_key){resume_address=enet_event.peer->address;if(!resuming)resume_deadline=LbTimerClock()+30000;resuming=true;resume_retry=0;kfx_network_issue("reconnecting",0,0,0);break;}
+                    if(!client_peer&&std::any_of(resume_keys[user_id].begin(),resume_keys[user_id].end(),[](unsigned char b){return b!=0;})){reserved_until[user_id]=LbTimerClock()+30000;kfx_network_issue("slot-reserved",0,0,0);break;}
+                }
+                reserved_until[user_id]=0;resume_keys[user_id].fill(0);
                 const char *disconnect_reason = "timed out";
                 if (enet_event.type == ENET_EVENT_TYPE_DISCONNECT)
                     disconnect_reason = "disconnected (clean)";
@@ -596,6 +649,8 @@ namespace
                 break;
             }
             case ENET_EVENT_TYPE_RECEIVE: {
+                if(resume_packet(enet_event))break;
+                if(resume_pending.count(enet_event.peer)){enet_packet_destroy(enet_event.packet);break;}
                 user_id = SERVER_ID;
                 if (!client_peer) {
                     user_id = NetUserId(reinterpret_cast<ptrdiff_t>(enet_event.peer->data));
@@ -615,6 +670,7 @@ namespace
      */
     void bf_enet_update(NetNewUserCallback new_user)
     {
+        if(host)resume_tick();
         if (new_user == nullptr) {
             new_user = not_expected_user;
         }
@@ -651,6 +707,7 @@ namespace
                 }
             }
         }
+        if(packet->referenceCount==0)enet_packet_destroy(packet);
         enet_host_flush(host);
     }
 
@@ -679,6 +736,7 @@ namespace
                 }
             }
         }
+        if(packet->referenceCount==0)enet_packet_destroy(packet);
         enet_host_flush(host);
     }
 
@@ -690,7 +748,8 @@ namespace
     void bf_enet_sendmsg_all(const char *buffer, size_t size)
     {
         ENetPacket *packet = enet_packet_create(buffer, size, ENET_PACKET_FLAG_RELIABLE);
-        enet_host_broadcast(host, ENET_CHANNEL_RELIABLE, packet);
+        for(ENetPeer *peer=host->peers;peer<host->peers+host->peerCount;peer++)if(peer->state==ENET_PEER_STATE_CONNECTED&&!resume_pending.count(peer))enet_peer_send(peer,ENET_CHANNEL_RELIABLE,packet);
+        if(packet->referenceCount==0)enet_packet_destroy(packet);
         enet_host_flush(host);
     }
 
@@ -790,6 +849,7 @@ namespace
      */
     void bf_enet_drop_user(NetUserId id)
     {
+        if(id>=0&&id<MAX_NET_USERS){reserved_until[id]=0;resume_keys[id].fill(0);}
         LbNetLog("ENet: dropping user %d\n", (int)id);
         destroy_incoming_queue(id);
         if (host) {
@@ -1053,4 +1113,10 @@ struct NetSP *InitEnetSP()
             .drop_user = &bf_enet_drop_user,
     };
     return &ret;
+}
+
+extern "C" const char *kfx_network_recovery_status(void){
+ if(resuming)return "Reconnecting to host - your player slot is reserved";
+ for(int i=1;i<MAX_NET_USERS;i++)if(reserved_until[i])return "Waiting for a player to reconnect - simulation held";
+ return LbTimerClock()<recovered_until?"Connection recovered - same match and player slot":"";
 }

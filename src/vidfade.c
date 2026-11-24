@@ -17,6 +17,7 @@
  */
 /******************************************************************************/
 #include "pre_inc.h"
+#include "macos_controls.h"
 #include "kfx/renderer/RendererManager.h"
 #include "vidfade.h"
 
@@ -311,7 +312,7 @@ long PaletteFadePlayer(struct PlayerInfo *player)
   }
   if (i >= 120)
     i = 120;
-  RendererSetScreenTint(1.0f, 0.0f, 0.0f, (float)i / 120.0f);
+  RendererSetScreenTint(1.0f, 0.0f, 0.0f, (float)i / 120.0f * (kfx_reduce_flashes ? 0.15f : 1.0f));
   long step = 120 - i;
   // Update the fade step
   if (local_state.palette_fade_step_pain > 0)

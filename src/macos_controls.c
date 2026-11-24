@@ -35,3 +35,7 @@ int kfx_mentor_captions;
 int kfx_caption_seconds=5;
 
 float kfx_camera_pan_scale=1.0f;
+
+float kfx_caption_scale=1,kfx_tooltip_scale=1;
+int kfx_reduce_flashes=0,kfx_high_contrast=0;
+float kfx_camera_response(void){return setting("KFX_CAMERA_RESPONSE",2,1,3);}

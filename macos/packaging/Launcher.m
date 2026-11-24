@@ -120,7 +120,70 @@ static NSString *OverlayVersion(NSArray<NSString *> *files) {
     for(NSString *name in files){NSDictionary *attrs=[FM() attributesOfItemAtPath:[root stringByAppendingPathComponent:name] error:nil];NSString *line=[NSString stringWithFormat:@"%@:%@:%.9f\n",name,attrs[NSFileSize],[attrs[NSFileModificationDate] timeIntervalSince1970]];NSData *data=[line dataUsingEncoding:NSUTF8StringEncoding];CC_SHA256_Update(&context,data.bytes,(CC_LONG)data.length);}
     unsigned char bytes[CC_SHA256_DIGEST_LENGTH];CC_SHA256_Final(bytes,&context);NSMutableString *result=[NSMutableString new];for(int i=0;i<CC_SHA256_DIGEST_LENGTH;i++)[result appendFormat:@"%02x",bytes[i]];return result;
 }
+// Reversible profile reset and exports deliberately exclude imported game data.
+static BOOL ResetRequested(NSError **error) {
+    NSString *marker=[Prefs() stringByAppendingPathComponent:@"reset-profile-next.cfg"];
+    if(![FM() fileExistsAtPath:marker])return YES;
+    NSString *folder=[[BasePrefs() stringByAppendingPathComponent:@"ProfileBackups"] stringByAppendingPathComponent:[NSString stringWithFormat:@"%@-%@",ProfileID(),NSUUID.UUID.UUIDString]];
+    if(!Directory([BasePrefs() stringByAppendingPathComponent:@"ProfileBackups"],error)||!Directory(folder,error))return NO;
+    NSMutableArray *moved=[NSMutableArray new];
+    for(NSString *name in @[@"GameData",@"save",@"scrshots",@"EnhancedData"]){
+        NSString *from=[Prefs() stringByAppendingPathComponent:name],*to=[folder stringByAppendingPathComponent:name];
+        if(![FM() fileExistsAtPath:from])continue;
+        if(![FM() moveItemAtPath:from toPath:to error:error]){
+            for(NSString *previous in moved.reverseObjectEnumerator)[FM() moveItemAtPath:[folder stringByAppendingPathComponent:previous] toPath:[Prefs() stringByAppendingPathComponent:previous] error:nil];return NO;
+        }[moved addObject:name];
+    }
+    [FM() removeItemAtPath:marker error:nil];return YES;
+}
+static BOOL ExportPersonal(NSError **error) {
+    NSString *exports=[BasePrefs() stringByAppendingPathComponent:@"Exports"];
+    if(!Directory(exports,error))return NO;
+    NSString *stage=[exports stringByAppendingPathComponent:[@"Personal-" stringByAppendingString:NSUUID.UUID.UUIDString]];
+    if(!Directory(stage,error))return NO;
+    BOOL ok=YES;NSMutableArray *profiles=[NSMutableArray arrayWithObject:@[@"",BasePrefs()]];
+    NSString *profilesRoot=[BasePrefs() stringByAppendingPathComponent:@"ContentProfiles"];
+    if(![[[FM() attributesOfItemAtPath:profilesRoot error:nil] objectForKey:NSFileType] isEqual:NSFileTypeSymbolicLink])for(NSString *name in [FM() contentsOfDirectoryAtPath:profilesRoot error:nil]){
+        NSString *folder=[profilesRoot stringByAppendingPathComponent:name];if(![[[FM() attributesOfItemAtPath:folder error:nil] objectForKey:NSFileType] isEqual:NSFileTypeDirectory])continue;
+        [profiles addObject:@[[@"ContentProfiles" stringByAppendingPathComponent:name],folder]];
+    }
+    for(NSArray *profile in profiles){NSString *prefix=profile[0],*folder=profile[1];
+        for(NSString *root in @[@"save",@"scrshots",@"EnhancedData"]){
+            NSString *base=[folder stringByAppendingPathComponent:root];if([[[FM() attributesOfItemAtPath:base error:nil] objectForKey:NSFileType] isEqual:NSFileTypeSymbolicLink])continue;
+            for(NSString *name in [FM() enumeratorAtPath:base]){
+                NSString *leaf=name.lastPathComponent.lowercaseString;
+                if([leaf containsString:@"session"]||[leaf containsString:@"token"]||[leaf containsString:@"password"]||[leaf containsString:@"credential"])continue;
+                NSString *source=[base stringByAppendingPathComponent:name];
+                if(![[[FM() attributesOfItemAtPath:source error:nil] objectForKey:NSFileType] isEqual:NSFileTypeRegular])continue;
+                NSString *relative=[[prefix stringByAppendingPathComponent:root] stringByAppendingPathComponent:name];
+                if(!CopyFile(source,[stage stringByAppendingPathComponent:relative],error)){ok=NO;break;}
+            }if(!ok)break;
+        }if(!ok)break;
+        NSString *config=[[folder stringByAppendingPathComponent:@"GameData"] stringByAppendingPathComponent:@"keeperfx.cfg"];
+        if([[[FM() attributesOfItemAtPath:config error:nil] objectForKey:NSFileType] isEqual:NSFileTypeRegular]&&[[[FM() attributesOfItemAtPath:config.stringByDeletingLastPathComponent error:nil] objectForKey:NSFileType] isEqual:NSFileTypeDirectory]){ok=CopyFile(config,[[stage stringByAppendingPathComponent:prefix] stringByAppendingPathComponent:@"keeperfx.cfg"],error);if(!ok)break;}
+    }
+    NSString *archive=[stage stringByAppendingString:@".zip"];
+    if(ok){NSTask *zip=[NSTask new];zip.executableURL=[NSURL fileURLWithPath:@"/usr/bin/ditto"];zip.arguments=@[@"-c",@"-k",@"--keepParent",stage,archive];ok=[zip launchAndReturnError:error];if(ok){[zip waitUntilExit];ok=zip.terminationStatus==0;}}
+    [FM() removeItemAtPath:stage error:nil];
+    if(ok)printf("%s\n",archive.fileSystemRepresentation);else[FM() removeItemAtPath:archive error:nil];return ok;
+}
+static BOOL RecoverDisplay(NSError **error) {
+    NSString *marker=[Prefs() stringByAppendingPathComponent:@"display-startup.pending"];
+    if(![FM() fileExistsAtPath:marker])return YES;
+    NSString *file=[Runtime() stringByAppendingPathComponent:@"keeperfx.cfg"];
+    NSMutableString *config=[[NSString stringWithContentsOfFile:file encoding:NSUTF8StringEncoding error:error] mutableCopy];if(!config)return NO;
+    NSString *backup=[file stringByAppendingFormat:@".before-display-recovery-%@",NSUUID.UUID.UUIDString];if(!CopyFile(file,backup,error))return NO;
+    NSRegularExpression *regex=[NSRegularExpression regularExpressionWithPattern:@"(?im)^(FRONTEND_RES|INGAME_RES)\\s*=.*$" options:0 error:nil];
+    [regex replaceMatchesInString:config options:0 range:NSMakeRange(0,config.length) withTemplate:@"$1=800x600w32 800x600w32 800x600w32"];
+    if(![config writeToFile:file atomically:YES encoding:NSUTF8StringEncoding error:error])return NO;
+    NSString *options=[[Prefs() stringByAppendingPathComponent:@"save"] stringByAppendingPathComponent:@"macos-options.cfg"];
+    NSMutableString *values=[[NSString stringWithContentsOfFile:options encoding:NSUTF8StringEncoding error:nil] mutableCopy];
+    if(values){if(!CopyFile(options,[backup stringByAppendingString:@".options"],error))return NO;for(NSString *key in @[@"display_mode",@"resolution",@"window_cursor_lock"]){NSRegularExpression *rule=[NSRegularExpression regularExpressionWithPattern:[NSString stringWithFormat:@"(?m)^%@=.*$",key] options:0 error:nil];[rule replaceMatchesInString:values options:0 range:NSMakeRange(0,values.length) withTemplate:[key stringByAppendingString:@"=0"]];}if(![values writeToFile:options atomically:YES encoding:NSUTF8StringEncoding error:error])return NO;}
+    [@"A previous display startup did not finish. Safe windowed mode was restored; your old configuration was retained." writeToFile:[Prefs() stringByAppendingPathComponent:@"display-recovered.txt"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
+    [FM() removeItemAtPath:marker error:nil];return YES;
+}
 static BOOL Prepare(NSError **error) {
+    if(!ResetRequested(error))return NO;
     for (NSString *sub in @[@"", @"save", @"scrshots", @"GameData"])
         if (!Directory([Prefs() stringByAppendingPathComponent:sub], error)) return NO;
     NSArray *overlay=OverlayFiles();NSString *desired=[NSString stringWithFormat:@"%@\nOverlay:%@\nOriginal:%.9f",AssetVersion(),OverlayVersion(overlay),[[[FM() attributesOfItemAtPath:Owned() error:nil] objectForKey:NSFileModificationDate] timeIntervalSince1970]];
@@ -157,7 +220,7 @@ static BOOL Prepare(NSError **error) {
         if(!recorded||![recorded writeToFile:manifest options:NSDataWritingAtomic error:error])return NO;
         if (![desired writeToFile:stamp atomically:YES encoding:NSUTF8StringEncoding error:error]) return NO;
     }
-    return YES;
+    return RecoverDisplay(error);
 }
 static void SetConfig(NSMutableString *text, NSString *key, NSString *value) {
     NSRegularExpression *regex = [NSRegularExpression regularExpressionWithPattern:[NSString stringWithFormat:@"(?m)^%@\\s*=.*$", key] options:NSRegularExpressionCaseInsensitive error:nil];
@@ -195,6 +258,7 @@ static BOOL ApplyControllerBindings(NSMutableString *settings, NSDictionary *bin
 }
 
 static pid_t Launch(NSArray<NSString *> *extra, NSNumber *slot, NSError **error) {
+    [@"startup" writeToFile:[Prefs() stringByAppendingPathComponent:@"display-startup.pending"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
     NSString *engine = [Resources() stringByAppendingPathComponent:@"game/keeperfx"];
     // The engine derives its runtime root from argv[0]; keep the signed executable
     // in the app while directing ALL legacy relative reads/writes to user data.
@@ -376,8 +440,9 @@ static NSDictionary *LegacySaveMetadata(NSString *path) {
 @end
 int main(int argc,char **argv){@autoreleasepool{
     NSArray *args=NSProcessInfo.processInfo.arguments;
+    if([args containsObject:@"--export-personal"]){NSError *e=nil;BOOL ok=ExportPersonal(&e);if(!ok)fprintf(stderr,"Export failed: %s\n",e.localizedDescription.UTF8String);return ok?0:1;}
     if(argc>2 && !strcmp(argv[1],"--import")){NSError *e=nil;BOOL ok=Import(@(argv[2]),&e);if(!ok)fprintf(stderr,"%s\n",e.localizedDescription.UTF8String);return ok?0:1;}
-    if([args containsObject:@"--prepare-only"]||[args containsObject:@"--play-direct"]){NSError *e=nil;if(!Prepare(&e)){fprintf(stderr,"%s\n",e.localizedDescription.UTF8String);return 1;}if([args containsObject:@"--prepare-only"]){puts("User runtime ready; application bundle unchanged.");return 0;}pid_t p=Launch(@[@"-nointro",@"-log",@"launcher-smoke.log"],nil,&e);if(p<0)return 1;int status=0;waitpid(p,&status,0);return WIFEXITED(status)?WEXITSTATUS(status):1;}
+    if([args containsObject:@"--prepare-only"]||[args containsObject:@"--play-direct"]){NSError *e=nil;if(!Prepare(&e)){fprintf(stderr,"%s\n",e.localizedDescription.UTF8String);return 1;}if([args containsObject:@"--prepare-only"]){puts("User runtime ready; application bundle unchanged.");return 0;}pid_t p=Launch(@[@"-nointro",@"-log",@"launcher-smoke.log"],nil,&e);if(p<0)return 1;int status=0;waitpid(p,&status,0);if(WIFEXITED(status)&&WEXITSTATUS(status)==0)[FM() removeItemAtPath:[Prefs() stringByAppendingPathComponent:@"display-startup.pending"] error:nil];return WIFEXITED(status)?WEXITSTATUS(status):1;}
     if(![args containsObject:@"--launcher"]){
         NSApplication *setup=NSApplication.sharedApplication;setup.activationPolicy=NSApplicationActivationPolicyAccessory;
         NSError *error=nil;
@@ -388,7 +453,7 @@ int main(int argc,char **argv){@autoreleasepool{
         }
         if(!Prepare(&error)){NSAlert *alert=[NSAlert new];alert.messageText=@"KeeperFX-E could not prepare game data";alert.informativeText=error.localizedDescription;[alert runModal];return 1;}
         pid_t child=Launch(@[],nil,&error);if(child<0){NSAlert *alert=[NSAlert new];alert.messageText=@"KeeperFX-E could not start";alert.informativeText=error.localizedDescription?:@"Unable to start the game.";[alert runModal];return 1;}
-        int status=0;while(waitpid(child,&status,0)<0 && errno==EINTR){}return WIFEXITED(status)?WEXITSTATUS(status):1;
+        int status=0;while(waitpid(child,&status,0)<0 && errno==EINTR){}if(WIFEXITED(status)&&WEXITSTATUS(status)==0)[FM() removeItemAtPath:[Prefs() stringByAppendingPathComponent:@"display-startup.pending"] error:nil];return WIFEXITED(status)?WEXITSTATUS(status):1;
     }
     NSApplication *app=NSApplication.sharedApplication;app.activationPolicy=NSApplicationActivationPolicyRegular;Launcher *delegate=[Launcher new];app.delegate=delegate;[app run];
 }return 0;}

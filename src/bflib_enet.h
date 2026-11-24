@@ -32,6 +32,7 @@ enum {
 struct NetSP;
 struct NetSP* InitEnetSP();
 unsigned long GetPing(int id);
+const char *kfx_network_recovery_status(void);
 unsigned int GetPacketLoss(int id);
 unsigned int GetClientDataInTransit();
 unsigned int GetClientPacketsLost();

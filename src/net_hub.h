@@ -3,6 +3,7 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+void kfx_hub_content(const char *fingerprint);
 void kfx_hub_initialize(const char *folder);
 const char *kfx_hub_url(void);
 int kfx_hub_set_url(const char *url);

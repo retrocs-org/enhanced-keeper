@@ -58,6 +58,13 @@ with tempfile.TemporaryDirectory(prefix='keeperfx-playback-') as temporary:
   rpc('console_command',player=0,command='game.load 0');assert rpc()['turn']<saved_turn+20
   assert list((profile/'save/CompatibilityBackups').iterdir())
   print('PASS: real save records content requirements and reloads from a preserved copy',flush=True)
+  for page in range(30,36):
+   preview=profile/'save/options-preview.png';previous=preview.stat().st_mtime_ns if preview.exists() else 0
+   rpc('options_preview',page=page)
+   until(lambda:preview.exists() and preview.stat().st_mtime_ns>previous)
+   __import__('shutil').copy2(preview,Path('/tmp')/('kfx-engine-page-'+str(page)+'.png'))
+  print('PASS: all six new pages render in the actual engine with the original menu assets',flush=True)
+
   stop();launch(['-level','1','-packetsave',str(recording)])
   until(lambda:rpc()['turn']>=220)
   rpc('console_command',player=0,command='quit');process.wait(timeout=8);stop()

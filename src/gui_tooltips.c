@@ -17,6 +17,7 @@
  */
 /******************************************************************************/
 #include "pre_inc.h"
+#include "macos_controls.h"
 #include "kfx/renderer/RendererManager.h"
 #include "gui_tooltips.h"
 #include "globals.h"
@@ -500,6 +501,7 @@ void toggle_tooltips(void)
 
 void draw_tooltip_slab64k(char *tttext, long pos_x, long pos_y, long ttwidth, long ttheight, long viswidth)
 {
+    ttwidth=(long)(ttwidth*kfx_tooltip_scale);ttheight=(long)(ttheight*kfx_tooltip_scale);
     unsigned int flg_mem = RendererGetDrawFlags();
     if (ttwidth > viswidth)
     {
@@ -552,7 +554,7 @@ void draw_tooltip_slab64k(char *tttext, long pos_x, long pos_y, long ttwidth, lo
                 tx = scale_ui_value_lofi(render_tooltip_scroll_offset);
                 ty = -scale_ui_value_lofi(2);
             }
-            LbTextDrawResized(tx, ty, tx_units_per_px, tttext);
+            LbTextDrawResized(tx, ty, (int)(tx_units_per_px*kfx_tooltip_scale), tttext);
         }
     }
     LbTextSetWindow(0/pixel_size, 0/pixel_size, MyScreenHeight/pixel_size, MyScreenWidth/pixel_size);

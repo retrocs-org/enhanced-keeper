@@ -50,6 +50,8 @@ extern "C" void kfx_hub_initialize(const char *save){initializing=true;folder=sa
 extern "C" const char *kfx_hub_url(){return base.c_str();}
 extern "C" int kfx_hub_set_url(const char *url){if(job.valid()||!queue.empty()||!url||strlen(url)>240)return 0;std::string s=url;while(!s.empty()&&s.back()=='/')s.pop_back();if(s.find_first_of("\r\n?#@")!=std::string::npos)return 0;bool secure=s.rfind("https://",0)==0;bool local=s.rfind("http://127.0.0.1:",0)==0||s.rfind("http://localhost:",0)==0;if(!secure&&!local)return 0;if(base!=s){account.clear();name.clear();account_id.clear();server_id.clear();server_secret.clear();registrations.clear();}base=s;if(!initializing)save_token();return 1;}
 extern "C" int kfx_hub_request(const char *tag,const char *route,const char *body,int credentials){if(queue.size()>=8||!tag||!route||strncmp(route,"/api/",5)||strlen(route)>200||strchr(route,'\r')||strchr(route,'\n'))return 0;std::string token=credentials==2?server_secret:credentials==1?account:"";queue.push_back({tag,route,body?body:"",token});return 1;}
+namespace {std::string advertised_content;}
+extern "C" void kfx_hub_content(const char *value){advertised_content=value?value:"";}
 extern "C" int kfx_hub_tick(int hosting,int players,int playing,const char *map){
  int ready=0;if(job.valid()&&job.wait_for(std::chrono::seconds(0))==std::future_status::ready){Reply r=job.get();last_tag=r.tag;last_body=r.body;Document d(r.body);std::string token=field(&d.root,"token");if(r.tag=="pair-poll"&&!token.empty()){account=token;name=field(&d.root,"name");save_token();}
  if(r.tag=="me"&&!field(&d.root,"id").empty()){account_id=field(&d.root,"id");name=field(&d.root,"name");save_token();}
@@ -60,7 +62,7 @@ extern "C" int kfx_hub_tick(int hosting,int players,int playing,const char *map)
  if(r.tag=="stream")live_reply(&d.root);
  if(r.tag=="heartbeat")apply_channels(&d.root);ready=1;}
  if(hosting)host_started=true;
- if((hosting||host_started)&&!server_id.empty()&&!job.valid()&&queue.empty()&&SDL_GetTicks()>=heartbeat_at){heartbeat_at=SDL_GetTicks()+(hosting&&!playing?500:3000);std::string body="{\"players\":"+std::to_string(std::clamp(players,0,4))+",\"status\":"+quote(hosting?(playing?"playing":"lobby"):"offline")+(map&&*map?",\"map\":"+quote(map):"")+"}";kfx_hub_request("heartbeat",("/api/servers/"+server_id+"/heartbeat").c_str(),body.c_str(),2);if(!hosting){server_id.clear();server_secret.clear();registrations.clear();}}
+ if((hosting||host_started)&&!server_id.empty()&&!job.valid()&&queue.empty()&&SDL_GetTicks()>=heartbeat_at){heartbeat_at=SDL_GetTicks()+(hosting&&!playing?500:3000);std::string body="{\"mods\":"+quote(advertised_content)+",\"players\":"+std::to_string(std::clamp(players,0,4))+",\"status\":"+quote(hosting?(playing?"playing":"lobby"):"offline")+(map&&*map?",\"map\":"+quote(map):"")+"}";kfx_hub_request("heartbeat",("/api/servers/"+server_id+"/heartbeat").c_str(),body.c_str(),2);if(!hosting){server_id.clear();server_secret.clear();registrations.clear();}}
  live_tick();
  if(!job.valid()&&!queue.empty()){Request q=queue.front();queue.pop_front();job=std::async(std::launch::async,http,base,q.tag,q.route,q.body,q.token);}
  return ready;

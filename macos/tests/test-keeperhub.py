@@ -22,6 +22,15 @@ class HubTests(unittest.TestCase):
   self.post('/api/servers/'+s['id']+'/heartbeat',{'players':3},s['secret']);self.assertEqual(self.get('/api/servers')['servers'][0]['players'],3)
   with self.assertRaises(h.Problem):self.post('/api/servers/'+s['id']+'/join',{'engine':'different'})
   self.clock[0]+=91;self.assertEqual(self.get('/api/servers')['servers'],[])
+ def test_advertised_content_is_rechecked_at_join(self):
+  a='a'*64;b='b'*64;s=self.server(map='classic:52',mods=a)
+  self.assertEqual(self.get('/api/servers')['servers'][0]['mods'],a)
+  with self.assertRaises(h.Problem):self.post('/api/servers/'+s['id']+'/join',{'content':'invalid ☃'})
+  with self.assertRaises(h.Problem):self.post('/api/servers/'+s['id']+'/join',{'engine':'1.4.0.0','content':b})
+  self.post('/api/servers/'+s['id']+'/join',{'engine':'1.4.0.0','content':a})
+  self.post('/api/servers/'+s['id']+'/heartbeat',{'mods':b,'map':'classic:53'},s['secret'])
+  with self.assertRaises(h.Problem):self.post('/api/servers/'+s['id']+'/join',{'engine':'1.4.0.0','content':a})
+  self.assertEqual(self.get('/api/servers')['servers'][0]['mods'],b)
  def test_no_dedicated_impersonation(self):
   with self.assertRaises(h.Problem):self.server(kind='dedicated')
   s=self.server(kind='dedicated',admin_key=self.hub.admin_key);self.assertTrue(s['secret'])

@@ -1651,7 +1651,7 @@ void update_gameplay_delta_time()
         const int64_t ns = now - prev;
         prev = now;
 
-        const long double seconds = max(ns / 1e9L, 0.L);
+        const long double seconds = network_is_active() ? min(max(ns / 1e9L, 0.L), 0.25L) : max(ns / 1e9L, 0.L);
         const long double turns = seconds * turns_per_second * kfx_replay_speed();
         const long double frames = seconds * fps_limit_current;
 

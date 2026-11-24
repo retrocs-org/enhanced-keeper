@@ -11,7 +11,7 @@ bool trash_save_group(const std::string &base){
     if(access((base+".protected").c_str(),F_OK)==0){notice="Unprotect this favourite before deleting it.";return false;}
     std::string folder=path("Trash");if(!SDL_CreateDirectory(folder.c_str())){notice="Could not create the recoverable Trash folder.";return false;}
     std::string stem=base.substr(base.find_last_of('/')+1)+"-"+std::to_string(SDL_GetPerformanceCounter());std::vector<std::pair<std::string,std::string>> moved;
-    std::vector<std::string> sources={base,base+".label",base+".protected",base+".png",base+".json"};for(int n=1;n<=3;n++)for(const char *suffix:{"",".png",".json"})sources.push_back(base+".backup"+std::to_string(n)+suffix);
+    std::vector<std::string> sources={base,base+".label",base+".protected",base+".png",base+".json",base+".requirements"};for(int n=1;n<=3;n++)for(const char *suffix:{"",".png",".json",".requirements"})sources.push_back(base+".backup"+std::to_string(n)+suffix);
     for(const std::string &source:sources){if(access(source.c_str(),F_OK)!=0)continue;std::string dest=folder+"/"+stem+source.substr(base.size());if(access(dest.c_str(),F_OK)==0||rename(source.c_str(),dest.c_str())!=0){bool restored=true;for(auto i=moved.rbegin();i!=moved.rend();++i)if(rename(i->second.c_str(),i->first.c_str())!=0)restored=false;notice=restored?"Move failed; the save group was restored.":"Some files remain in Trash. Check the save folder.";return false;}moved.push_back({source,dest});}
     notice="Save and backups moved to the save folder's Trash.";return !moved.empty();
 }

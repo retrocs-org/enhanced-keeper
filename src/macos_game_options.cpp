@@ -59,6 +59,8 @@
 #include <map>
 #include <mutex>
 #include <filesystem>
+#include <fstream>
+#include <future>
 #include <dirent.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -76,7 +78,7 @@ namespace {
 constexpr int WIDTH=640,HEIGHT=480;
 int button_animation_frame(Uint64 elapsed);
 int page=0,selected=0,save_index=0,action_index=0;
-bool owns_pause=false,capturing=false;
+bool owns_pause=false,capturing=false,performance_overlay=false,emergency_display=false;
 TbControllerButtons captured=0;
 std::string notice;
 SDL_Surface *canvas=nullptr,*guides[2]={},*preview=nullptr;
@@ -167,6 +169,7 @@ void persist(){
     FILE *file=fopen(temp.c_str(),"w");if(!file){notice="Could not write options. Check your save-folder permissions.";return;}
     fprintf(file,"version=1\npreset=%d\noverlay=%d\nenhanced=%d\ncursor=%g\ndeadzone=%g\nrumble=%g\nconfirm=%llu\nback=%llu\nautosave=%s\n",preset,debug_display_frametime!=0,start_params.enhanced_mode!=0,kfx_controller_cursor_speed(),kfx_controller_deadzone(),kfx_controller_rumble_strength(),(unsigned long long)kfx_menu_confirm_button(),(unsigned long long)kfx_menu_back_button(),getenv("KFX_AUTOSAVE_SECONDS")?getenv("KFX_AUTOSAVE_SECONDS"):"300");
     fprintf(file,"display_mode=%d\nresolution=%d\nwindow_cursor_lock=%d\n",saved_display_mode,saved_resolution,kfx_window_cursor_lock);
+    fprintf(file,"caption_scale=%g\nreduced_flashes=%d\nhigh_contrast=%d\ntooltip_scale=%g\ncamera_response=%g\nperformance_overlay=%d\n",kfx_caption_scale,kfx_reduce_flashes,kfx_high_contrast,kfx_tooltip_scale,kfx_camera_response(),performance_overlay);
     fprintf(file,"label_model=%d\nquick_wheel=%d\ncamera_pan_scale=%g\n",label_model,quick_wheel_enabled,kfx_camera_pan_scale);
     fprintf(file,"text_scale=%g\ncursor_scale=%g\nedge_scroll=%d\nedge_border=%d\nmentor_captions=%d\ncaption_seconds=%d\n",kfx_text_scale,kfx_cursor_scale,kfx_edge_scroll,kfx_edge_border,kfx_mentor_captions,kfx_caption_seconds);
     bool ok=fflush(file)==0 && fsync(fileno(file))==0;if(fclose(file)!=0)ok=false;
@@ -256,9 +259,10 @@ void button(int x,int y,int w,const std::string &title,int action,bool focus=fal
     if(active){auto start=focus_animation.emplace(action,SDL_GetTicks()).first;sprite_index=GFS_hugebutton_a01l+3*button_animation_frame(SDL_GetTicks()-start->second);}else focus_animation.erase(action);
     SDL_Surface *left=options_buttons?native_sprite(get_sprite(options_buttons,sprite_index)):nullptr,*middle=options_buttons?native_sprite(get_sprite(options_buttons,sprite_index+1)):nullptr,*right=options_buttons?native_sprite(get_sprite(options_buttons,sprite_index+2)):nullptr;
     if(left&&middle&&right){int cap=std::min(w/3,left->w*height/left->h);SDL_Rect l={x,y,cap,height},m={x+cap,y,w-2*cap,height},r={x+w-cap,y,cap,height};SDL_BlitSurfaceScaled(left,nullptr,canvas,&l,SDL_SCALEMODE_NEAREST);SDL_BlitSurfaceScaled(middle,nullptr,canvas,&m,SDL_SCALEMODE_NEAREST);SDL_BlitSurfaceScaled(right,nullptr,canvas,&r,SDL_SCALEMODE_NEAREST);}else frame(x,y,w,height,active);
-    int size=std::max(20,std::min(height-4,(int)round(24*kfx_text_scale)));std::string shown=title;SDL_Surface *image=label(shown,size,!active&&title!="+"&&title!="-");
-    while(image&&image->w>w-24&&shown.size()>4){shown=short_text(title,shown.size()-1);image=label(shown,size,!active);}
+    int size=std::max(20,std::min(height-4,(int)round(24*kfx_text_scale)));std::string shown=title;SDL_Surface *image=label(shown,size,!active&&!kfx_high_contrast&&title!="+"&&title!="-");
+    while(image&&image->w>w-24&&shown.size()>4){shown=short_text(title,shown.size()-1);image=label(shown,size,!active&&!kfx_high_contrast);}
     if(image){SDL_Rect to={x+(w-image->w)/2,y+(height-image->h)/2,image->w,image->h};SDL_BlitSurface(image,nullptr,canvas,&to);}
+    if(active&&kfx_high_contrast){rect(x+7,y+height/2-4,8,8,255,255,224);rect(x,y,w,2,255,255,224);rect(x,y+height-2,w,2,255,255,224);}
     hits.push_back({{x,y,w,height},action});
 }
 void title(const std::string &name){button(134,24,372,name,-10,false,48);if(!hits.empty())hits.pop_back();}
@@ -292,6 +296,16 @@ void filter_saves(){
     save_index=std::clamp(save_index,0,std::max(0,(int)saves.size()-1));backup_choice=0;
 }
 Save selected_save(){if(saves.empty())return {};Save current=saves[save_index];if(backup_choice)for(const Save &entry:all_saves)if(entry.slot==current.slot&&entry.backup==backup_choice)return entry;return current;}
+void scan_preserved_saves(){
+ namespace fs=std::filesystem;int number=4;
+ for(const char *directory:{"CompatibilityBackups","Trash"})try{fs::path folder=path(directory);if(fs::is_symlink(folder)||!fs::is_directory(folder))continue;
+  for(const auto &item:fs::directory_iterator(folder)){if(number>=260)break;if(item.is_symlink()||!item.is_regular_file())continue;std::string name=item.path().filename().string();long slot=-1;int used=0;if(sscanf(name.c_str(),"fx1g%4ld.sav%n",&slot,&used)!=1||used!=12||slot<0||slot>=SAVE_SLOTS_LIMIT)continue;
+   FILE *stream=fopen(item.path().c_str(),"rb");if(!stream)continue;FileChunkHeader header={};CatalogueEntry info={};bool ok=fread(&header,sizeof(header),1,stream)==1&&header.id==SGC_InfoBlock&&header.len==sizeof(info)&&fread(&info,sizeof(info),1,stream)==1;fclose(stream);if(!ok)continue;
+   info.textname[sizeof(info.textname)-1]=0;info.campaign_name[sizeof(info.campaign_name)-1]=0;struct stat st;if(lstat(item.path().c_str(),&st))continue;char date[48];struct tm tm;localtime_r(&st.st_mtime,&tm);strftime(date,sizeof(date),"%Y-%m-%d %H:%M",&tm);
+   all_saves.push_back({item.path().string(),info.textname,info.campaign_name,date,slot,(long)info.level_num,-1,number++,st.st_mtime});
+  }
+ }catch(...){}
+}
 void scan_saves(){
     all_saves.clear();saves.clear();preview_path.clear();std::string folder=path("");DIR *dir=opendir(folder.c_str());if(!dir){notice="Could not read the save folder.";return;}
     for(dirent *entry;(entry=readdir(dir));){
@@ -307,7 +321,7 @@ void scan_saves(){
         if(meta){const char *field=strstr(meta,"\"levelSeconds\":");if(field)sscanf(field,"\"levelSeconds\":%ld",&seconds);SDL_free(meta);}
         Save saved_entry={file,info.textname,info.campaign_name,date,slot,(long)info.level_num,seconds,backup,statbuf.st_mtime};saved_entry.automatic=saved_entry.title.find("Automatic save ")==0;char base_name[40];snprintf(base_name,sizeof(base_name),"fx1g%04ld.sav",slot);std::string base=path(base_name),alias=read_save_alias(base);saved_entry.favourite=access((base+".protected").c_str(),F_OK)==0;if(!alias.empty())saved_entry.title=alias;all_saves.push_back(saved_entry);
     }
-    closedir(dir);std::sort(all_saves.begin(),all_saves.end(),[](const Save &a,const Save &b){return a.modified!=b.modified?a.modified>b.modified:a.path<b.path;});
+    closedir(dir);scan_preserved_saves();std::sort(all_saves.begin(),all_saves.end(),[](const Save &a,const Save &b){return a.modified!=b.modified?a.modified>b.modified:a.path<b.path;});
     filter_saves();
 }
 bool copy_exclusive(const std::string &source,const std::string &dest){
@@ -372,7 +386,7 @@ void browser_initialize();
 void browser_filter();
 void browser_refresh();
 void community_request();
-extern std::string browser_search,hub_edit,host_title,host_address,server_password;
+extern std::string browser_search,hub_edit,host_title,host_address,host_map,server_password;
 extern int browser_tab;
 void feature_init();
 void feature_tick();
@@ -382,6 +396,8 @@ void save_feedback_draw();
 void finish_edit();
 void load_network_profile();
 std::string autosave_status();
+std::string profile_file(const char*);
+bool enhancement_action(int);void enhancement_draw();void enhancement_tick();void enhancement_sample();void performance_draw();void recovery_status_draw();int enhancement_count();void enhancement_confirm();void library_rename();extern std::string replay_title;
 bool play_tools_action(int);void play_tools_draw();void scan_profiles();bool create_profile();void play_tools_tick();extern std::string new_profile;extern int requirements_state;
 void change(int row,int direction){
     if(page==0){
@@ -412,15 +428,15 @@ void change(int row,int direction){
     if(page==5 && row<2)notice="Choose Apply Display to use and save these display settings.";
 }
 void activate(int action){
-    if(play_tools_action(action)||browser_action(action)||feature_action(action)||polish_action(action))return;
+    if(enhancement_action(action)||play_tools_action(action)||browser_action(action)||feature_action(action)||polish_action(action))return;
     focus_action=action;
-    if(action==901){if(page==8)close_panel();else{int previous=page;if(previous==19)kfx_readiness_cancel();page=previous==29?12:previous>=27?8:previous==26?15:previous>=21&&previous<=24?20:previous==25?22:previous==20?6:previous==15?0:previous==16?7:previous==17?12:previous==18?17:previous==19?6:previous==14?help_parent:previous==12?2:(previous>=9&&previous<=11?6:8);selected=0;
+    if(action==901){if(page==8)close_panel();else{int previous=page;if(previous==19)kfx_readiness_cancel();page=previous==30?28:previous==31||previous==32?13:previous==33?7:previous==34?1:previous==35?2:previous==29?12:previous>=27?8:previous==26?15:previous>=21&&previous<=24?20:previous==25?22:previous==20?6:previous==15?0:previous==16?7:previous==17?12:previous==18?17:previous==19?6:previous==14?help_parent:previous==12?2:(previous>=9&&previous<=11?6:8);selected=0;
         if(page==8){const int order[]={5,0,1,2,3,4,6,7,13};for(int i=0;i<9;i++)if(order[i]==previous)selected=i;
             if(previous==27)selected=8;else if(previous==28)selected=9;else if(previous==13)selected=10;}
         else if(page==6)selected=previous==9?1:previous==10?2:3;else if(page==13)selected=3;
         editing=0;SDL_StopTextInput(SDL_GetKeyboardFocus());focus_action=-1;}return;}
     if(action>=100 && action<=107){page=action-100;selected=0;capturing=false;editing=0;preview_large=false;repeat_button=255;focus_action=-1;SDL_StopTextInput(SDL_GetKeyboardFocus());notice.clear();if(page==2)scan_saves();return;}
-    if(action==501){if(!display_confirmation)return;if(SDL_GetTicks()>=display_deadline){display_confirmation=false;rollback_display=true;notice="Confirmation expired. Restoring the previous display.";return;}display_confirmation=false;saved_display_mode=display_mode;saved_resolution=resolution_index;persist();notice="Display settings kept.";return;}
+    if(action==501){if(!display_confirmation)return;if(SDL_GetTicks()>=display_deadline){display_confirmation=false;rollback_display=true;notice="Confirmation expired. Restoring the previous display.";return;}display_confirmation=false;saved_display_mode=display_mode;saved_resolution=resolution_index;persist();unlink(profile_file("display-startup.pending").c_str());notice="Display settings kept.";return;}
     if(action==502){display_confirmation=false;rollback_display=true;notice="Restoring previous display...";return;}
     if(action==307){preview_large=true;return;}
     if(action==308){preview_large=false;return;}
@@ -476,19 +492,20 @@ void backup_step(int direction);
 void navigate(int direction){
     mouse_navigation=false;focus_action=-1;
     if(page==8){selected=(selected+direction+12)%12;return;}
-    if(page>=27&&page<=29){int count=page==27?6:page==28?6:requirements_state>=0?2:1;selected=(selected+direction+count)%count;return;}
+    if(page>=30){int count=enhancement_count();selected=(selected+direction+count)%count;return;}
+    if(page>=27&&page<=29){int count=page==27?6:page==28?7:requirements_state>=0?2:1;selected=(selected+direction+count)%count;return;}
     if(page==9){report_offset=std::max(0,report_offset+direction);return;}
     if(page==10)return;
     if(page==26){selected=(selected+direction+2)%2;return;}
-    if(page>=20){int count=page==20?13:page==21?6:page==22?4:page==23?4:page==24?5:2;selected=(selected+direction+count)%count;return;}
+    if(page>=20){int count=page==20?13:page==21?6:page==22?4:page==23?5:page==24?5:2;selected=(selected+direction+count)%count;return;}
     if(page>=15){int count=page==15?8:page==16?6:page==17?4:page==18?2:3;selected=(selected+direction+count)%count;return;}
-    if(page==13){selected=(selected+direction+4)%4;return;}
+    if(page==13){selected=(selected+direction+6)%6;return;}
     if(page==14){selected=(selected+direction+2)%2;return;}
     if(page==11){selected=(selected+direction+2)%2;return;}
     if(page==12){backup_step(direction);return;}
     if(page==2){save_index=std::clamp(save_index+direction,0,std::max(0,(int)saves.size()-1));backup_choice=0;}
     else if(page==3){if(!actions.empty())action_index=(action_index+direction+(int)actions.size())%actions.size();}
-    else {int count=page==0||page==7?6:page==6?6:4;selected=(selected+direction+count)%count;}
+    else {int count=page==7?7:page==0?6:page==6?6:page==1?5:4;selected=(selected+direction+count)%count;}
 }
 void switch_tab(int direction){if(page==8){selected=(selected+direction+12)%12;return;}if(page>=9&&page<=11)page=6;else if(page==12)page=2;else if(page==14)page=help_parent;const int order[]={5,0,1,2,3,4,6,7,13};int index=0;for(int i=0;i<9;i++)if(order[i]==page)index=i;int next=order[(index+direction+9)%9];activate(next==13?800:100+next);}
 
@@ -499,9 +516,12 @@ void backup_step(int direction){
 void confirm_control(){
     mouse_navigation=false;
     if(page==8){const int sections[]={5,0,1,2,3,4,6,7};const int extra[]={1200,1300,800,901};activate(selected<8?100+sections[selected]:extra[selected-8]);return;}
+    if(page>=30){enhancement_confirm();return;}
     if(page==27){const int choices[]={1201,1202,1203,1204,1205,1206};activate(choices[selected]);return;}
-    if(page==28){activate(selected==5?1306:1301+selected);return;}
+    if(page==28){activate(selected==6?1500:selected==5?1306:1301+selected);return;}
     if(page==29){activate(selected?1401:1402);return;}
+    if(page==1&&selected==4){activate(1540);return;}
+    if(page==7&&selected==6){activate(1530);return;}
     if((page==0||page==7)&&selected==5)activate(page==0?840:841);
     else if(page==0||page==1||page==7)change(selected,1);
     else if(page==5){if(selected==3)activate(500);else change(selected,1);}
@@ -513,7 +533,7 @@ void confirm_control(){
     else if(page==3)activate(focus_action>=402&&focus_action<=405?focus_action:402);
     else if(page==6){const int choices[]={611,600,606,607,844,2000};activate(choices[selected]);}
     else if(page==4)activate(705);
-    else if(page==13){const int commands[]={810,811,813,814};activate(commands[selected]);}
+    else if(page==13){const int commands[]={810,811,813,814,1510,1520};activate(commands[selected]);}
     else if(page==14)activate(selected?812:811);
     else if(page==15){const int actions[]={860,861,862,863,864,895,894,896};activate(actions[selected]);}
     else if(page==26)activate(selected?898:897);
@@ -524,15 +544,16 @@ void confirm_control(){
     else if(page==20){const int actions[]={2010,2011,2012,2030,2031,2020,2022,2023,2024,2025,2021,2027,2026};activate(actions[selected]);}
     else if(page==21){const int actions[]={2044,2040,2041,2042,2043,2045};activate(actions[selected]);}
     else if(page==22)activate(2050+selected);
-    else if(page==23){const int actions[]={2060,2061,2063,2062};activate(actions[selected]);}
+    else if(page==23){const int actions[]={2060,2061,2063,2064,2062};activate(actions[selected]);}
     else if(page==24){const int actions[]={2080,2081,2083,2082,2084};activate(actions[selected]);}
     else if(page==25)activate(2070+selected);
 }
 void direction_control(int direction){
     mouse_navigation=false;if(page!=3)focus_action=-1;
+    if(page>=30){navigate(direction);return;}
     if(page==20){activate(2001+(browser_tab+direction+4)%4);return;}
     if(page==9){selected=selected?0:1;return;}
-    if(page==8){if(selected<8)selected=(selected+direction*4+8)%8;return;}
+    if(page==8){if(selected<8)selected=(selected+direction*4+8)%8;else selected=8+(selected-8+direction+4)%4;return;}
     if(page==2){save_filter=(save_filter+direction+4)%4;save_index=0;filter_saves();}
     else if(page==12)backup_step(direction);
     else if(page==3){int current=focus_action>=402&&focus_action<=405?focus_action-402:0;focus_action=402+(current+direction+4)%4;}
@@ -542,28 +563,29 @@ void direction_control(int direction){
     else if(page==16&&selected>=4)activate(selected==4?(direction<0?890:891):(direction<0?892:893));
 }
 void append_input(std::string value){
-    std::string *target=editing==1?&save_search:editing==2?&peer_version:editing==4?&network_name:editing==5?&save_alias:editing==6?&browser_search:editing==7?&host_title:editing==8?&host_address:editing==9?&hub_edit:editing==10?&server_password:editing==11?&new_profile:&join_ip;size_t limit=editing==1?64:editing==2?24:editing==4?19:editing==5?63:editing==6?64:editing==7?64:editing==8?120:editing==9?240:editing==10?31:editing==11?32:120;
+    std::string *target=editing==1?&save_search:editing==2?&peer_version:editing==4?&network_name:editing==5?&save_alias:editing==6?&browser_search:editing==7?&host_title:editing==8?&host_address:editing==9?&hub_edit:editing==10?&server_password:editing==13?&host_map:editing==12?&replay_title:editing==11?&new_profile:&join_ip;size_t limit=editing==1?64:editing==2?24:editing==4?19:editing==5?63:editing==6?64:editing==7?64:editing==8?120:editing==9?240:editing==10?31:editing==13?88:editing==12?63:editing==11?32:120;
     if(edit_selected){target->clear();edit_selected=false;}
     std::string clean;for(unsigned char c:value)if(c>=32&&c!=127&&(editing!=4||c<128))clean.push_back(c);
     size_t length=std::min(clean.size(),limit-target->size());while(length>0&&length<clean.size()&&(((unsigned char)clean[length]&0xc0)==0x80))length--;target->append(clean.data(),length);
     if(editing==1){save_index=0;filter_saves();}if(editing==6)browser_filter();
 }
 void delete_input(){
-    std::string *target=editing==1?&save_search:editing==2?&peer_version:editing==4?&network_name:editing==5?&save_alias:editing==6?&browser_search:editing==7?&host_title:editing==8?&host_address:editing==9?&hub_edit:editing==10?&server_password:editing==11?&new_profile:&join_ip;
+    std::string *target=editing==1?&save_search:editing==2?&peer_version:editing==4?&network_name:editing==5?&save_alias:editing==6?&browser_search:editing==7?&host_title:editing==8?&host_address:editing==9?&hub_edit:editing==10?&server_password:editing==13?&host_map:editing==12?&replay_title:editing==11?&new_profile:&join_ip;
     if(edit_selected){target->clear();edit_selected=false;}
     else if(!target->empty()){size_t index=target->size()-1;while(index>0&&(((unsigned char)(*target)[index]&0xc0)==0x80))index--;target->erase(index);}
     if(editing==1){save_index=0;filter_saves();}if(editing==6)browser_filter();
 }
 #include "macos_options_polish.inc"
 #include "macos_play_tools.inc"
+#include "macos_enhancements.inc"
 #include "macos_feature_tools.inc"
 #include "macos_server_browser.inc"
 
 void captions_draw(){
     if(!kfx_mentor_captions||caption.empty()||SDL_GetTicks()>=caption_until||!winfont)return;
     int width=RendererScreenWidth();int saved_flags=RendererGetDrawFlags();
-    int left=width/4;LbDrawBox(left,12,width-left-12,76,0);LbTextSetFont(winfont);LbTextSetWindow(left+12,18,width-left-36,68);RendererSetDrawFlags(Lb_TEXT_HALIGN_CENTER);
-    int units=std::max(16,(int)(24*kfx_text_scale*16/std::max(1,(int)LbTextLineHeight())));LbTextDrawResized(0,0,units,caption.c_str());RendererSetDrawFlags(saved_flags);
+    int left=width/4,height=(int)(76*kfx_caption_scale);LbDrawBox(left,12,width-left-12,height,0);LbTextSetFont(winfont);LbTextSetWindow(left+12,18,width-left-36,height-8);RendererSetDrawFlags(Lb_TEXT_HALIGN_CENTER);
+    int units=std::max(16,(int)(24*kfx_caption_scale*16/std::max(1,(int)LbTextLineHeight())));LbTextDrawResized(0,0,units,caption.c_str());RendererSetDrawFlags(saved_flags);
 }
 }
 
@@ -584,7 +606,13 @@ void kfx_options_initialize(void){
     FILE *file=fopen(path("macos-options.cfg").c_str(),"r");if(!file)return;
     char line[160],key[40];double value;
     while(fgets(line,sizeof(line),file))if(sscanf(line,"%39[^=]=%lf",key,&value)==2 && std::isfinite(value)){
-        if(!strcmp(key,"quick_wheel"))quick_wheel_enabled=value==1;
+        if(!strcmp(key,"caption_scale")&&value>=1&&value<=2)kfx_caption_scale=value;
+        else if(!strcmp(key,"tooltip_scale")&&value>=1&&value<=1.5)kfx_tooltip_scale=value;
+        else if(!strcmp(key,"reduced_flashes"))kfx_reduce_flashes=value==1;
+        else if(!strcmp(key,"high_contrast"))kfx_high_contrast=value==1;
+        else if(!strcmp(key,"performance_overlay"))performance_overlay=value==1;
+        else if(!strcmp(key,"camera_response")&&value>=1&&value<=3)env_number("KFX_CAMERA_RESPONSE",value);
+        else if(!strcmp(key,"quick_wheel"))quick_wheel_enabled=value==1;
         else if(!strcmp(key,"camera_pan_scale")&&value>=.25&&value<=1)kfx_camera_pan_scale=value;
         else if(!strcmp(key,"label_model")&&value>=-1&&value<=1&&value==(int)value)label_model=value;
         else if(!strcmp(key,"preset") && value>=0&&value<=3 && value==(int)value){preset=value;start_params.num_fps_draw_main=start_params.num_fps_draw_secondary=caps[preset];}
@@ -644,16 +672,17 @@ void kfx_caption_speech(int sample){
 }
 
 void kfx_options_apply_display(void){
-    play_tools_tick();feature_tick();browser_tick();process_network();
+    enhancement_tick();play_tools_tick();feature_tick();browser_tick();process_network();
     if(display_confirmation && SDL_GetTicks()>=display_deadline){display_confirmation=false;rollback_display=true;}
     if(rollback_display){
         rollback_display=false;display_confirmation=false;
         if(rollback_minimal)setup_screen_mode_minimal(rollback_mode);else setup_screen_mode(rollback_mode,false);
         set_modes(rollback_mode);display_mode=rollback_display_choice;resolution_index=rollback_resolution;
         if(rollback_minimal){FrontendMenuState state=(FrontendMenuState)frontend_menu_state;init_gui();frontend_set_state(state);}else reinit_all_menus();
-        notice="Previous display settings restored.";LbSetMouseGrab(false);return;
+        unlink(profile_file("display-startup.pending").c_str());notice="Previous display settings restored.";LbSetMouseGrab(false);return;
     }
     if(!pending_display)return;pending_display=false;
+    write_small_file(profile_file("display-startup.pending"),"display-change\n");
     TbScreenMode previous=LbScreenActiveMode(),mode=chosen_mode(display_mode,resolution_index);
     bool minimal=MinimalResolutionSetup;
     rollback_mode=previous;rollback_minimal=minimal;const TbScreenModeInfo *old_info=LbScreenGetModeInfo(previous);rollback_display_choice=old_info&&!(old_info->VideoFlags&Lb_VF_WINDOWED)?1:0;rollback_resolution=saved_resolution;
@@ -665,8 +694,10 @@ void kfx_options_apply_display(void){
         if(minimal)setup_screen_mode_minimal(previous);else setup_screen_mode(previous,false);
         display_mode=-1;infer_display();notice="This display mode is unavailable. Previous display restored.";
     }
+    if(emergency_display){emergency_display=false;if(result==mode){display_confirmation=false;saved_display_mode=0;saved_resolution=0;persist();unlink(profile_file("display-startup.pending").c_str());notice="Monitor changed. Safe windowed mode restored.";}}
     LbSetMouseGrab(false);
 }
+void kfx_options_recover_display(void){display_confirmation=false;rollback_display=false;display_mode=0;resolution_index=0;emergency_display=true;pending_display=true;}
 int kfx_options_confirm_display(int keep){if(!display_confirmation)return 0;if(keep&&SDL_GetTicks()>=display_deadline){activate(502);return 0;}activate(keep?501:502);return 1;}
 int kfx_options_set_display(int fullscreen,int width,int height){
     if(display_confirmation||rollback_display||pending_display)return 0;
@@ -679,7 +710,7 @@ void kfx_options_display(struct GuiButton *button){(void)button;open_panel(5);}
 void kfx_options_hide(void){if(kfx_controller_guide_visible)close_panel();}
 void kfx_options_open(struct GuiButton *button){(void)button;open_panel(8);}
 void kfx_options_preview(int number){capture_preview=true;kfx_options_show_page(number);}
-void kfx_options_show_page(int number){open_panel(std::clamp(number,0,29));if(page==2||page==12||page==17||page==18)scan_saves();if(page==20){browser_filter();browser_refresh();}if(page==25)hub_edit=kfx_hub_url();if(page==24)community_request();}
+void kfx_options_show_page(int number){open_panel(std::clamp(number,0,35));if(page==2||page==12||page==17||page==18)scan_saves();if(page==20){browser_filter();browser_refresh();}if(page==25)hub_edit=kfx_hub_url();if(page==24)community_request();}
 void kfx_options_button(struct GuiButton *button){
     if(frontend_menu_state==FeSt_FEOPTIONS)frontend_draw_button(button,1,"More Options",Lb_TEXT_HALIGN_CENTER);
     else{
@@ -735,7 +766,7 @@ bool kfx_options_event(const SDL_Event *event){
         if(editing)return true;
         if(button==SDL_GAMEPAD_BUTTON_LEFT_SHOULDER||button==SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER){switch_tab(button==SDL_GAMEPAD_BUTTON_LEFT_SHOULDER?-1:1);return true;}
         if(button==SDL_GAMEPAD_BUTTON_DPAD_UP||button==SDL_GAMEPAD_BUTTON_DPAD_DOWN){navigate(button==SDL_GAMEPAD_BUTTON_DPAD_UP?-1:1);repeat_button=button;repeat_at=SDL_GetTicks()+350;return true;}
-        if(button==SDL_GAMEPAD_BUTTON_DPAD_LEFT||button==SDL_GAMEPAD_BUTTON_DPAD_RIGHT){direction_control(button==SDL_GAMEPAD_BUTTON_DPAD_LEFT?-1:1);repeat_button=255;return true;}
+        if(button==SDL_GAMEPAD_BUTTON_DPAD_LEFT||button==SDL_GAMEPAD_BUTTON_DPAD_RIGHT){direction_control(button==SDL_GAMEPAD_BUTTON_DPAD_LEFT?-1:1);repeat_button=button;repeat_at=SDL_GetTicks()+350;return true;}
         if(page==12 && (button==SDL_GAMEPAD_BUTTON_START||binding==save_aux_button(0))){activate(842);return true;}
         if(page==2 && button==SDL_GAMEPAD_BUTTON_START){activate(814);return true;}
         if(page==12 && binding==save_aux_button(1)){activate(307);return true;}
@@ -759,14 +790,15 @@ bool kfx_options_event(const SDL_Event *event){
     return false;
 }
 void kfx_options_draw(void){
+    enhancement_sample();
     if(wheel_open){wheel_draw();return;}
-    if(!kfx_controller_guide_visible){captions_draw();save_feedback_draw();return;}
-    if(repeat_button!=255&&!editing&&!capturing&&!display_confirmation&&SDL_GetTicks()>=repeat_at){navigate(repeat_button==SDL_GAMEPAD_BUTTON_DPAD_UP?-1:1);repeat_at=SDL_GetTicks()+90;}
+    if(!kfx_controller_guide_visible){captions_draw();save_feedback_draw();performance_draw();recovery_status_draw();return;}
+    if(repeat_button!=255&&!editing&&!capturing&&!display_confirmation&&SDL_GetTicks()>=repeat_at){if(repeat_button==SDL_GAMEPAD_BUTTON_DPAD_LEFT||repeat_button==SDL_GAMEPAD_BUTTON_DPAD_RIGHT)direction_control(repeat_button==SDL_GAMEPAD_BUTTON_DPAD_LEFT?-1:1);else navigate(repeat_button==SDL_GAMEPAD_BUTTON_DPAD_UP?-1:1);repeat_at=SDL_GetTicks()+90;}
     if(!canvas)canvas=SDL_CreateSurface(WIDTH,HEIGHT,SDL_PIXELFORMAT_RGBA32);if(!canvas)return;
     if(label_model<0){int model=controller_device_model();if(model>=0)kfx_controller_guide_ps5=model;}else kfx_controller_guide_ps5=label_model;
     update_hover();hits.clear();background();
-    const char *names[]={"Controller Options","Performance","Saved Games","Remap Controller","Controller Guide","Display Options","Network Options","Accessibility","More Options","Connection Test","Game Versions","Join by IP","Saved Game","About & Diagnostics","Saving Help","Connected Controllers","Accessibility Presets","Manage Saved Game","Delete Saved Game","Multiplayer Readiness","Server Browser","Server Details","Community Account","Host Public Game","Community","Community Service","Controller Test","Content Profiles","Replay Controls","Save Requirements"};
-    title(names[std::clamp(page,0,29)]);
+    const char *names[]={"Controller Options","Performance","Saved Games","Remap Controller","Controller Guide","Display Options","Network Options","Accessibility","More Options","Connection Test","Game Versions","Join by IP","Saved Game","About & Diagnostics","Saving Help","Connected Controllers","Accessibility Presets","Manage Saved Game","Delete Saved Game","Multiplayer Readiness","Server Browser","Server Details","Community Account","Host Public Game","Community","Community Service","Controller Test","Content Profiles","Replay Controls","Save Requirements","Replay Library","Personal Data Tools","Setup Guide","Comfort and Readability","Performance Capture","Save Recovery"};
+    title(names[std::clamp(page,0,35)]);
     if(page==8){
         const char *sections[]={"Display","Controller","Performance","Saved Games","Remap","Controller Guide","Network","Accessibility"};const int pages[]={5,0,1,2,3,4,6,7};
         for(int i=0;i<8;i++)button(i<4?50:338,104+(i%4)*72,252,sections[i],100+pages[i],selected==i,46);
@@ -779,15 +811,15 @@ void kfx_options_draw(void){
     }else if(page==0){
         frame(24,90,592,256);char value[64];snprintf(value,sizeof(value),"%.2fx",kfx_controller_cursor_speed());row(0,"Pointer speed",value);snprintf(value,sizeof(value),"%.0f%%",kfx_controller_deadzone()*100);row(1,"Stick dead zone",value);snprintf(value,sizeof(value),"%.0f%%",kfx_controller_rumble_strength()*100);row(2,"Vibration",value);row(3,"Menu confirm",binding_name(kfx_menu_confirm_button()));row(4,"Menu back",binding_name(kfx_menu_back_button()));button(134,350,372,"Select Controller",840,selected==5,40);
     }else if(page==1){
-        frame(24,90,592,214);const char *short_presets[]={"60 FPS","30 FPS","120 FPS","Unlimited"};row(0,"Frame rate",short_presets[preset]);row(1,"Frame timing display",debug_display_frametime?"On":"Off");row(2,"Presentation",start_params.enhanced_mode?"Enhanced":"Original");int seconds=getenv("KFX_AUTOSAVE_SECONDS")?atoi(getenv("KFX_AUTOSAVE_SECONDS")):300;row(3,"Automatic saves",seconds?std::to_string(seconds/60)+" minutes":"Off");centered(338,"Game speed stays unchanged.",22);centered(372,"Missing movies use the originals.",20);
+        frame(24,90,592,214);const char *short_presets[]={"60 FPS","30 FPS","120 FPS","Unlimited"};row(0,"Frame rate",short_presets[preset]);row(1,"Frame timing display",debug_display_frametime?"On":"Off");row(2,"Presentation",start_params.enhanced_mode?"Enhanced":"Original");int seconds=getenv("KFX_AUTOSAVE_SECONDS")?atoi(getenv("KFX_AUTOSAVE_SECONDS")):300;row(3,"Automatic saves",seconds?std::to_string(seconds/60)+" minutes":"Off");button(64,338,512,"Performance Graph and Capture",1540,selected==4,40);
     }else if(page==7){
-        frame(24,90,592,256);row(0,"Menu / caption text",std::to_string((int)round(kfx_text_scale*100))+"%");row(1,"Cursor / hand size",std::to_string((int)round(kfx_cursor_scale*100))+"%");row(2,"Edge scrolling",kfx_edge_scroll?"On":"Off");row(3,"Scroll border",std::to_string(kfx_edge_border)+" pixels");row(4,"Mentor captions",kfx_mentor_captions?"On":"Off");button(134,350,372,"Accessibility Presets",841,selected==5,40);
+        frame(24,90,592,256);row(0,"Menu / caption text",std::to_string((int)round(kfx_text_scale*100))+"%");row(1,"Cursor / hand size",std::to_string((int)round(kfx_cursor_scale*100))+"%");row(2,"Edge scrolling",kfx_edge_scroll?"On":"Off");row(3,"Scroll border",std::to_string(kfx_edge_border)+" pixels");row(4,"Mentor captions",kfx_mentor_captions?"On":"Off");button(24,350,284,"Presets",841,selected==5,40);button(332,350,284,"Comfort / Text",1530,selected==6,40);
     }else if(page==2){
         small_line(24,78,autosave_status(),592);
         button(24,106,386,std::string("Search: ")+save_search+(editing==1?"|":""),304,editing==1,40);const char *filters[]={"All saves","Manual","Automatic","Favourites"};button(426,106,190,filters[save_filter],305,false,40);
         if(saves.empty())centered(212,"No matching saved games.",24);
         int offset=(save_index/4)*4;for(int i=0;i<4&&offset+i<(int)saves.size();i++)button(24,156+i*50,592,(saves[offset+i].favourite?"* ":"")+saves[offset+i].title,320+i,offset+i==save_index,42);
-        button(24,366,160,"Previous",300);button(456,366,160,"Next",301);button(216,366,208,"Saving Help",814);
+        button(24,366,160,"Previous",300);button(456,366,160,"Next",301);button(216,366,208,"Recovery",1550);
     }else if(page==12){
         if(saves.empty()){page=2;}else{
             Save entry=selected_save();centered(83,short_text(entry.title,36),24);
@@ -835,7 +867,7 @@ void kfx_options_draw(void){
     }else if(page==11){
         centered(106,"Hostname / IP address and UDP port",24);button(64,163,512,join_ip+(editing==3?"|":""),602,selected==0||editing==3,46);button(134,250,372,"Join Game",603,selected==1,46);centered(330,"Example: 192.168.1.20:5556",22);centered(368,"The host must have a LAN lobby open.",20);
     }
-    polish_draw_page();feature_draw();browser_draw();play_tools_draw();
+    polish_draw_page();feature_draw();browser_draw();play_tools_draw();enhancement_draw();
     if(page!=8&&page!=12)button(134,426,372,page==29?"Return to Saved Game":page==26?"Return to Devices":page==25?"Return to Account":page>=21&&page<=24?"Return to Browser":page==20?"Return to Network":page==15?"Return to Controller":page==16?"Return to Accessibility":page==17?"Return to Save":page==18?"Return to Management":page==19?"Return to Network":page==14?(help_parent==13?"Return to About":"Return to Saves"):page>=9&&page<=11?"Return to Network":"Return to Sections",901,false,42);
     if(!notice.empty()&&page<20&&page!=8&&page!=12&&page!=4&&page!=16&&page!=19)status_line(notice);
     if(preview_large&&page==12&&!saves.empty()){
@@ -851,6 +883,7 @@ void kfx_options_draw(void){
 }
 
 #else
+void kfx_options_recover_display(void){}
 int kfx_options_select_replay(const char*){return 0;}
 int kfx_options_community_action(int){return 0;}
 const char *kfx_options_community_status(void){return "{}";}
@@ -865,7 +898,8 @@ void kfx_options_open(struct GuiButton*){}
 void kfx_options_show_page(int){}
 void kfx_options_preview(int){}
 void kfx_options_button(struct GuiButton*){}
-void kfx_options_draw(void){}
+void kfx_options_draw(void){
+    enhancement_sample();}
 void kfx_caption_speech(int){}
 void kfx_save_feedback(int,int,const char*){}
 void kfx_options_display(struct GuiButton*){}

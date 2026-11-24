@@ -47,3 +47,26 @@ with tempfile.TemporaryDirectory(prefix='kfx-import-fixture-') as folder:
  outside=folder/'outside';outside.mkdir();(prefs/'ContentProfiles/linked').symlink_to(outside,target_is_directory=True)
  (prefs/'content-profile.cfg').write_text('linked\n');call('--prepare-only');assert not list(outside.iterdir())
  print('PASS: separate profile runtime/save paths, shared imported originals, overlay replacement/removal and invalid/link selection rejection')
+
+ # Keep all user operations inside this fixture profile.
+ (prefs/'content-profile.cfg').write_text('default\n')
+ (prefs/'save/community-session.cfg').write_text('private token')
+ call('--export-personal')
+ import zipfile
+ archives=list((prefs/'Exports').glob('*.zip'));assert len(archives)==1
+ with zipfile.ZipFile(archives[0]) as archive:
+  names=archive.namelist();assert any(x.endswith('main-save.fixture') for x in names)
+  assert not any('community-session' in x or '/OriginalData/' in x for x in names)
+ (prefs/'save/macos-options.cfg').write_text('display_mode=1\nresolution=7\nwindow_cursor_lock=1\n')
+ (runtime/'keeperfx.cfg').write_text('FRONTEND_RES=DESKTOP\nINGAME_RES=DESKTOP DESKTOP\nRENDERER=OPENGL\n')
+ (prefs/'display-startup.pending').write_text('startup')
+ call('--prepare-only')
+ assert 'FRONTEND_RES=800x600w32' in (runtime/'keeperfx.cfg').read_text()
+ assert 'display_mode=0' in (prefs/'save/macos-options.cfg').read_text()
+ assert list(runtime.glob('keeperfx.cfg.before-display-recovery-*'))
+ (prefs/'reset-profile-next.cfg').write_text('reset')
+ call('--prepare-only')
+ assert not (prefs/'save/main-save.fixture').exists()
+ assert list((prefs/'ProfileBackups').glob('*/save/main-save.fixture'))
+ assert (prefs/'OriginalData/data/slab0-0.dat').read_bytes()==b'fixture'
+ print('PASS: personal ZIP excludes tokens/originals; failed display startup restores windowed settings; profile reset preserves recoverable files and shared originals')

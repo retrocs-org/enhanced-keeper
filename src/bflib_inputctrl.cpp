@@ -516,8 +516,12 @@ static void process_event(const SDL_Event *ev)
     case SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED:
         redetect_screen_refresh_rate_for_draw();
         break;
-    case SDL_EVENT_WINDOW_RESTORED:
     case SDL_EVENT_DISPLAY_REMOVED:
+#ifdef __APPLE__
+        kfx_options_recover_display();
+#endif
+        clear_controller_input();redetect_screen_refresh_rate_for_draw();break;
+    case SDL_EVENT_WINDOW_RESTORED:
         clear_controller_input();
         redetect_screen_refresh_rate_for_draw();break;
 

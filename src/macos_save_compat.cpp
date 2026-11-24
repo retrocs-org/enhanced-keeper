@@ -101,3 +101,20 @@ extern "C" int kfx_save_preserve_before_load(const char *source){
  (void)source;return 1;
 #endif
 }
+
+extern "C" int kfx_content_fingerprint(const char *base,const char *map,char *output,unsigned capacity){
+#ifdef __APPLE__
+ try{fs::path root=fs::absolute(base);std::set<std::string> files;add_tree(files,root,checked(root,"fxdata"),true);add_tree(files,root,checked(root,"creatrs"),true);add_tree(files,root,checked(root,"mods"));
+  std::string spec=map?map:"";if(!spec.empty()){
+   auto colon=spec.rfind(':');if(colon==std::string::npos)throw std::runtime_error("Map selection is unavailable.");std::string name=spec.substr(0,colon),level=spec.substr(colon+1);if(name.size()>80||level.empty()||level.size()>5||!std::all_of(level.begin(),level.end(),[](unsigned char c){return c>='0'&&c<='9';}))throw std::runtime_error("Invalid map selection.");
+   fs::path descriptor=name;if(descriptor.extension()!=".cfg")descriptor+=".cfg";if(descriptor.parent_path().empty()){fs::path chosen;for(const char *folder:{"multiplayer","campgns","levels"})if(fs::is_regular_file(checked(root,fs::path(folder)/descriptor))){chosen=fs::path(folder)/descriptor;break;}if(chosen.empty())throw std::runtime_error("Campaign is missing.");descriptor=chosen;}
+   auto file=checked(root,descriptor);files.insert(descriptor.generic_string());std::ifstream in(file);if(!in)throw std::runtime_error("Campaign is missing.");std::string line,levels;
+   while(std::getline(in,line)){auto equal=line.find('=');if(equal==std::string::npos)continue;std::string key=line.substr(0,equal),value=line.substr(equal+1);key.erase(std::remove_if(key.begin(),key.end(),[](unsigned char c){return std::isspace(c);}),key.end());auto comment=value.find(';');if(comment!=std::string::npos)value.resize(comment);auto begin=value.find_first_not_of(" \t\r"),end=value.find_last_not_of(" \t\r");value=begin==std::string::npos?"":value.substr(begin,end-begin+1);std::transform(key.begin(),key.end(),key.begin(),[](unsigned char c){return std::toupper(c);});if(key=="LEVELS_LOCATION")levels=value;if((key=="CONFIGS_LOCATION"||key=="CREATURES_LOCATION")&&!value.empty())add_tree(files,root,checked(root,value),true);}
+   if(levels.empty())throw std::runtime_error("Campaign levels folder is missing.");char prefix[32];snprintf(prefix,sizeof(prefix),"map%05d.",std::stoi(level));size_t before=files.size();for(auto &entry:fs::directory_iterator(checked(root,levels)))if(entry.path().filename().string().rfind(prefix,0)==0)files.insert(fs::relative(entry.path(),root).generic_string());if(files.size()==before)throw std::runtime_error("Selected map files are missing.");
+  }
+  CC_SHA256_CTX context;CC_SHA256_Init(&context);uint64_t budget=0;for(auto &name:files){std::string row=name+" "+hash(checked(root,name),budget)+"\n";CC_SHA256_Update(&context,row.data(),(CC_LONG)row.size());}unsigned char digest[32];CC_SHA256_Final(digest,&context);std::string result;for(unsigned char b:digest){result+="0123456789abcdef"[b>>4];result+="0123456789abcdef"[b&15];}snprintf(output,capacity,"%s",result.c_str());return 1;
+ }catch(const std::exception &e){snprintf(output,capacity,"%s",e.what());return 0;}
+#else
+ (void)base;(void)map;if(capacity)output[0]=0;return 0;
+#endif
+}

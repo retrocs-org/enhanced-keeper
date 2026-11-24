@@ -116,3 +116,14 @@ profile to save/reload a dungeon, record a replay and compare world checksums at
 a bookmark reached at different speeds. It also verifies that pause holds turns
 and the replay controls do not alter recorded simulation state. Imported assets
 and captured files remain local. These commands are not hosted CI jobs.
+
+Manual enhancement checks (no CI/runner):
+
+- `python3 macos/tests/check-network-resume.py`: real loopback ENet handshake,
+  forged-key rejection, same-slot packet routing and reservation expiry.
+- `KFX_TEST_RECONNECT=1 python3 macos/tests/test-community-integration.py`: real
+  dedicated host, relay join, 35-second client suspension and live spectator.
+- `test-importer-fixtures.py` also verifies private export filtering, display
+  recovery and reversible profile reset using an isolated fixture directory.
+- Native options checks cover all six new pages, replay labels/favourites,
+  caption preferences, capture output, repeat navigation and monitor recovery.

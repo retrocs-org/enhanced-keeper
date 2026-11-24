@@ -248,7 +248,7 @@ class Hub:
             if len(parts)>=3 and parts[:2]==['api','servers']:
                 sid=parts[2];action=parts[3] if len(parts)>3 else ''
                 if action=='join':
-                    row=c.execute('SELECT * FROM servers WHERE id=? AND last_seen>?',(sid,now-90)).fetchone();require(row,'Server is offline',404);require(row['status']=='lobby' and row['players']<row['capacity'],'Server is full or playing',409);require(not data.get('engine') or data['engine']==row['engine'],'Engine version differs',409)
+                    row=c.execute('SELECT * FROM servers WHERE id=? AND last_seen>?',(sid,now-90)).fetchone();require(row,'Server is offline',404);require(row['status']=='lobby' and row['players']<row['capacity'],'Server is full or playing',409);require(not data.get('engine') or data['engine']==row['engine'],'Engine version differs',409);fingerprint=data.get('content','');require(isinstance(fingerprint,str) and (not fingerprint or re.fullmatch('[0-9a-f]{64}',fingerprint)),'Invalid content fingerprint');require(not fingerprint or not re.fullmatch('[0-9a-f]{64}',row['mods']) or hmac.compare_digest(fingerprint,row['mods']),'Campaign/map or configuration/mod content differs',409)
                     match=c.execute("SELECT id FROM matches WHERE server=? AND ended=0 ORDER BY started DESC LIMIT 1",(sid,)).fetchone();answer={'endpoint':row['endpoint'],'id':sid,'match_id':match['id'] if match else ''}
                     if uid and match:
                         c.execute('INSERT OR IGNORE INTO participants(match,user) VALUES(?,?)',(match['id'],uid));ticket=secrets.token_urlsafe(32);c.execute('INSERT INTO tickets(token,server,user,expires) VALUES(?,?,?,?)',(digest(ticket),sid,uid,now+600));answer['identity_ticket']=ticket
@@ -256,7 +256,7 @@ class Hub:
                     return answer
                 row=self.server(c,sid,token)
                 if action=='heartbeat':
-                    players=data.get('players',1);require(type(players)==int and 0<=players<=4,'Invalid player count');status=data.get('status','lobby');require(status in ('lobby','playing','offline'),'Invalid server status');c.execute('UPDATE servers SET last_seen=?,players=?,status=?,map=? WHERE id=?',(now,players,status,str(data.get('map',row['map']))[:80],sid));
+                    players=data.get('players',1);require(type(players)==int and 0<=players<=4,'Invalid player count');status=data.get('status','lobby');require(status in ('lobby','playing','offline'),'Invalid server status');c.execute('UPDATE servers SET last_seen=?,players=?,status=?,map=?,mods=? WHERE id=?',(now,players,status,str(data.get('map',row['map']))[:80],str(data.get('mods',row['mods']))[:64],sid));
                     if status=='offline':c.execute("UPDATE matches SET ended=?,status=CASE WHEN status='lobby' THEN 'cancelled' ELSE 'abandoned' END WHERE server=? AND ended=0",(now,sid))
                     if status=='playing':c.execute("UPDATE matches SET status='playing',map=? WHERE server=? AND status='lobby' AND ended=0",(str(data.get('map',row['map']))[:80],sid))
                     return {'ok':True,'channels':self.relay.hosting(sid) if self.relay else []}

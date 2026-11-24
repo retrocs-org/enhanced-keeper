@@ -242,6 +242,8 @@ or download is advertised. An update failure leaves the last valid cache intact.
 
 On a desync or peer departure, the game writes one bounded
 `save/network-diagnostics.json` report and includes it in Copy Diagnostics.
-Existing automatic state resynchronization remains in use. A fully disconnected
-player can rejoin a lobby; reconnecting into an already-running match is not
-supported by the current lockstep protocol and is not attempted automatically.
+Existing automatic state resynchronization remains in use. Upgraded ENet peers
+can resume a reserved player slot after an unclean timeout using an in-memory
+session key. Clean departures, expired reservations and application restarts
+still require a lobby join. See [recovery and local tools](POLISH-TOOLS.md) for
+the bounded grace period and tested limits.

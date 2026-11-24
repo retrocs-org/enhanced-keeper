@@ -22,6 +22,9 @@ unsigned char last_used_input_device=ID_Keyboard_Mouse;
 int frontend_menu_state=FeSt_MAIN_MENU;
 int32_t fps_limit_main=0,fps_limit_secondary=0;
 int debug_display_frametime=0;
+struct FrametimeMeasurements frametime_measurements={};
+unsigned long GetPing(int){return 0;}
+const char *kfx_network_recovery_status(void){return "";}
 struct TbSpriteSheet *frontend_font[FRONTEND_FONTS_COUNT]={},*winfont=nullptr;
 unsigned long key_modifiers=0;
 TbControllerButtons controller_button_state=0;
@@ -123,7 +126,7 @@ static void pad(Uint8 button){SDL_Event event={};event.type=SDL_EVENT_GAMEPAD_BU
 extern "C" TbControllerButtons controller_raw_buttons(void){return 0;}
 extern "C" float controller_raw_axis(int){return 0;}
 int main(){
- char folder[]="/tmp/kfx-ingame-options-XXXXXX";assert(mkdtemp(folder));test_folder=folder;art_folder=getenv("KFX_TEST_ART")?getenv("KFX_TEST_ART"):"macos/packaging/controllers";
+ char folder[]="/tmp/kfx-ingame-options-XXXXXX";assert(mkdtemp(folder));test_folder=folder;setenv("KFX_USER_DATA_DIR",test_folder.c_str(),1);snprintf(keeper_runtime_directory,sizeof(keeper_runtime_directory),"%s/GameData",folder);SDL_CreateDirectory(keeper_runtime_directory);art_folder=getenv("KFX_TEST_ART")?getenv("KFX_TEST_ART"):"macos/packaging/controllers";
  kfx_options_initialize();assert(!actions.empty());
  game.game_kind=GKind_LocalGame;frontend_menu_state=FeSt_INITIAL;kfx_options_open(nullptr);assert(kfx_controller_guide_visible);assert(game.operation_flags&GOF_Paused);
  for(int i=0;i<30;i++){page=i;render_file="/tmp/kfx-options-page-"+std::to_string(i)+".png";kfx_options_draw();}
@@ -212,5 +215,16 @@ int main(){
  mouse_navigation=false;focus_action=-1;focus_animation[2500]=123;button(1,1,100,"A",2500,true);button(110,1,100,"B",2501,true);assert(focus_animation[2500]==123&&focus_animation.count(2501));
  kfx_hub_new_match();kfx_hub_record_terminal(1,1);kfx_hub_record_departure(1);assert(kfx_hub_terminal_verified(1));kfx_hub_record_departure(2);kfx_hub_record_terminal(2,2);assert(!kfx_hub_terminal_verified(2));
  std::string isolated=test_folder+"/profile-tests";SDL_CreateDirectory(isolated.c_str());setenv("KFX_BASE_USER_DATA_DIR",isolated.c_str(),1);open_panel(27);activate(1200);assert(content_profiles.size()==1);new_profile="test-mod";assert(create_profile());assert(access((isolated+"/ContentProfiles/test-mod/EnhancedData").c_str(),F_OK)==0);activate(1204);std::ifstream chosen(isolated+"/content-profile.cfg");std::string name;std::getline(chosen,name);assert(name=="test-mod");new_profile="../outside";assert(!create_profile());render_file="/tmp/kfx-content-profiles.png";kfx_options_draw();unsetenv("KFX_BASE_USER_DATA_DIR");
+ // Replay labels/favourites are sidecars; the recorded bytes stay unchanged.
+ SDL_CreateDirectory((test_folder+"/recordings").c_str());std::string replay_file=test_folder+"/recordings/library.pck";{std::ofstream out(replay_file,std::ios::binary);CatalogueEntry e={};strcpy(e.campaign_name,"Library Campaign");e.level_num=52;FileChunkHeader h={sizeof(e),SGC_InfoBlock,1};out.write((char*)&h,sizeof(h));out.write((char*)&e,sizeof(e));PacketSaveHead ph={};ph.players_exist=3;h={sizeof(ph),SGC_PacketHeader,1};out.write((char*)&h,sizeof(h));out.write((char*)&ph,sizeof(ph));h={0,SGC_PacketData,1};out.write((char*)&h,sizeof(h));out<<"packet bytes";}
+ open_enhancement(30);assert(replay_library.size()==1&&replay_library[0].players==2&&replay_library[0].level==52);activate(1504);replay_title="A Favourite Replay";finish_edit();assert(replay_library[0].title=="A Favourite Replay");activate(1505);assert(replay_library[0].favourite);assert(std::filesystem::file_size(replay_file)>sizeof(CatalogueEntry));
+ open_enhancement(31);activate(1513);activate(1514);assert(access(profile_file("reset-profile-next.cfg").c_str(),F_OK)==0);activate(1513);assert(access(profile_file("reset-profile-next.cfg").c_str(),F_OK)!=0);
+ // New sections keep controller focus and expose reversible operations.
+ for(int number=30;number<=35;number++){open_panel(number);selected=0;navigate(1);assert(selected==1);render_file="/tmp/kfx-enhancement-page-"+std::to_string(number)+".png";kfx_options_draw();activate(901);assert(page<30);}
+ open_panel(7);selected=6;confirm_control();assert(page==33);float old_caption=kfx_caption_scale;activate(1531);assert(kfx_caption_scale!=old_caption);activate(1532);assert(kfx_reduce_flashes);activate(1533);assert(kfx_high_contrast);activate(1534);assert(kfx_camera_response()!=2);persist();kfx_caption_scale=1;kfx_reduce_flashes=0;kfx_options_initialize();assert(kfx_caption_scale!=old_caption&&kfx_reduce_flashes);
+ open_panel(1);selected=4;confirm_control();assert(page==34);activate(1542);assert(capture_until>SDL_GetTicks());enhancement_sample();SDL_Delay(3);enhancement_sample();capture_until=1;enhancement_sample();assert(access(path("performance-capture.csv").c_str(),R_OK)==0);
+ open_panel(8);selected=8;direction_control(-1);assert(selected==11);direction_control(1);assert(selected==8);
+ open_panel(0);selected=0;pad(SDL_GAMEPAD_BUTTON_DPAD_RIGHT);assert(repeat_button==SDL_GAMEPAD_BUTTON_DPAD_RIGHT);repeat_at=0;kfx_options_draw();assert(repeat_at>SDL_GetTicks());repeat_button=255;
+ kfx_options_recover_display();kfx_options_apply_display();assert(!display_confirmation&&saved_display_mode==0&&saved_resolution==0);
  puts("PASS: in-game pages, persistent options, pause ownership, multiplayer continues, physical-button chord remapping, legacy-save metadata and nondestructive backup restoration");
 }

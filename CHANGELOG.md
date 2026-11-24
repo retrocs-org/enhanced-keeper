@@ -3,6 +3,21 @@
 ## 1.4.0
 
 ### Features
+- Recover safe windowed settings after interrupted display startup or monitor removal,
+  retaining the previous configuration.
+- Browse rotating, preserved and trashed save copies in a recovery screen; restore
+  into a free slot after compatibility checks.
+- Add a local replay library with campaign/map, turn and player counts, dates,
+  titles, favourites and exclusive export.
+- Add in-game setup, music detection, personal-data export and reversible profile
+  reset tools; exports omit imported originals and account credentials.
+- Add readable focus markers, separate caption/tooltip sizes, reduced damage
+  flashes, adjustable controller response and horizontal navigation repeat.
+- Compare advertised content fingerprints before public-server joins, retaining
+  lobby readiness checks for unadvertised or subsequently selected maps.
+- Resume upgraded ENet peers using a reserved slot and a random session key after
+  an unclean timeout; bound multiplayer clock correction after long interruptions.
+- Add a performance graph, FPS/logic/ping overlay and bounded 15-second CSV capture.
 - Check saved-game engine versions and content before loading; preserve a
   content-addressed copy and record campaign/map/configuration/mod requirements.
 - Add offline replay pause, 0.5x–4x speed, persistent bookmarks and a local file picker.

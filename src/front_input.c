@@ -221,14 +221,14 @@ static void get_movement_inputs(float* out_movement_x, float* out_movement_y, Tb
     // Handle horizontal movement - just accumulate for local camera
     float move_mag_x = fabsf(movement_x);
     if (move_mag_x > 0.0f) {
-        float curved = move_mag_x * move_mag_x;
+        float curved = powf(move_mag_x,kfx_camera_response());
         *out_movement_x = (movement_x > 0 ? curved : -curved);
     }
     
     // Handle vertical movement - just accumulate for local camera
     float move_mag_y = fabsf(movement_y);
     if (move_mag_y > 0.0f) {
-        float curved = move_mag_y * move_mag_y;
+        float curved = powf(move_mag_y,kfx_camera_response());
         *out_movement_y = (movement_y > 0 ? curved : -curved);
     }
     *out_movement_x = clamp(*out_movement_x, -1.0f, 1.0f);

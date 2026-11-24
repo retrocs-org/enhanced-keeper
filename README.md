@@ -1,6 +1,6 @@
 # KeeperFX-E
 
-[Website](https://keeperfx-e.retrocs.org) · [GitHub](https://github.com/retrocs-org/KeeperFX-E) · [GitLab](https://gitlab.kladhest.se/retrocs-org/keeperfx-e)
+[In-game tools](docs/POLISH-TOOLS.md) · [Website](https://keeperfx-e.retrocs.org) · [GitHub](https://github.com/retrocs-org/KeeperFX-E) · [GitLab](https://gitlab.kladhest.se/retrocs-org/keeperfx-e)
 
 > **This repository is the native macOS fork of KeeperFX.**
 > It carries the Apple Silicon + Intel macOS port, Universal build work,

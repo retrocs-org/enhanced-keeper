@@ -48,7 +48,7 @@ void play_tools_draw(){
   button(24,257,184,"Previous",1201,selected==0,34);button(228,257,184,"Next",1202,selected==1,34);button(432,257,184,"Default",1206,selected==5,34);
   button(24,305,592,editing==11?"New: "+new_profile+"|":"Create Separate Profile",1203,selected==2||editing==11,38);
   button(24,354,284,"Use Next Launch",1204,selected==3,36);button(332,354,284,"Open Mod Folder",1205,selected==4,36);
- }else if(page==28){wrapped_tools_text(42,98,kfx_replay_status(),4);small_line(24,216,"F10 / Start: controls   Space: pause   [ ]: speed   B: mark",592);button(24,254,184,"Pause / Play",1301,selected==0,38);button(228,254,184,"Slower",1302,selected==1,38);button(432,254,184,"Faster",1303,selected==2,38);button(24,313,284,"Add Bookmark",1304,selected==3,38);button(332,313,284,"Next Bookmark",1305,selected==4,38);button(134,363,372,"Open Local Replay...",1306,selected==5,34);
+ }else if(page==28){wrapped_tools_text(42,98,kfx_replay_status(),4);small_line(24,216,"F10 / Start: controls   Space: pause   [ ]: speed   B: mark",592);button(24,254,184,"Pause / Play",1301,selected==0,38);button(228,254,184,"Slower",1302,selected==1,38);button(432,254,184,"Faster",1303,selected==2,38);button(24,313,284,"Add Bookmark",1304,selected==3,38);button(332,313,284,"Next Bookmark",1305,selected==4,38);button(24,363,284,"Open Replay...",1306,selected==5,34);button(332,363,284,"Replay Library",1500,selected==6,34);
  }else if(page==29){wrapped_tools_text(42,100,save_requirements,6);button(134,292,372,"Copy Requirements",1402,selected==0,36);if(requirements_state>=0)button(64,343,512,"Preserve Copy and Load",1401,selected==1,42);}
  if(page>=27&&page<=29&&!notice.empty())status_line(notice);
 }

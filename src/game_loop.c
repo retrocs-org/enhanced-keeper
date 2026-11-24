@@ -18,6 +18,7 @@
 #include "keeperfx.hpp"
 
 #include "bflib_math.h"
+#include <math.h>
 #include "bflib_keybrd.h"
 #include "bflib_sound.h"
 #include "thing_list.h"
@@ -446,7 +447,7 @@ static void update_multiplayer_clock_adjust()
         // process_turn_time == 1.0 (on average).  If it is received later,
         // reduce the scaling factor (< 1.0) so that the next turn takes a
         // little longer in real time.  Vice-versa if it is early.
-        multiplayer_clock_adjust = 1 + (1 - host_packet_received) / 20;
+        multiplayer_clock_adjust = fminl(1.1L, fmaxl(0.9L, 1 + (1 - host_packet_received) / 20));
         host_packet_received = 1.0;
     }
     else
@@ -536,6 +537,7 @@ void gameplay_loop_draw()
 void network_yield_waiting_gameplay_packets()
 {
     poll_inputs();
+    api_update_server();
     gameplay_loop_draw();
     update_gameplay_delta_time();
     // Reduce game speed during lag spikes.
@@ -702,6 +704,7 @@ static void keeper_gameplay_loop(void)
     //the main gameplay loop starts
     while ((!quit_game) && (!exit_keeper))
     {
+        api_update_server();
         frametime_start_measurement(Frametime_FullFrame);
         if (frametime_enabled())
             framerate_measurement_capture(Framerate_FullFrame);

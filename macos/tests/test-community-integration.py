@@ -57,12 +57,23 @@ try:
  user=hub.handle('POST','/api/register',{'name':'LocalKeeper','password':'local game test password'});clientprofile=profile('client');clientport=port();client=launch(clientprofile,clientport,user['token']);rpc(clientport,'community_action',command=2000);until(lambda:rpc(clientport,'community_status').get('servers')==1);rpc(clientport,'community_action',command=2010);rpc(clientport,'community_action',command=2040)
  # Advertised direct port is deliberately unreachable: the same game browser must fall back to relay.
  until(lambda:rpc(clientport).get('turn',0)>=20,seconds=90);status=rpc(clientport);assert status['active'] and status['dedicated_player']==0,status;until(lambda:any(v.get('account') for v in supervisor.status.get('users',[])));assert relay.channels,'No relay channel was created';print('PASS: actual browser direct attempt falls back to authenticated ENet relay; dedicated AI and cloud identity agree',flush=True)
+ if os.environ.get('KFX_TEST_RECONNECT')=='1':
+  old=rpc(clientport);old_users=[(v.get('peer'),v.get('account')) for v in supervisor.status.get('users',[]) if v.get('account')]
+  os.kill(client.pid,signal.SIGSTOP)
+  try:time.sleep(35)
+  finally:os.kill(client.pid,signal.SIGCONT)
+  restored=until(lambda:(lambda value:value if value.get('active') and value.get('turn',0)>old['turn']+10 else None)(rpc(clientport)),seconds=90)
+  assert supervisor.status.get('players')==2,supervisor.status
+  assert old_users==[(v.get('peer'),v.get('account')) for v in supervisor.status.get('users',[]) if v.get('account')]
+  print('PASS: 35-second lost client resumes its authenticated player slot and simulation without restarting the match',flush=True)
  until(lambda:hub.handle('GET','/api/servers/'+supervisor.status['server_id']+'/spectate',{},'').get('size',0)>0)
  spectatorprofile=profile('spectator');spectatorport=port();spectator=launch(spectatorprofile,spectatorport);rpc(spectatorport,'community_action',command=2000);until(lambda:rpc(spectatorport,'community_status').get('servers')==1);rpc(spectatorport,'community_action',command=2010);rpc(spectatorport,'community_action',command=2045)
  watch=until(lambda:(lambda x:x if x.get('spectating') and x.get('turn',0)>=10 else None)(rpc(spectatorport)),seconds=60);assert not watch['active'],watch;before=watch['turn'];until(lambda:rpc(spectatorport).get('turn',0)>before+10,seconds=30);assert supervisor.status.get('players')==2,supervisor.status;print('PASS: real replay spectator advances without consuming a player slot',flush=True);assert not hosterrors,hosterrors
  print('Evidence profile:',work,flush=True)
 finally:
  if __import__('sys').exc_info()[0]:
+  try:print('Client status:',rpc(clientport,'community_status') if 'clientport' in globals() else {},flush=True)
+  except OSError:pass
   print('Relay diagnostic:',[(bool(c['host']),bool(c['client']),c['bytes']) for c in relay.channels.values()],flush=True)
  for c in connections.values():c.close()
  if supervisor:supervisor.stop=True

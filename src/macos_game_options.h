@@ -12,6 +12,7 @@ void kfx_save_display_label(long slot,const char *fallback,char *buffer,unsigned
 void kfx_options_hide(void);
 int kfx_quick_game_key(long key);
 void kfx_options_apply_display(void);
+void kfx_options_recover_display(void);
 int kfx_options_confirm_display(int keep);
 int kfx_options_set_display(int fullscreen,int width,int height);
 void kfx_options_show_page(int page);

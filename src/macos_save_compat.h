@@ -4,6 +4,7 @@
 extern "C" {
 #endif
 struct CatalogueEntry;
+int kfx_content_fingerprint(const char*,const char*,char*,unsigned);
 void kfx_save_write_requirements(const char *destination,const struct CatalogueEntry *entry);
 /* 1 verified, 0 legacy/unrecorded content, negative incompatible or damaged. */
 int kfx_save_check_requirements(const char *source,char *report,unsigned int size);

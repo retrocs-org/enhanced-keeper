@@ -14,7 +14,7 @@ void kfx_network_issue(const char *reason,unsigned long turn,unsigned int host_c
     snprintf(destination,sizeof(destination),"%s",prepare_file_path(FGrp_Save,"network-diagnostics.json"));
     snprintf(pending,sizeof(pending),"%s.pending",destination);
     FILE *file=fopen(pending,"w");if(!file)return;
-    fprintf(file,"{\"reason\":\"%s\",\"turn\":%lu,\"host_checksum\":%u,\"peer_checksum\":%u,\"recovery\":\"Wait for automatic resync. If disconnected, rejoin the lobby; live-match reconnection is unsupported.\"}\n",reason,turn,host_checksum,peer_checksum);
+    fprintf(file,"{\"reason\":\"%s\",\"turn\":%lu,\"host_checksum\":%u,\"peer_checksum\":%u,\"recovery\":\"Wait for automatic repair or the reserved-slot reconnect attempt. A clean departure or expired reservation requires rejoining the lobby.\"}\n",reason,turn,host_checksum,peer_checksum);
     if(fclose(file)==0)rename(pending,destination);
 #else
     (void)reason;(void)turn;(void)host_checksum;(void)peer_checksum;
