@@ -395,3 +395,18 @@ refuses to replace a tree containing saves, recordings or dedicated-server state
 Installed data under `/var/lib/keeper-enhanced` is never changed by these targets.
 The refresh script and portable binary packaging remain build-only and keep an
 existing installed server's data intact.
+
+### Cleaning
+
+`make clean` removes standard generated build directories (`build-*`, `out`),
+packages (`outputs`, `bin`, `obj`, `pkg`), generated legacy asset directories
+(`sdl`, `gfx`, `sfx`) and local imported runtime copies (`.local/imported-client`,
+`.local/linux-server-import`, `.local/keeperfx`). Use `make clean-preview` to list
+paths first. No cleanup is performed merely by updating this Makefile.
+
+Original discs in `import/`, tracked CMake source in `build/`, Git history,
+third-party source checkouts and installed profiles are retained. Custom output
+paths outside these standard directories are not removed. Local imports that
+contain saves or recordings stop cleanup rather than lose personal data.
+After cleaning, supply a prepared base runtime again via `IMPORT_BASE` if it
+previously lived in `.local/keeperfx`, then rerun `make import`.
