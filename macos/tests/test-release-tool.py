@@ -213,7 +213,7 @@ class ReleaseTests(unittest.TestCase):
         self.assertFalse(api.r['draft'])
         self.assertIs(api.r['prerelease'],False)
         self.assertEqual(api.r['make_latest'],'true')
-        self.assertEqual(api.r['name'],'KeeperFX-E 1.4.0')
+        self.assertEqual(api.r['name'],'Keeper-Enhanced 1.4.0')
         self.assertEqual(api.r['tag_name'],'1.4.0')
         patch_index = next(i for i, e in enumerate(api.events) if e[0] == 'PATCH')
         uploads = [i for i, e in enumerate(api.events) if 'uploads.github.com' in e[1]]
@@ -235,7 +235,7 @@ class ReleaseTests(unittest.TestCase):
         api=GitlabAPI(m['gitlab']);adapter=rel.GitLab(m,self.tool.out,api)
         adapter.publish()
         self.assertIn('released_at',api.r)
-        self.assertEqual(api.r['name'],'KeeperFX-E 1.4.0')
+        self.assertEqual(api.r['name'],'Keeper-Enhanced 1.4.0')
         self.assertEqual(api.r['tag_name'],'1.4.0')
         self.assertIn(('GET',adapter.base+'/releases/permalink/latest'),api.events)
         api.r['upcoming_release']=True

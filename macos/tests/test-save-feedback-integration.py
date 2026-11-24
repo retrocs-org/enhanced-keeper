@@ -1,7 +1,7 @@
 from pathlib import Path
 import os,subprocess,time,signal,socket,json,re,hashlib,tempfile,plistlib
 root=Path(__file__).resolve().parents[2];prefs=Path(tempfile.mkdtemp(prefix='kfx-save-feedback-'));runtime=prefs/'GameData'
-app=Path(os.environ.get('KFX_TEST_APP','/Applications/KeeperFX-E.app'));launcher=app/'Contents/MacOS'/plistlib.loads((app/'Contents/Info.plist').read_bytes())['CFBundleExecutable']
+app=Path(os.environ.get('KFX_TEST_APP','/Applications/Keeper-Enhanced.app'));launcher=app/'Contents/MacOS'/plistlib.loads((app/'Contents/Info.plist').read_bytes())['CFBundleExecutable']
 env=dict(os.environ,KFX_USER_DATA_DIR=str(prefs),KFX_AUTOSAVE_SECONDS='0',KFX_APP_RESOURCES=str(app/'Contents/Resources'))
 subprocess.run([str(launcher),'--import',str(root/'.local/keeperfx')],env=env,check=True);subprocess.run([str(launcher),'--prepare-only'],env=env,check=True)
 sock=socket.socket();sock.bind(('127.0.0.1',0));port=sock.getsockname()[1];sock.close();cfg=runtime/'keeperfx.cfg';text=cfg.read_text();text=re.sub(r'(?m)^API_PORT=.*$',f'API_PORT={port}',text);text=re.sub(r'(?m)^API_ENABLED=.*$','API_ENABLED=TRUE',text);text=re.sub(r'(?m)^FRONTEND_RES=.*$','FRONTEND_RES=640x480w32 800x600w32 800x600w32',text);text=re.sub(r'(?m)^INGAME_RES=.*$','INGAME_RES=800x600w32',text);cfg.write_text(text)

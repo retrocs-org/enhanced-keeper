@@ -21,6 +21,7 @@ hub = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(hub)
 import sys
 sys.path.insert(0,str(ROOT/'services/keeperhub'))
+sys.path.insert(0,str(Path(__file__).resolve().parent/'relay-fixtures'))
 from relay_worker import serve_control
 from relay import Relay
 
@@ -86,7 +87,7 @@ class PHPWebsiteTests(unittest.TestCase):
         for path in ['/', '/index.php', '/community', '/servers', '/events', '/profile', '/device', '/services', '/api-browser', '/replays', '/challenges', '/features', '/leaderboard', '/downloads', '/network', '/network/servers', '/network/events', '/network/replays', '/network/challenges', '/keeper/'+'a'*32]:
             with self.request(path) as response:
                 page=response.read().decode()
-                self.assertIn('KeeperFX-E',page)
+                self.assertIn('Keeper-Enhanced',page)
                 self.assertNotIn('gitlab',page.lower())
                 self.assertIn("frame-ancestors 'none'", response.headers['Content-Security-Policy'])
         for path, content_type in [('/app.js', 'text/javascript'), ('/portal.js', 'text/javascript'), ('/api-browser.js', 'text/javascript'), ('/style.css', 'text/css'), ('/site.css', 'text/css'), ('/assets/keeper-sigil.svg', 'image/svg+xml'), ('/assets/dungeon-heart.svg', 'image/svg+xml'), ('/assets/keeper-mask.svg', 'image/svg+xml'), ('/assets/dungeon-stone.svg', 'image/svg+xml')]:
@@ -105,7 +106,7 @@ class PHPWebsiteTests(unittest.TestCase):
         with self.request('/api-browser') as response:
             page=response.read().decode();self.assertIn('api-explorer',page);self.assertIn('Endpoint reference',page)
         with self.request('/services') as response:
-            page=response.read().decode();self.assertIn('relay-status',page);self.assertNotIn('The same network in-game and on the web.',page);self.assertIn('service-refresh',page)
+            page=response.read().decode();self.assertIn('Ways to play',page);self.assertNotIn('The same network in-game and on the web.',page);self.assertIn('service-refresh',page)
         with self.request('/profile') as response:self.assertIn('<form method="post" id="login"',response.read().decode())
 
     def test_original_landing_is_separate_from_community(self):
@@ -114,7 +115,7 @@ class PHPWebsiteTests(unittest.TestCase):
         self.assertIn('Your dungeon.', page)
         self.assertNotIn('API browser',page)
         self.assertNotIn('%2Fapi-browser',page)
-        self.assertIn('KeeperFX-E is a fork of',page)
+        self.assertIn('Keeper-Enhanced is a fork of',page)
         self.assertIn('https://github.com/dkfans/keeperfx',page)
         self.assertIn('Browse downloads', page)
         self.assertNotIn('id="login"', page)
@@ -203,15 +204,18 @@ class PHPWebsiteTests(unittest.TestCase):
         host=json.load(self.request('/api/servers/register',{'name':'PHP Game Host','endpoint':'127.0.0.1:5556','engine':'1.4.0.0','password':False},{'Authorization':'Bearer '+game['token']}))
         self.assertIn('secret',host)
 
-    def test_relay_failure_is_bounded_and_accounts_remain_available(self):
-        self.backend.shutdown()
-        self.backend.server_close()
+    def test_relay_is_disabled_even_with_legacy_configuration(self):
+        health=json.load(self.request('/api/health'))
+        self.assertTrue(health['ok'])
+        self.assertFalse(health['relay'])
+        host=json.load(self.request('/api/servers/register',{'name':'Direct host','endpoint':'127.0.0.1:5556','engine':'1.4.0.0'}))
+        path='/api/servers/'+host['id']+'/join'
         with self.assertRaises(urllib.error.HTTPError) as error:
-            self.request('/api/health')
-        self.assertEqual(error.exception.code, 503)
-        body = json.load(error.exception)
-        self.assertNotIn('127.0.0.1', body['error'])
-        self.assertFalse(json.load(self.request('/api/session'))['signed_in'])
+            self.request(path,{'relay':True})
+        self.assertEqual(error.exception.code,400)
+        answer=json.load(self.request(path,{}))
+        self.assertEqual(answer['endpoint'],'127.0.0.1:5556')
+        self.assertNotIn('relay',answer)
 
 
 if __name__ == '__main__':

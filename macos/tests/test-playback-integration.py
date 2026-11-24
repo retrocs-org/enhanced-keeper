@@ -3,7 +3,7 @@
 from pathlib import Path
 import json,os,plistlib,re,signal,socket,subprocess,tempfile,time
 ROOT=Path(__file__).resolve().parents[2]
-app=Path(os.environ.get('KFX_TEST_APP','/Applications/KeeperFX-E.app'));launcher=app/'Contents/MacOS'/plistlib.loads((app/'Contents/Info.plist').read_bytes())['CFBundleExecutable'];engine=ROOT/'build-mac-universal/keeperfx'
+app=Path(os.environ.get('KFX_TEST_APP','/Applications/Keeper-Enhanced.app'));launcher=app/'Contents/MacOS'/plistlib.loads((app/'Contents/Info.plist').read_bytes())['CFBundleExecutable'];engine=ROOT/'build-mac-universal/keeperfx'
 with tempfile.TemporaryDirectory(prefix='keeperfx-playback-') as temporary:
  profile=Path(temporary);runtime=profile/'GameData';recording=profile/'recording.pck'
  env=dict(os.environ,KFX_USER_DATA_DIR=str(profile),KFX_AUTOSAVE_SECONDS='0',KFX_HEADLESS='1',KFX_LOCAL_NETWORK_ONLY='1',SDL_VIDEODRIVER='dummy',SDL_RENDER_DRIVER='software',SDL_AUDIODRIVER='dummy',ALSOFT_DRIVERS='null',KFX_APP_RESOURCES=str(app/'Contents/Resources'))

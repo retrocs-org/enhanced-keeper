@@ -18,7 +18,7 @@ multiple Macs remain useful performance work.
 Capture a real saved dungeon in an isolated profile:
 
 ```sh
-python3 scripts/profile-game.py --app '/Applications/KeeperFX-E.app' \
+python3 scripts/profile-game.py --app '/Applications/Keeper-Enhanced.app' \
   --engine build-mac-universal/keeperfx --game-dir /path/to/local/runtime \
   --save /path/to/copy-of-save.sav --seconds 30 --output /tmp/keeperfx-profile.json
 ```

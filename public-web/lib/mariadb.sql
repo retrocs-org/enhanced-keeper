@@ -1,4 +1,4 @@
--- KeeperFX-E native PHP API schema. Run in the keeperfx_e database.
+-- Keeper-Enhanced native PHP API schema. Run in the keeperfx_e database.
 -- No accounts or passwords are embedded in this file.
 CREATE TABLE IF NOT EXISTS users(id VARCHAR(32) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,name VARCHAR(24) NOT NULL UNIQUE,salt VARCHAR(32) CHARACTER SET ascii NOT NULL,password VARCHAR(64) CHARACTER SET ascii NOT NULL,public TINYINT NOT NULL DEFAULT 0,created DOUBLE NOT NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 CREATE TABLE IF NOT EXISTS recovery(user VARCHAR(32) CHARACTER SET ascii,code VARCHAR(64) CHARACTER SET ascii UNIQUE,PRIMARY KEY(user,code)) ENGINE=InnoDB;

@@ -21,9 +21,9 @@
 # Output: pkg/keeperfx-<maj>_<min>_<rel>_<build>[-<suffix>]-patch.7z
 # ---------------------------------------------------------------------------
 
-set(CPACK_PACKAGE_NAME      "KeeperFX-E")
-set(CPACK_PACKAGE_VENDOR    "KeeperFX-E contributors")
-set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "KeeperFX-E - Enhanced Dungeon Keeper port")
+set(CPACK_PACKAGE_NAME      "Keeper-Enhanced")
+set(CPACK_PACKAGE_VENDOR    "Keeper-Enhanced contributors")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Keeper-Enhanced - Enhanced Dungeon Keeper port")
 set(CPACK_PACKAGE_VERSION   "${VER_MAJOR}.${VER_MINOR}.${VER_RELEASE}.${BUILD_NUMBER}")
 set(CPACK_PACKAGE_VERSION_MAJOR "${VER_MAJOR}")
 set(CPACK_PACKAGE_VERSION_MINOR "${VER_MINOR}")
@@ -32,10 +32,10 @@ set(CPACK_PACKAGE_VERSION_PATCH "${VER_RELEASE}")
 # Archive filename keeperfx-<maj>_<min>_<rel>_<build>[-<suffix>]-patch
 if(PACKAGE_SUFFIX AND NOT "${PACKAGE_SUFFIX}" STREQUAL "")
     set(CPACK_PACKAGE_FILE_NAME
-        "KeeperFX-E-${VER_MAJOR}_${VER_MINOR}_${VER_RELEASE}_${BUILD_NUMBER}-${PACKAGE_SUFFIX}-patch")
+        "Keeper-Enhanced-${VER_MAJOR}_${VER_MINOR}_${VER_RELEASE}_${BUILD_NUMBER}-${PACKAGE_SUFFIX}-patch")
 else()
     set(CPACK_PACKAGE_FILE_NAME
-        "KeeperFX-E-${VER_MAJOR}_${VER_MINOR}_${VER_RELEASE}_${BUILD_NUMBER}-patch")
+        "Keeper-Enhanced-${VER_MAJOR}_${VER_MINOR}_${VER_RELEASE}_${BUILD_NUMBER}-patch")
 endif()
 
 # Place generated archives in the source-tree pkg/ directory
@@ -51,6 +51,8 @@ if(WIN32 OR MINGW OR CMAKE_CROSSCOMPILING OR CMAKE_SYSTEM_NAME STREQUAL "Windows
 else()
     set(CPACK_GENERATOR "TGZ")
 endif()
+
+option(KFX_INSTALL_GAME_DATA "Install locally assembled pkg game data" ON)
 
 # --- Install rules ---------------------------------------------------------
 
@@ -75,6 +77,7 @@ install(CODE "
 # The game data assembled by "make pkg-assemble" (configs, campaigns, levels,
 # language/sound .dat files, SDL3 runtime DLLs, docs). Evaluated at pack time so
 # pkg/ is read then, not at configure time. Skips any archive left in pkg/.
+if(KFX_INSTALL_GAME_DATA)
 install(CODE "
     set(_pkg_src \"${CMAKE_SOURCE_DIR}/pkg\")
     if(EXISTS \"\${_pkg_src}\")
@@ -92,5 +95,6 @@ install(CODE "
         endforeach()
     endif()
 ")
+endif()
 
 include(CPack)

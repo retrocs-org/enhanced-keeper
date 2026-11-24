@@ -1,8 +1,14 @@
-# KeeperFX-E changes
+# Keeper-Enhanced changes
 
 ## 1.4.0
 
 ### Features
+- Rename the project to keeper-enhanced while preserving existing service URLs,
+  repository addresses, save paths and database settings.
+- Add private/public dedicated-host modes, optional passwords, native Linux server
+  packaging, prepared-data import and a hardened systemd service template.
+- Remove relay connection options and fallback; use LAN, private direct connections
+  or listed public servers. Private dedicated hosts never contact the directory.
 - Add Features, Network, Servers, Leaderboard and Downloads navigation, with shared
   Network subpages and account-only actions hidden until a session is verified.
 - Rank only opt-in public profiles with completed server-verified matches; show
@@ -44,11 +50,11 @@
   content-addressed copy and record campaign/map/configuration/mod requirements.
 - Add offline replay pause, 0.5x–4x speed, persistent bookmarks and a local file picker.
 - Add restart-safe content profiles with separate runtimes, saves and settings.
-- Add service/relay readiness and requester-pinned incoming UDP connection tests.
+- Add service/direct-host readiness and requester-pinned incoming UDP connection tests.
 - Add an optional community service and original-style in-game server browser with
   Internet, LAN, favourites, recent connections, search, sorting and engine filters.
 - Add hostname/IPv6 direct joining, password entry, no-slot latency queries and
-  authenticated ENet relay fallback for community-listed hosts.
+  direct ENet connections for community-listed hosts.
 - Add headless hosting with map rotation, one synchronized AI and up to three
   human players, plus buffered live spectators that consume no player slots.
 - Add browser-paired accounts, private/public website profiles, friends, match
@@ -73,9 +79,9 @@
 - Record bounded desync/disconnect diagnostics without player credentials.
 - Add password-confirmed offline recovery codes, session revocation and verified SQLite backups.
 - Show checksum-verified published release downloads from a private website cache.
-- Add a new KeeperFX-E landing page and PHP-hosted community website, with a
+- Add a new Keeper-Enhanced landing page and PHP-hosted community website, with a
   same-origin API gateway and documented Apache/Nginx deployment.
-- Rename the application, website branding and release packages to KeeperFX-E.
+- Rename the application, website branding and release packages to Keeper-Enhanced.
 - Configure the retrocs-org GitHub repository and project website.
 - Select and remember an active controller, with automatic Xbox/DualSense labels.
 - Rename saves, protect favourites, preview backups and move save groups to Trash.

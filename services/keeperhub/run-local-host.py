@@ -8,5 +8,7 @@ if a.stop or a.next:
 if a.status:
     file=control/'status.json';print(file.read_text() if file.exists() else 'No local host status yet.');raise SystemExit(0)
 key=a.state/'admin.key'
-if not key.is_file():raise SystemExit('Start services/keeperhub/dev.py first.')
-env=dict(os.environ,KFX_HUB_ADMIN_KEY=key.read_text().strip());raise SystemExit(subprocess.call([sys.executable,str(Path(__file__).with_name('dedicated.py')),str(a.config)],env=env))
+if config.get('visibility','public')=='public' and not key.is_file():raise SystemExit('Start services/keeperhub/dev.py first, or configure a private host.')
+env=dict(os.environ)
+if config.get('visibility','public')=='public':env['KFX_HUB_ADMIN_KEY']=key.read_text().strip()
+raise SystemExit(subprocess.call([sys.executable,str(Path(__file__).with_name('dedicated.py')),str(a.config)],env=env))

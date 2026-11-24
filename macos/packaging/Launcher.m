@@ -317,20 +317,20 @@ static NSDictionary *LegacySaveMetadata(NSString *path) {
 @property NSArray *saveEntries;
 @end
 @implementation Launcher
-- (void)alert:(NSString *)message { NSAlert *a=[NSAlert new];a.messageText=@"KeeperFX-E";a.informativeText=message;[a runModal]; }
+- (void)alert:(NSString *)message { NSAlert *a=[NSAlert new];a.messageText=@"Keeper-Enhanced";a.informativeText=message;[a runModal]; }
 - (NSButton *)button:(NSString *)title action:(SEL)action {
     NSButton *b=[NSButton buttonWithTitle:title target:self action:action];b.bezelStyle=NSBezelStyleRounded;return b;
 }
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
     (void)notification;
     NSMenu *menu=[NSMenu new];NSMenuItem *app=[NSMenuItem new];[menu addItem:app];NSMenu *sub=[NSMenu new];
-    [sub addItemWithTitle:@"Quit KeeperFX-E" action:@selector(terminate:) keyEquivalent:@"q"];app.submenu=sub;NSApp.mainMenu=menu;
+    [sub addItemWithTitle:@"Quit Keeper-Enhanced" action:@selector(terminate:) keyEquivalent:@"q"];app.submenu=sub;NSApp.mainMenu=menu;
     self.window=[[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,560,600) styleMask:NSWindowStyleMaskTitled|NSWindowStyleMaskClosable|NSWindowStyleMaskMiniaturizable backing:NSBackingStoreBuffered defer:NO];
-    self.window.title=@"KeeperFX-E";[self.window center];
+    self.window.title=@"Keeper-Enhanced";[self.window center];
     NSStackView *stack=[NSStackView new];stack.orientation=NSUserInterfaceLayoutOrientationVertical;stack.alignment=NSLayoutAttributeLeading;stack.spacing=14;stack.translatesAutoresizingMaskIntoConstraints=NO;
     [self.window.contentView addSubview:stack];
     [NSLayoutConstraint activateConstraints:@[[stack.leadingAnchor constraintEqualToAnchor:self.window.contentView.leadingAnchor constant:28],[stack.trailingAnchor constraintEqualToAnchor:self.window.contentView.trailingAnchor constant:-28],[stack.topAnchor constraintEqualToAnchor:self.window.contentView.topAnchor constant:26]]];
-    NSTextField *title=[NSTextField labelWithString:@"Dungeon Keeper • KeeperFX-E"];title.font=[NSFont boldSystemFontOfSize:24];[stack addArrangedSubview:title];
+    NSTextField *title=[NSTextField labelWithString:@"Dungeon Keeper • Keeper-Enhanced"];title.font=[NSFont boldSystemFontOfSize:24];[stack addArrangedSubview:title];
     NSTextField *desc=[NSTextField wrappingLabelWithString:@"Your native Mac dungeon. Import your original game once, choose your settings, and play."];[stack addArrangedSubview:desc];
     self.display=[NSPopUpButton new];[self.display addItemsWithTitles:@[@"Windowed",@"Borderless fullscreen",@"Exclusive fullscreen"]];
     self.resolution=[NSPopUpButton new];[self.resolution addItemsWithTitles:@[@"1280×800",@"1920×1080",@"2560×1440",@"640×480"]];
@@ -348,7 +348,7 @@ static NSDictionary *LegacySaveMetadata(NSString *path) {
     [stack addArrangedSubview:[NSStackView stackViewWithViews:@[[self button:@"Test Online Connection" action:@selector(testConnection:)],[self button:@"Controllers…" action:@selector(controllers:)],[self button:@"Remap…" action:@selector(remapControls:)]]]];
     [stack addArrangedSubview:[NSStackView stackViewWithViews:@[[self button:@"Browse Saves" action:@selector(browseSaves:)],[self button:@"Open Logs" action:@selector(openLogs:)],[self button:@"Open Latest Save" action:@selector(latestSave:)]]]];
     self.status=[NSTextField wrappingLabelWithString:ValidOriginal(Owned())?@"Original game files are ready.":@"First run: import the KEEPER folder from your CD or existing Dungeon Keeper installation."];[stack addArrangedSubview:self.status];
-    self.play=[self button:@"Play KeeperFX-E" action:@selector(playGame:)];self.play.keyEquivalent=@"\r";[stack addArrangedSubview:self.play];
+    self.play=[self button:@"Play Keeper-Enhanced" action:@selector(playGame:)];self.play.keyEquivalent=@"\r";[stack addArrangedSubview:self.play];
     [self.window makeKeyAndOrderFront:nil];[NSApp activateIgnoringOtherApps:YES];
 }
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)sender { (void)sender;return self.gamePID<=0; }
@@ -435,7 +435,7 @@ static NSDictionary *LegacySaveMetadata(NSString *path) {
 }
 #include "LauncherOptions.inc"
 - (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication *)sender {
-    (void)sender;if(self.gamePID>0){[self alert:@"Quit KeeperFX-E from the in-game menu before closing the launcher."];return NSTerminateCancel;}return NSTerminateNow;
+    (void)sender;if(self.gamePID>0){[self alert:@"Quit Keeper-Enhanced from the in-game menu before closing the launcher."];return NSTerminateCancel;}return NSTerminateNow;
 }
 @end
 int main(int argc,char **argv){@autoreleasepool{
@@ -449,10 +449,10 @@ int main(int argc,char **argv){@autoreleasepool{
         if(!ValidOriginal(Owned()) && !ValidOriginal(Runtime())){
             [setup activateIgnoringOtherApps:YES];NSOpenPanel *panel=[NSOpenPanel openPanel];panel.canChooseDirectories=YES;panel.canChooseFiles=NO;panel.message=@"Select your original Dungeon Keeper KEEPER folder or mounted CD. This is needed only once.";
             if([panel runModal]!=NSModalResponseOK)return 0;
-            if(!Import(panel.URL.path,&error)){NSAlert *alert=[NSAlert new];alert.messageText=@"KeeperFX-E import failed";alert.informativeText=error.localizedDescription;[alert runModal];return 1;}
+            if(!Import(panel.URL.path,&error)){NSAlert *alert=[NSAlert new];alert.messageText=@"Keeper-Enhanced import failed";alert.informativeText=error.localizedDescription;[alert runModal];return 1;}
         }
-        if(!Prepare(&error)){NSAlert *alert=[NSAlert new];alert.messageText=@"KeeperFX-E could not prepare game data";alert.informativeText=error.localizedDescription;[alert runModal];return 1;}
-        pid_t child=Launch(@[],nil,&error);if(child<0){NSAlert *alert=[NSAlert new];alert.messageText=@"KeeperFX-E could not start";alert.informativeText=error.localizedDescription?:@"Unable to start the game.";[alert runModal];return 1;}
+        if(!Prepare(&error)){NSAlert *alert=[NSAlert new];alert.messageText=@"Keeper-Enhanced could not prepare game data";alert.informativeText=error.localizedDescription;[alert runModal];return 1;}
+        pid_t child=Launch(@[],nil,&error);if(child<0){NSAlert *alert=[NSAlert new];alert.messageText=@"Keeper-Enhanced could not start";alert.informativeText=error.localizedDescription?:@"Unable to start the game.";[alert runModal];return 1;}
         int status=0;while(waitpid(child,&status,0)<0 && errno==EINTR){}if(WIFEXITED(status)&&WEXITSTATUS(status)==0)[FM() removeItemAtPath:[Prefs() stringByAppendingPathComponent:@"display-startup.pending"] error:nil];return WIFEXITED(status)?WEXITSTATUS(status):1;
     }
     NSApplication *app=NSApplication.sharedApplication;app.activationPolicy=NSApplicationActivationPolicyRegular;Launcher *delegate=[Launcher new];app.delegate=delegate;[app run];

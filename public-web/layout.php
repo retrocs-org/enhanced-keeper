@@ -11,7 +11,7 @@ function web_url(string $path): string {
 function site_header(string $current = '/'): void {
     $current=network_url($current);
     $links=['/'=>'Overview','/features'=>'Features','/network'=>'Network','/network/servers'=>'Servers','/leaderboard'=>'Leaderboard','/downloads'=>'Downloads'];
-    echo '<a class="skip-link" href="#main">Skip to content</a><header class="site-header wrap"><a class="brand" href="/"><img class="brand-mark" src="/assets/keeper-mask.svg" width="52" height="58" alt=""><span>KeeperFX-E<small>A fork of KeeperFX</small></span></a><nav aria-label="Main navigation">';
+    echo '<a class="skip-link" href="#main">Skip to content</a><header class="site-header wrap"><a class="brand" href="/"><img class="brand-mark" src="/assets/keeper-mask.svg" width="52" height="58" alt=""><span>Keeper-Enhanced<small>A fork of KeeperFX</small></span></a><nav aria-label="Main navigation">';
     foreach($links as $url=>$label){
         $active=$current===$url||($url==='/network'&&str_starts_with($current,'/network/')&&$current!=='/network/servers');
         echo '<a href="'.web_escape(web_url($url)).'"'.($active?' aria-current="page"':'').($url==='/profile'?' data-account-label':'').'>'.$label.'</a>';
@@ -25,5 +25,5 @@ function site_header(string $current = '/'): void {
     }
 }
 function site_footer(): void {
-    echo '<footer class="site-footer wrap"><div><a class="brand" href="/">KeeperFX-E</a><p>KeeperFX-E is an independent fork of <a href="https://github.com/dkfans/keeperfx">KeeperFX</a>. Original game assets are imported from your own copy.</p></div><nav aria-label="Project links"><a href="/index.php?route=%2Fdevice" data-auth-only hidden>Connect game</a><a href="/index.php?route=%2Fnetwork%2Fchallenges">Challenges</a><a href="https://github.com/retrocs-org/KeeperFX-E">GitHub</a></nav></footer>';
+    echo '<footer class="site-footer wrap"><div><a class="brand" href="/">Keeper-Enhanced</a><p>Keeper-Enhanced is an independent fork of <a href="https://github.com/dkfans/keeperfx">KeeperFX</a>. Original game assets are imported from your own copy.</p></div><nav aria-label="Project links"><a href="/index.php?route=%2Fdevice" data-auth-only hidden>Connect game</a><a href="/index.php?route=%2Fnetwork%2Fchallenges">Challenges</a><a href="https://github.com/retrocs-org/KeeperFX-E">GitHub</a></nav></footer>';
 }

@@ -86,5 +86,5 @@ Reset Profile requires two actions and applies on restart. It moves only the
 active profile's runtime, saves, screenshots and overlays to base/ProfileBackups;
 shared imported originals and other profiles are retained. A scheduled reset can
 be cancelled before restarting. To uninstall, Show App in Finder explains quitting
-and moving KeeperFX-E.app to Trash. Personal data is kept unless deliberately reset
+and moving Keeper-Enhanced.app to Trash. Personal data is kept unless deliberately reset
 or removed separately; the running game does not delete its signed app bundle.

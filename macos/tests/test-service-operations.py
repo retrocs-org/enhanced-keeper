@@ -58,7 +58,7 @@ class ServiceOperations(unittest.TestCase):
     def test_release_metadata_checks_complete_pairs_and_digests(self):
         assets=[]
         for kind in ('dmg','zip'):
-            name='KeeperFX-E-1.4.0-macOS-Universal.'+kind
+            name='Keeper-Enhanced-1.4.0-macOS-Universal.'+kind
             for suffix in ('','.sha256'):
                 assets.append({'name':name+suffix,'browser_download_url':web.REPO+'/releases/download/1.4.0/'+name+suffix,'digest':'sha256:'+'a'*64})
         release={'draft':False,'prerelease':False,'tag_name':'1.4.0','assets':assets}

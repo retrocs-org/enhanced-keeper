@@ -1,4 +1,4 @@
-# KeeperFX-E community services
+# Keeper-Enhanced community services
 
 The optional service adds an in-game server browser, browser-paired accounts,
 website profiles/statistics, friends, events, verified tournament brackets,
@@ -10,7 +10,7 @@ independent. No account or community service is required for LAN/direct play.
 
 The website and complete HTTP API are native PHP 8.1+ under `public-web/`, with
 MariaDB for production and SQLite for local development. Python 3.9+ is needed only
-for the optional UDP relay and the existing dedicated-host supervisor. Install PHP
+for the dedicated-host supervisor. Install PHP
 CLI with PDO SQLite and mbstring to run the local integrated website:
 From the repository root:
 
@@ -35,16 +35,14 @@ belongs in a release or source control. Stop the service with Ctrl-C, or use
 
 In the game choose More Options → Network → Server Browser / Accounts.
 
-- **Internet** lists the selected community service. **Original Lobbies** opens
-  the upstream KeeperFX lobby service separately.
+- **Internet** lists the selected community service. **Public** uses
+  the configured public server directory.
 - **LAN** discovers local games. **Favourites** and **Recent** retain addresses
-  across restarts and resolve refreshed relay identities from the directory.
+  across restarts.
 - Left/right changes browser tabs. Up/down and confirm reach server rows,
   paging, refresh, hosting, accounts, search, sorting and compatibility filters.
-- Server details provide direct joining, relay joining, password entry,
-  favourites, address copying and spectating. A failed public direct join tries
-  the configured service relay once. The relay needs the host's outbound
-  registrations; there is no service dependency for ordinary direct joining.
+- Server details provide direct joining, password entry, favourites, address
+  copying and spectating. There is no relay option or automatic relay fallback.
 - Sign In opens the local website and displays an eight-character pairing code.
   Approve only the code on your own game. Game session credentials are stored
   separately with mode 0600; changing service addresses clears them.
@@ -65,7 +63,7 @@ The current lockstep engine makes the host a player. This implementation uses
 **one synchronized AI host and up to three humans**, with no visible window or
 sound. It does not claim four human slots or a separate authoritative simulation
 protocol. Spectators replay a buffered input stream and consume no player slot.
-New KeeperFX-E peers advertise the `+hub1` readiness capability; older peers do not
+New Keeper-Enhanced peers advertise the `+hub1` readiness capability; older peers do not
 automatically pass this headless-host preflight. Normal LAN/direct and original
 lobby paths remain available.
 
@@ -74,12 +72,14 @@ Dungeon Keeper files, for example:
 
 ```sh
 KFX_USER_DATA_DIR="$PWD/.local/dedicated-user" \
-  "/Applications/KeeperFX-E.app/Contents/MacOS/KeeperFXE" \
+  "/Applications/Keeper-Enhanced.app/Contents/MacOS/KeeperFXE" \
   --import "$PWD/.local/keeperfx"
 KFX_USER_DATA_DIR="$PWD/.local/dedicated-user" \
-  "/Applications/KeeperFX-E.app/Contents/MacOS/KeeperFXE" --prepare-only
+  "/Applications/Keeper-Enhanced.app/Contents/MacOS/KeeperFXE" --prepare-only
 ```
 
+Set `visibility` to `private` (no directory or key) or `public` (listed, with
+an administrator key). Either mode accepts an optional `KFX_SERVER_PASSWORD`.
 Copy `examples/dedicated-local.json` to an ignored local file and adjust paths.
 Choose maps with enough player positions. The example runs Classic map 52 with
 one human and the AI host. The engine binary and GameData must have matching
@@ -133,34 +133,14 @@ mid-match player joining.
 
 ## Service boundaries
 
-The directory is HTTP/JSON; gameplay remains ENet/UDP. Relay channels require
-separate host/client tokens, accept traffic only from authenticated endpoints,
-expire when idle and have capacity/bandwidth limits. The relay is transport,
-not a game simulator. The service uses password hashing, hashed session tokens,
-HttpOnly/SameSite cookies, CSRF and origin/Host checks, bounded bodies and rate
-limits. It never distributes original Dungeon Keeper assets.
+The directory is HTTP/JSON; gameplay remains direct ENet/UDP. The service uses
+password hashing, hashed session tokens, HttpOnly/SameSite cookies, CSRF and
+origin/Host checks, bounded bodies and rate limits. It never distributes original
+Dungeon Keeper assets. Public servers require a reachable gameplay UDP port.
+Private servers do not publish their address or contact the directory.
 
-This is a local-tested implementation. Before public deployment it still needs
-an operated HTTPS endpoint, public relay UDP port range, backups, monitoring,
-account recovery/email policy and testing across real routers/CGNAT. No public
-infrastructure, accounts or ranking data are created by the build.
-
-## Verification
-
-```sh
-python3 macos/tests/test-native-php-api.py
-python3 macos/tests/test-php-web.py
-python3 macos/tests/run-ingame-options-tests.py
-python3 macos/tests/run-readiness-tests.py
-python3 macos/tests/test-community-integration.py
-```
-
-The integration test uses isolated imported profiles and loopback services. It
-starts a real headless engine, deliberately advertises an unreachable direct
-port, joins through automatic relay fallback, binds a cloud identity and starts
-a separate real spectator without increasing the player count. Only its own
-processes are stopped. Its temporary profiles contain private test credentials
-and must not be published.
+See [Linux dedicated servers](LINUX-SERVER.md) for native packaging, data import,
+private/public configuration, optional passwords and systemd operation.
 
 ## PHP website deployment
 
@@ -170,8 +150,6 @@ Use this directory as the document root. See [MariaDB deployment](MARIADB-DEPLOY
 for the database server sth-ts-dbs001 (172.16.1.121), web server sth-ts-web003
 (172.16.1.133), restricted application account and private PHP-FPM configuration.
 
-The optional UDP relay has a key-protected loopback control listener in
-`services/keeperhub/relay_worker.py`. It does not serve public account/API routes.
 The old Python API implementation is a compatibility fixture under macos/tests only.
 
 
@@ -197,8 +175,7 @@ verified backup, then restart. Backups contain private accounts and sessions;
 keep them outside Git and the website, with an independently protected offsite
 copy. Arrange the backup command through your server's scheduler before launch.
 
-Monitor `/api/health`: database failures return an error, and an expected relay
-that has stopped returns 503. Expired sessions, pairing requests and identity
+Monitor `/api/health`: database failures return an error. Expired sessions, pairing requests and identity
 tickets are cleaned up; recovery generation/reset is rate limited and the
 in-memory abuse table has a hard bound. These are local-tested service features;
 public HTTPS, backups/alerts and mail policy still need an operated server.

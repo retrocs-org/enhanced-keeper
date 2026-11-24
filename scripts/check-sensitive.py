@@ -11,6 +11,6 @@ def scan(root, files=None):
         if name=='public-web/config.inc.php':
             for key in (b'password',b'admin_key',b'relay_control_key'):
                 setting=re.search(rb"['\"]"+key+rb"['\"]\s*=>\s*(['\"])(.*?)\1",data)
-                if setting is None or setting.group(2):
+                if (setting is None and key != b'relay_control_key') or (setting is not None and setting.group(2)):
                     raise ReleaseError('Keep real service credentials in the deployed config.inc.php, not source control')
         if any(re.search(pattern,data) for pattern in PATTERNS):raise ReleaseError('Credential-like content in release input: '+name)

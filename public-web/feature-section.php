@@ -2,7 +2,7 @@
 if (!defined('KFX_WEB_PAGE')) { http_response_code(404); exit; }
 ?>
 <section class="features wrap<?= !empty($standaloneFeatures)?' is-page':'' ?>" id="features" aria-labelledby="features-title">
-  <div class="section-heading"><div><p class="eyebrow">The KeeperFX foundation. Our additions.</p><?php if(!empty($standaloneFeatures)): ?><h1 id="features-title">What KeeperFX-E adds.</h1><?php else: ?><h2 id="features-title">What KeeperFX-E adds.</h2><?php endif; ?></div><p>Built on the work of KeeperFX and its macOS port, this fork focuses on native Mac play, controller support, recovery tools and connected multiplayer.</p></div>
+  <div class="section-heading"><div><p class="eyebrow">The KeeperFX foundation. Our additions.</p><?php if(!empty($standaloneFeatures)): ?><h1 id="features-title">What Keeper-Enhanced adds.</h1><?php else: ?><h2 id="features-title">What Keeper-Enhanced adds.</h2><?php endif; ?></div><p>Built on the work of KeeperFX and its macOS port, this fork focuses on native Mac play, controller support, recovery tools and connected multiplayer.</p></div>
   <div class="feature-grid">
     <article><span class="rune" aria-hidden="true">✦</span><h3>Native Mac experience</h3><p>One universal app for Apple Silicon and Intel. Import your original game files, then manage your setup from inside the game.</p></article>
     <article><span class="rune" aria-hidden="true">✥</span><h3>Xbox &amp; DualSense</h3><p>Remap buttons, calibrate sticks and use illustrated controller guides. Zoom and rotate the camera with your gamepad.</p></article>

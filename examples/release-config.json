@@ -1,7 +1,7 @@
 {
   "github": "https://github.com/retrocs-org/KeeperFX-E",
   "github_git": "https://github.com/retrocs-org/KeeperFX-E.git",
-  "author": "KeeperFX-E contributors",
+  "author": "Keeper-Enhanced contributors",
   "source_branch": "",
   "env": {
     "KFX_SIGN_IDENTITY": "Developer ID Application: Your Name (TEAMID)",

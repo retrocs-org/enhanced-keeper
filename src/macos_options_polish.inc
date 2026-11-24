@@ -27,7 +27,7 @@ std::string build_field(const char *key){
 std::string diagnostic_report(){
     std::string last_issue;size_t size=0;void *bytes=SDL_LoadFile(path("network-diagnostics.json").c_str(),&size);if(bytes){last_issue.assign((char*)bytes,std::min(size,(size_t)2048));SDL_free(bytes);}
 
-    return "KeeperFX-E "+build_field("appVersion")+" (build "+build_field("appBuild")+")\nEngine: "+VER_STRING+"\nPlatform: "+SDL_GetPlatform()+"\nSDL: "+std::to_string(SDL_MAJOR_VERSION)+"."+std::to_string(SDL_MINOR_VERSION)+"."+std::to_string(SDL_MICRO_VERSION)+"\nController: "+controller_device_name()+"\nButton labels: "+(kfx_controller_guide_ps5?"DualSense":"Xbox")+"\nDisplay: "+std::to_string(RendererScreenWidth())+" x "+std::to_string(RendererScreenHeight())+"\nMultiplayer: "+(network_is_active()?"connected":"not connected")+"\nHost address: "+join_ip+"\nData folder: "+data_folder()+"\n\nLast network issue: "+last_issue+"\n"+network_report;
+    return "Keeper-Enhanced "+build_field("appVersion")+" (build "+build_field("appBuild")+")\nEngine: "+VER_STRING+"\nPlatform: "+SDL_GetPlatform()+"\nSDL: "+std::to_string(SDL_MAJOR_VERSION)+"."+std::to_string(SDL_MINOR_VERSION)+"."+std::to_string(SDL_MICRO_VERSION)+"\nController: "+controller_device_name()+"\nButton labels: "+(kfx_controller_guide_ps5?"DualSense":"Xbox")+"\nDisplay: "+std::to_string(RendererScreenWidth())+" x "+std::to_string(RendererScreenHeight())+"\nMultiplayer: "+(network_is_active()?"connected":"not connected")+"\nHost address: "+join_ip+"\nData folder: "+data_folder()+"\n\nLast network issue: "+last_issue+"\n"+network_report;
 }
 void copy_report(){notice=SDL_SetClipboardText(diagnostic_report().c_str())?"Report copied. Paste it into your message.":"Clipboard unavailable. Try again with the game focused.";}
 bool persist_endpoint(const std::string &endpoint){
@@ -75,7 +75,7 @@ void small_line(int x,int y,const std::string &value,int width){
 void status_line(const std::string &value){small_line(24,401,value,592);}
 void polish_draw_page(){
     if(page==13){
-        frame(24,90,592,116);text(42,100,"KeeperFX-E "+build_field("appVersion"),24,556);text(42,137,"Build "+build_field("appBuild")+" / Engine "+VER_STRING,20,556);text(42,173,controller_device_name(),20,556);
+        frame(24,90,592,116);text(42,100,"Keeper-Enhanced "+build_field("appVersion"),24,556);text(42,137,"Build "+build_field("appBuild")+" / Engine "+VER_STRING,20,556);text(42,173,controller_device_name(),20,556);
         button(134,214,372,"Open Logs Folder",810,selected==0,40);button(134,262,372,"Open Save Folder",811,selected==1,40);button(134,310,372,"Copy Diagnostics",813,selected==2,40);button(24,354,184,"Saving Help",814,selected==3,38);button(228,354,184,"Data Tools",1510,selected==4,38);button(432,354,184,"Setup",1520,selected==5,38);
     }else if(page==14){
         frame(24,90,592,214);text(42,102,save_error.empty()?"Save recovery":save_error,20,548);text(42,146,"1. Check free disk space.",22,548);text(42,184,"2. Check save-folder permissions.",22,548);text(42,222,"3. Open a save and choose a backup.",22,548);text(42,266,"Restoring keeps the original backup.",20,548);

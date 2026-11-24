@@ -1,0 +1,23 @@
+[Unit]
+Description=Keeper Enhanced dedicated game server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=keeper-enhanced
+Group=keeper-enhanced
+EnvironmentFile=-/etc/keeper-enhanced/server.env
+ExecStart=/usr/bin/python3 /opt/keeper-enhanced-server/dedicated.py /etc/keeper-enhanced/server.json
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=20
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/keeper-enhanced
+
+[Install]
+WantedBy=multi-user.target

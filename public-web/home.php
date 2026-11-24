@@ -7,8 +7,8 @@ function escape(string $value): string { return htmlspecialchars($value,ENT_QUOT
 <html lang="en">
 <head>
 <meta charset="utf-8"><script src="/routes.js"></script><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="description" content="Build your dungeon with KeeperFX-E. Native macOS, Xbox and DualSense controls, and a connected community of keepers.">
-<title>KeeperFX-E — Your dungeon awaits</title>
+<meta name="description" content="Build your dungeon with Keeper-Enhanced. Native macOS, Xbox and DualSense controls, and a connected community of keepers.">
+<title>Keeper-Enhanced — Your dungeon awaits</title>
 <link rel="icon" type="image/svg+xml" href="/assets/keeper-mask.svg">
 <link rel="stylesheet" href="/site.css"><link rel="stylesheet" href="/style.css">
 </head>
@@ -18,7 +18,7 @@ function escape(string $value): string { return htmlspecialchars($value,ENT_QUOT
 <section class="hero wrap" aria-labelledby="hero-title">
   <div class="hero-content"><p class="eyebrow">Evil has a new home on macOS</p>
   <h1 id="hero-title">Your dungeon.<br><span>Your dominion.</span></h1>
-  <p class="hero-copy">Build your realm beneath the surface. KeeperFX-E is a fork of <a href="https://github.com/dkfans/keeperfx">KeeperFX</a>, bringing classic dungeon strategy to your Mac with modern controls and more ways to play together.</p>
+  <p class="hero-copy">Build your realm beneath the surface. Keeper-Enhanced is a fork of <a href="https://github.com/dkfans/keeperfx">KeeperFX</a>, bringing classic dungeon strategy to your Mac with modern controls and more ways to play together.</p>
   <div class="actions"><a class="button primary" href="<?= web_escape(web_url('/downloads')) ?>">Browse downloads</a><a class="button secondary" href="<?= web_escape(web_url('/servers')) ?>">Find a game</a></div>
   <a class="feature-jump" href="<?= web_escape(web_url('/features')) ?>">Explore the features</a>
   <p class="compatibility">macOS 13+ <span>·</span> Apple Silicon &amp; Intel</p>
@@ -32,6 +32,6 @@ function escape(string $value): string { return htmlspecialchars($value,ENT_QUOT
 <?php endif; ?>
 <?php require __DIR__.'/feature-section.php'; ?>
 <section class="network-hall wrap" aria-labelledby="network-title"><div class="section-heading"><div><p class="eyebrow">Beyond your dungeon walls</p><h2 id="network-title">Other keepers await.</h2></div><p>The website and game share one network. Find a server, connect your account or see what’s happening underground.</p></div><div class="hall-grid"><a href="<?= web_escape(web_url('/servers')) ?>"><span class="hall-symbol" aria-hidden="true">⚔</span><h3>The server hall</h3><p>Browse public and dedicated games.</p><span class="hall-link">Browse servers</span></a><a href="<?= web_escape(web_url('/profile')) ?>"><img src="/assets/keeper-mask.svg" alt="" width="44" height="48"><h3>Your Keeper</h3><p>Account, friends and verified statistics.</p><span class="hall-link">Enter your profile</span></a><a href="<?= web_escape(web_url('/services')) ?>"><span class="hall-symbol" aria-hidden="true">✥</span><h3>The network chamber</h3><p>Service availability and connection status.</p><span class="hall-link">Explore services</span></a></div><p class="hall-footnote"><a href="<?= web_escape(web_url('/events')) ?>">Events</a><span>·</span><a href="<?= web_escape(web_url('/replays')) ?>">Replays</a><span>·</span><a href="<?= web_escape(web_url('/challenges')) ?>">Cooperative challenges</a></p></section>
-<section class="getting-started wrap" aria-labelledby="start-title"><div><p class="eyebrow">Your descent begins here</p><h2 id="start-title">Claim your dungeon.</h2><p>You’ll need your own copy of Dungeon Keeper. Original graphics, sound and game data are imported, rather than bundled with KeeperFX-E.</p></div><ol class="steps"><li><div><h3>Get KeeperFX-E</h3><p>Choose a build from the <a href="https://github.com/retrocs-org/KeeperFX-E/releases">release page</a>, or build from source.</p></div></li><li><div><h3>Import your game files</h3><p>Use the included import tools with your own Dungeon Keeper installation.</p></div></li><li><div><h3>Make yourself at home</h3><p>Choose your controls and display settings. Start a dungeon, or find a game.</p></div></li></ol></section>
+<section class="getting-started wrap" aria-labelledby="start-title"><div><p class="eyebrow">Your descent begins here</p><h2 id="start-title">Claim your dungeon.</h2><p>You’ll need your own copy of Dungeon Keeper. Original graphics, sound and game data are imported, rather than bundled with Keeper-Enhanced.</p></div><ol class="steps"><li><div><h3>Get Keeper-Enhanced</h3><p>Choose a build from the <a href="https://github.com/retrocs-org/KeeperFX-E/releases">release page</a>, or build from source.</p></div></li><li><div><h3>Import your game files</h3><p>Use the included import tools with your own Dungeon Keeper installation.</p></div></li><li><div><h3>Make yourself at home</h3><p>Choose your controls and display settings. Start a dungeon, or find a game.</p></div></li></ol></section>
 <section class="project-links wrap" aria-labelledby="project-title"><div><p class="eyebrow">Built in the open</p><h2 id="project-title">Help shape the depths.</h2><p>Read the code, report a problem or contribute your next wicked idea.</p></div><div class="repository-links"><a href="https://github.com/retrocs-org/KeeperFX-E"><span>GitHub<small>Code, issues &amp; releases</small></span></a></div></section>
 </main><?php site_footer(); ?></body></html>

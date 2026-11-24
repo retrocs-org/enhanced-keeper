@@ -497,7 +497,7 @@ void navigate(int direction){
     if(page==9){report_offset=std::max(0,report_offset+direction);return;}
     if(page==10)return;
     if(page==26){selected=(selected+direction+2)%2;return;}
-    if(page>=20){int count=page==20?13:page==21?6:page==22?4:page==23?5:page==24?5:2;selected=(selected+direction+count)%count;return;}
+    if(page>=20){int count=page==20?13:page==21?5:page==22?4:page==23?5:page==24?5:2;selected=(selected+direction+count)%count;return;}
     if(page>=15){int count=page==15?8:page==16?6:page==17?4:page==18?2:3;selected=(selected+direction+count)%count;return;}
     if(page==13){selected=(selected+direction+6)%6;return;}
     if(page==14){selected=(selected+direction+2)%2;return;}
@@ -542,7 +542,7 @@ void confirm_control(){
     else if(page==18)activate(selected?1006:1005);
     else if(page==19){const int actions[]={1100,1102,1101};activate(actions[selected]);}
     else if(page==20){const int actions[]={2010,2011,2012,2030,2031,2020,2022,2023,2024,2025,2021,2027,2026};activate(actions[selected]);}
-    else if(page==21){const int actions[]={2044,2040,2041,2042,2043,2045};activate(actions[selected]);}
+    else if(page==21){const int actions[]={2044,2040,2042,2043,2045};activate(actions[selected]);}
     else if(page==22)activate(2050+selected);
     else if(page==23){const int actions[]={2060,2061,2063,2064,2062};activate(actions[selected]);}
     else if(page==24){const int actions[]={2080,2081,2083,2082,2084};activate(actions[selected]);}
@@ -642,7 +642,7 @@ void process_network(){
         if(count&&network_report.size()<16384)network_report.append(buffer,std::min(count,16384-network_report.size()));
         int code;if(SDL_WaitProcess(diagnostic_process,false,&code)){
             while(output&&(count=SDL_ReadIO(output,buffer,sizeof(buffer)))>0)if(network_report.size()<16384)network_report.append(buffer,std::min(count,16384-network_report.size()));
-            SDL_DestroyProcess(diagnostic_process);diagnostic_process=nullptr;notice=code==0?"Connection test finished. See service, relay and direct-hosting results below.":"Connection check finished with an error. See the report below.";
+            SDL_DestroyProcess(diagnostic_process);diagnostic_process=nullptr;notice=code==0?"Connection test finished. See service and direct-hosting results below.":"Connection check finished with an error. See the report below.";
         }
     }
     if(pending_join){

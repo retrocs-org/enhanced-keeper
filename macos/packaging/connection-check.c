@@ -22,12 +22,11 @@ int main(int argc,char **argv){
  if(port<1||port>65535){puts("Choose a UDP port between 1 and 65535.");return 2;}
  curl_global_init(CURL_GLOBAL_DEFAULT);int healthy=0;struct Body body={0};char url[1024];
  if(service&&strlen(service)<768){snprintf(url,sizeof(url),"%s/api/health",service);healthy=request(url,NULL,&body)&&yes(body.text,"ok");puts(healthy?"Community service: ready.":"Community service: unavailable or not ready. LAN and direct connections remain independent.");
-  puts(healthy&&yes(body.text,"relay")?"Relay service: available. A successful relay join still requires host registration and a compatible game.":"Relay service: not available or not verified.");
   if(healthy&&hosting&&endpoint&&strlen(endpoint)<160&&!strpbrk(endpoint,"\"\\\r\n")){char data[256];snprintf(data,sizeof(data),"{\"endpoint\":\"%s\"}",endpoint);snprintf(url,sizeof(url),"%s/api/connectivity",service);
    if(request(url,data,&body)){if(yes(body.text,"reachable"))puts("Direct hosting: verified by an incoming UDP challenge from the service.");else puts("Direct hosting: not verified. A local service cannot check Internet reachability. With a public service, retry with your public address; firewall, NAT or CGNAT may block replies.");}
    else puts("Direct hosting: not verified. Check that the advertised host resolves to your public address, and that the lobby is open. The service may also be busy.");
   }else puts("Direct hosting: open a lobby, configure its public address, then retry this test.");
  }else puts("Set a community service in Network > Server Browser > Account before testing its readiness.");
  int udp=socket(AF_INET,SOCK_DGRAM,0);if(udp>=0){struct sockaddr_in address={0};address.sin_family=AF_INET;address.sin_addr.s_addr=htonl(INADDR_LOOPBACK);address.sin_port=htons((unsigned short)port);if(bind(udp,(struct sockaddr*)&address,sizeof(address))==0)printf("Local UDP port %d: available. This alone does not prove Internet reachability.\n",port);else if(errno==EADDRINUSE)printf("Local UDP port %d: in use%s.\n",port,hosting?" (expected while hosting)":"; another game may be using it");else puts("Local UDP port could not be checked.");close(udp);}
- puts("Next steps: allow KeeperFX-E in the macOS firewall. Try direct play on LAN, or use the community relay when direct Internet hosting is blocked. Keep both players on matching engine/content versions.");curl_global_cleanup();return healthy?0:1;
+ puts("Next steps: allow Keeper-Enhanced in the macOS firewall. Try direct play on LAN, or join a listed public server when direct Internet hosting is blocked. Keep both players on matching engine/content versions.");curl_global_cleanup();return healthy?0:1;
 }

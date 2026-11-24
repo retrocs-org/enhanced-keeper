@@ -3,7 +3,7 @@ if (!defined('KFX_WEB_PAGE')) { http_response_code(404); exit; }
 /** This catalog is also the browser's allowlist; mutating calls are documentation only. */
 function api_catalog(): array {
     $routes = [
-        ['GET','/api/health','Services','Public','Service health, protocol and relay availability.',true],
+        ['GET','/api/health','Services','Public','Service health and protocol.',true],
         ['GET','/api/servers','Servers','Public','Live server directory, map, engine, content fingerprint and occupancy.',true],
         ['GET','/api/leaderboard','Statistics','Public','Opt-in public profiles ranked by completed server-verified wins and matches.',true],
         ['GET','/api/events','Community','Public','Upcoming events and registration counts.',true],
@@ -36,7 +36,7 @@ function api_catalog(): array {
         ['POST','/api/challenges/{id}/complete','Community','Signed in + CSRF','Record a verified winning challenge match.',false],
         ['POST','/api/replays','Replays','Signed in + CSRF','Share a replay linked to a completed match.',false],
         ['POST','/api/servers/register','Servers','Host; dedicated requires administrator key','Register a host; returned host secrets are never shown by the browser.',false],
-        ['POST','/api/servers/{id}/join','Servers','Guest or account','Get direct/relay connection details after compatibility checks.',false],
+        ['POST','/api/servers/{id}/join','Servers','Guest or account','Get direct connection details after compatibility checks.',false],
         ['POST','/api/servers/{id}/heartbeat','Servers','Host secret','Refresh occupancy, map and content fingerprint.',false],
         ['POST','/api/servers/{id}/identity','Servers','Host secret','Verify a joined account ticket.',false],
         ['POST','/api/servers/{id}/match','Servers','Host secret','Start a match record.',false],

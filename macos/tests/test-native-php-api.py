@@ -4,6 +4,7 @@ import importlib.util,json,os,secrets,shutil,sqlite3,subprocess,sys,tempfile,thr
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(ROOT/'services/keeperhub'))
+sys.path.insert(0,str(Path(__file__).resolve().parent/'relay-fixtures'))
 from relay_worker import serve_control
 from relay import Relay
 spec=importlib.util.spec_from_file_location('contracts',ROOT/'macos/tests/test-keeperhub.py');suite=importlib.util.module_from_spec(spec);spec.loader.exec_module(suite)
@@ -30,6 +31,11 @@ class PHPHub:
 class NativePHPContracts(suite.HubTests):
  def setUp(self):
   self.tmp=tempfile.TemporaryDirectory();self.clock=[time.time()];self.relay=Relay();self.hub=PHPHub(Path(self.tmp.name)/'test.sqlite3',self.relay,'admin-'+'x'*30,lambda:self.clock[0]);self.a=self.post('/api/register',{'name':'KeeperOne','password':'a long password 123'});self.b=self.post('/api/register',{'name':'KeeperTwo','password':'a long password 456'});self.me=self.get('/api/me',self.a['token']);self.other=self.get('/api/me',self.b['token'])
+ def test_relay_auth_and_bidirectional_data(self):
+  server=self.server()
+  with self.assertRaises(suite.h.Problem) as error:self.post('/api/servers/'+server['id']+'/join',{'relay':True})
+  self.assertEqual(error.exception.status,400)
+  self.assertNotIn('relay',self.post('/api/servers/'+server['id']+'/join',{}))
  def tearDown(self):self.hub.close();super().tearDown()
  def test_existing_python_passwords_sessions_and_records_are_compatible(self):
   if self.hub.mysql:self.skipTest('SQLite legacy-file interoperability is checked in the SQLite run')

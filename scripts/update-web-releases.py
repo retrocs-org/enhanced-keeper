@@ -14,7 +14,7 @@ API = 'https://api.github.com/repos/retrocs-org/KeeperFX-E/releases/latest'
 
 
 def download(url, limit=32768):
-    request = urllib.request.Request(url, headers={'User-Agent':'KeeperFX-E-website','Accept':'application/vnd.github+json'})
+    request = urllib.request.Request(url, headers={'User-Agent':'Keeper-Enhanced-website','Accept':'application/vnd.github+json'})
     with urllib.request.urlopen(request, timeout=15) as response:
         if not response.url.startswith('https://'):
             raise ValueError('HTTPS required')
@@ -36,7 +36,9 @@ def manifest(release, fetch=download):
         assets[item['name']] = item
     result = {'version':version,'release_url':REPO+'/releases/tag/'+quote(tag,safe=''),'assets':[]}
     for kind in ('dmg','zip'):
-        name = 'KeeperFX-E-'+version+'-macOS-Universal.'+kind
+        name = 'Keeper-Enhanced-'+version+'-macOS-Universal.'+kind
+        legacy = 'KeeperFX-E-'+version+'-macOS-Universal.'+kind
+        if name not in assets and legacy in assets:name = legacy
         expected = REPO+'/releases/download/'+quote(tag,safe='')+'/'+name
         for candidate in (name,name+'.sha256'):
             item=assets.get(candidate,{})

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build, sign, verify and publish the same KeeperFX-E bytes. Adapted from Beam68 (MIT)."""
+"""Build, sign, verify and publish the same Keeper-Enhanced bytes. Adapted from Beam68 (MIT)."""
 import argparse
 from datetime import datetime, timezone
 import ftplib
@@ -79,7 +79,7 @@ def git_url(url, web):
 def config_read(root, path):
     defaults = {'github': '',
                 'github_git': '',
-                'gitlab': '', 'gitlab_git': '', 'author': 'KeeperFX-E contributors',
+                'gitlab': '', 'gitlab_git': '', 'author': 'Keeper-Enhanced contributors',
                 'env': {}, 'credentials': {}, 'source_branch': ''}
     if path.exists():
         raw = load(path)
@@ -279,7 +279,7 @@ def initialize_source(config, services, root, message=None, dry_run=False):
     module(root,'check-sensitive').scan(root)
     git(root,'add','--',*sorted(inventory))
     validate_tracked_public(root)
-    git(root,'commit','-m',message or 'Initial KeeperFX-E source')
+    git(root,'commit','-m',message or 'Initial Keeper-Enhanced source')
     print('Created the first local commit. No source uploaded.')
 
 def push_source(config, services, confirmed=False, dry_run=False, root=ROOT, initialize=False, message=None):
@@ -319,7 +319,7 @@ class API:
     def __init__(self, origin, token, github=False):
         self.origin = origin
         self.installation_token = github and token.startswith('ghs_')
-        self.headers = {'User-Agent': 'KeeperFX-E-release', 'Accept': 'application/json'}
+        self.headers = {'User-Agent': 'Keeper-Enhanced-release', 'Accept': 'application/json'}
         if github:
             self.headers.update({'Authorization': 'Bearer ' + token, 'Accept': 'application/vnd.github+json',
                                  'X-GitHub-Api-Version': '2022-11-28'})
@@ -371,7 +371,7 @@ class API:
             need(p.hostname and p.netloc == p.hostname and p.path, 'Invalid package URL')
             need(p.scheme == 'https' and not p.username and not p.password, 'Unsafe package redirect')
             if p.scheme + '://' + p.netloc != self.origin:
-                headers = {'User-Agent': 'KeeperFX-E-release'}
+                headers = {'User-Agent': 'Keeper-Enhanced-release'}
             try:
                 response = self.opener.open(urllib.request.Request(url, headers=headers), timeout=60)
             except urllib.error.HTTPError as exc:
@@ -473,7 +473,7 @@ class GitHub:
         if release is None:
             release = self.api.json(self.base + '/releases', 'POST',
                                     {'tag_name': self.m['tag'], 'target_commitish': self.m['commit'],
-                                     'name': 'KeeperFX-E ' + self.m['version'], 'body': self.m['notes'],
+                                     'name': 'Keeper-Enhanced ' + self.m['version'], 'body': self.m['notes'],
                                      'draft': True, 'prerelease': False})
         existing = self.verify(release)
         ident = str(release['id'])
@@ -486,7 +486,7 @@ class GitHub:
                      'GitHub did not verify uploaded asset: ' + name)
         self.verify(release, True)
         self.api.json(self.base + '/releases/' + ident, 'PATCH',
-                      {'name': 'KeeperFX-E ' + self.m['version'], 'draft': False, 'prerelease': False, 'make_latest': 'true'})
+                      {'name': 'Keeper-Enhanced ' + self.m['version'], 'draft': False, 'prerelease': False, 'make_latest': 'true'})
         final = self.release()
         need(final and not final['draft'] and final.get('prerelease') is False,
              'GitHub release is not a normal published release')
@@ -554,10 +554,10 @@ class GitLab:
         if release:
             self.verify(release)
             self.api.json(self.base + '/releases/' + urllib.parse.quote(self.m['tag'], safe=''),
-                          'PUT', {'name': 'KeeperFX-E ' + self.m['version'], 'released_at': released_at})
+                          'PUT', {'name': 'Keeper-Enhanced ' + self.m['version'], 'released_at': released_at})
         else:
             self.api.json(self.base + '/releases', 'POST', {'tag_name': self.m['tag'],
-                          'name': 'KeeperFX-E ' + self.m['version'], 'description': self.m['notes'],
+                          'name': 'Keeper-Enhanced ' + self.m['version'], 'description': self.m['notes'],
                           'released_at': released_at, 'assets': {'links': self.links()}})
         final = self.release()
         self.verify(final)
@@ -596,7 +596,7 @@ class Release:
         version=(root/'VERSION').read_text().strip()
         need(re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+',version),'VERSION must use major.minor.patch')
         self.version,self.tag=version,release_tag(tag,version)
-        self.tag_message=tag_message or 'KeeperFX-E '+self.tag
+        self.tag_message=tag_message or 'Keeper-Enhanced '+self.tag
         need(not any(c in self.tag_message for c in ('\0','\r','\n')),'Invalid tag annotation')
         self.out=Path(os.path.abspath(root/(output or ('outputs/release-'+version))))
         base=root/'outputs';need(base in self.out.parents,'Output must be beneath outputs/')
@@ -604,7 +604,7 @@ class Release:
         while p!=root:
             need(not p.is_symlink(),'Linked release directory');p=p.parent
         self.state=self.out/'release';self.record=self.state/'build.json';self.manifest=self.state/'manifest.json'
-        self.payload_names=['KeeperFX-E-'+version+'-macOS-Universal.'+ext for ext in ('dmg','zip')]
+        self.payload_names=['Keeper-Enhanced-'+version+'-macOS-Universal.'+ext for ext in ('dmg','zip')]
         self.names=sorted(self.payload_names+[n+'.sha256' for n in self.payload_names])
         self.verbose=False;self.allow_dirty=False
     def inputs(self):return source_files(self.root)
@@ -617,12 +617,12 @@ class Release:
                 [py,'macos/tests/run-readiness-tests.py'],[py,'macos/tests/run-hub-config-tests.py'],[py,'macos/tests/test-native-php-api.py'],
                 [py,'macos/tests/test-php-web.py'],[py,'macos/tests/test-web-deploy.py'],[py,'macos/tests/test-service-operations.py'],
                 ['zsh','macos/package-app.sh']]
-    def app(self):return self.state/'package/KeeperFX-E.app'
+    def app(self):return self.state/'package/Keeper-Enhanced.app'
     def verify_package(self):
         app=self.app();need(app.is_dir() and not app.is_symlink(),'Missing app package')
         import plistlib
         info=plistlib.loads((app/'Contents/Info.plist').read_bytes())
-        need(info['CFBundleDisplayName']=='KeeperFX-E' and info['CFBundleShortVersionString']==self.version and info['CFBundleVersion']==(self.root/'macos/BUILD_NUMBER').read_text().strip(),'App version/name mismatch')
+        need(info['CFBundleDisplayName']=='Keeper-Enhanced' and info['CFBundleShortVersionString']==self.version and info['CFBundleVersion']==(self.root/'macos/BUILD_NUMBER').read_text().strip(),'App version/name mismatch')
         executables=['Contents/MacOS/KeeperFXE','Contents/Resources/game/keeperfx','Contents/Resources/connection-check','Contents/Resources/controller-check','Contents/Resources/video-check']
         for name in executables:
             p=app/name;need(p.is_file() and not p.is_symlink(),'Missing packaged executable')
@@ -665,7 +665,7 @@ class Release:
         module(self.root,'check-sensitive').scan(self.root)
         before=self.inputs();head=commit(self.root)
         if not self.allow_dirty:clean_checkout(self.root,before)
-        self.state.mkdir(parents=True);log=self.state/'build.log';log.write_text('KeeperFX-E '+self.version+'\n')
+        self.state.mkdir(parents=True);log=self.state/'build.log';log.write_text('Keeper-Enhanced '+self.version+'\n')
         env=dict(self.config['env']);need(env.get('KFX_SIGN_IDENTITY') and env.get('KFX_NOTARY_PROFILE'),'Signing identity and saved notary profile are required')
         env['KFX_PACKAGE_DIR']=str(self.state/'package');env['KFX_RELEASE_VERBOSE']='1' if self.verbose else '0'
         for index,args in enumerate(self.plan(),1):
@@ -675,7 +675,7 @@ class Release:
             source=self.state/'package'/name;need(source.is_file(),'Package did not produce '+name);shutil.copyfile(source,self.out/name)
             (self.out/(name+'.sha256')).write_text(sha(self.out/name)+'  '+name+'\n')
         self.verify_package()
-        provenance={'schema':1,'product':'KeeperFX-E','version':self.version,'app_build':(self.root/'macos/BUILD_NUMBER').read_text().strip(),
+        provenance={'schema':1,'product':'Keeper-Enhanced','version':self.version,'app_build':(self.root/'macos/BUILD_NUMBER').read_text().strip(),
                     'commit':head,'dirty':bool(git(self.root,'status','--porcelain','--untracked-files=all')),'source_sha256':fingerprint(before),
                     'inputs':before,'configuration_sha256':self.build_binding(),'target':{'architectures':['arm64','x86_64'],'minimum_macos':'13.0'},
                     'compiler':run(self.root,['clang','--version']).splitlines()[0],
@@ -779,7 +779,7 @@ class Release:
             try:
                 git(self.root, 'rev-parse', '--verify', 'refs/tags/' + m['tag'])
             except ReleaseError:
-                git(self.root, '-c', 'tag.gpgSign=false', 'tag', '-a', m['tag'], m['commit'], '-m', m.get('tag_message','KeeperFX-E '+m['tag']))
+                git(self.root, '-c', 'tag.gpgSign=false', 'tag', '-a', m['tag'], m['commit'], '-m', m.get('tag_message','Keeper-Enhanced '+m['tag']))
             git(self.root, 'push', '--no-follow-tags', remote, 'refs/tags/' + m['tag'] + ':refs/tags/' + m['tag'])
         need(self.tag_preflight(m, remote), 'Remote tag verification failed')
 

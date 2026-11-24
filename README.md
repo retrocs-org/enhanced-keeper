@@ -1,4 +1,4 @@
-# KeeperFX-E
+# Keeper-Enhanced
 
 [In-game tools](docs/POLISH-TOOLS.md) · [Website](https://keeperfx-e.retrocs.org) · [GitHub](https://github.com/retrocs-org/KeeperFX-E)
 
@@ -274,6 +274,11 @@ Camera Controls, displaying your current bindings rather than fixed defaults.
 The game includes a server browser, browser-paired accounts and access to local
 community services. LAN and direct connections remain available without accounts.
 Run `python3 services/keeperhub/dev.py` for the local website and directory.
-See [community setup and headless hosting](docs/COMMUNITY.md) for accounts, relay
+See [community setup and headless hosting](docs/COMMUNITY.md) for accounts, dedicated servers
 configuration, verified results, tournaments, challenges and live spectating.
 Headless hosting currently uses an AI slot and supports up to three humans.
+
+The project is now named **keeper-enhanced** (Keeper Enhanced), formerly KeeperFX-E.
+Existing repository/service URLs, database names and save paths remain compatible.
+See [Linux dedicated-server setup](docs/LINUX-SERVER.md) for private or public hosting
+with optional passwords. Relay connections are no longer supported.

@@ -1,4 +1,4 @@
-# KeeperFX-E: MariaDB and PHP vhost deployment
+# Keeper-Enhanced: MariaDB and PHP vhost deployment
 
 | Role | Host | Private address |
 | --- | --- | --- |
@@ -17,7 +17,7 @@ servers have not been changed during development.
 Use the updated checkout as the OS user who owns the administrative `.my.cnf`:
 
 ```sh
-cd /path/to/KeeperFX-E
+cd /path/to/Keeper-Enhanced
 bash scripts/provision-mariadb.sh --web-config
 ```
 
@@ -50,7 +50,7 @@ Choose a dedicated document root. The example uses `/var/www/keeperfx-e/public-w
 replace it with your actual vhost path. Run the first deployment from your checkout:
 
 ```sh
-cd /path/to/KeeperFX-E
+cd /path/to/Keeper-Enhanced
 python3 scripts/deploy-web.py /var/www/keeperfx-e/public-web --initialize --apply
 ```
 
@@ -71,8 +71,8 @@ sudo install -o root -g "$PHP_FPM_GROUP" -m 0640 \
 ```
 
 The file already selects `https://keeperfx-e.retrocs.org` and MariaDB
-`172.16.1.121:3306`. Review `state_dir`, `admin_key_file`, `relay_control_url`,
-`relay_control_key_file` and `release_manifest` for your service layout. There is
+`172.16.1.121:3306`. Review `state_dir`, `admin_key_file`
+and `release_manifest` for your service layout. There is
 no need to configure PHP-FPM environment variables. Existing `KFX_*` environment
 overrides remain supported; remove stale overrides if you want config.inc.php to
 be the sole source of settings.
@@ -170,32 +170,12 @@ needs no initialization flag. Other accounts can use deploy-web.py with
 The script does not touch parent directories, other vhosts, database permissions,
 or `/var/lib/keeperfx-e`. Keep logs and uploads outside this managed document root.
 
-## Optional UDP relay
+## Dedicated game servers
 
-The PHP accounts, directory and direct joining work without a relay. Real-time UDP
-forwarding needs the separate persistent worker; it is not part of an HTTP vhost
-refresh. Generate a private random control key outside the document root, readable
-by PHP-FPM and the worker, and set these config.inc.php values:
-
-```php
-'relay_control_url' => 'http://127.0.0.1:8766',
-'relay_control_key_file' => '/var/lib/keeperfx-e/relay-control.key',
-```
-
-A private `admin_key` or `admin_key_file` enables trusted dedicated-host registration.
-Do not reuse the database password as either service key. Run the worker from its
-separately deployed service code, under your normal process supervisor:
-
-```sh
-python3 services/keeperhub/relay_worker.py \
-  --key-file /var/lib/keeperfx-e/relay-control.key --control-port 8766 \
-  --public-host keeperfx-e.retrocs.org --udp-bind 0.0.0.0 \
-  --relay-first 27700 --relay-last 27731
-```
-
-Keep the control listener on loopback. Route UDP 27700–27731 through the public
-firewall/NAT to the worker (172.16.1.133 if hosted on this web server). The advertised
-public hostname must actually reach it, not an unrelated CDN/proxy.
+Use LAN, direct private connections or publicly listed servers. Relay connections
+are disabled. See [Linux server setup](LINUX-SERVER.md). A private `admin_key` or
+`admin_key_file` enables trusted public dedicated-host registration. Private hosts
+need no service key. Do not reuse the database password as a service key.
 
 ## Existing data and backups
 

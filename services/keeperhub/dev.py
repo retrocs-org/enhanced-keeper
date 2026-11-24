@@ -6,9 +6,7 @@ from pathlib import Path
 import secrets
 import shutil
 import subprocess
-from relay import Relay
-from relay_worker import serve_control
-import threading
+import time
 
 
 def main():
@@ -35,31 +33,22 @@ def main():
         keyfile.write_text(secrets.token_urlsafe(32))
         keyfile.chmod(0o600)
     origin = 'http://127.0.0.1:'+str(args.port)
-    relay = Relay()
-    relay_key = args.state/'relay-control.key'
-    if not relay_key.exists():
-        relay_key.write_text(secrets.token_urlsafe(32));relay_key.chmod(0o600)
-    server = serve_control(relay, relay_key.read_text().strip())
     web = Path(__file__).resolve().parents[2]/'public-web'
-    environment = dict(os.environ, KFX_PUBLIC_ORIGIN=origin, KFX_HUB_STATE=str(args.state.resolve()), KFX_HUB_DB=str((args.state/'community.sqlite3').resolve()), KFX_DB_CONFIG='', KFX_DB_DSN='', KFX_DB_USER='', KFX_DB_PASSWORD='', KFX_HUB_ADMIN_KEY='', KFX_HUB_ADMIN_KEY_FILE=str(keyfile.resolve()), KFX_RELAY_CONTROL_KEY='', KFX_RELAY_CONTROL_KEY_FILE=str(relay_key.resolve()),
-                       KFX_RELAY_CONTROL='http://127.0.0.1:'+str(server.server_port))
+    environment = dict(os.environ, KFX_PUBLIC_ORIGIN=origin, KFX_HUB_STATE=str(args.state.resolve()), KFX_HUB_DB=str((args.state/'community.sqlite3').resolve()), KFX_DB_CONFIG='', KFX_DB_DSN='', KFX_DB_USER='', KFX_DB_PASSWORD='', KFX_HUB_ADMIN_KEY='', KFX_HUB_ADMIN_KEY_FILE=str(keyfile.resolve()))
     process = None
     try:
         # Do not log account/device URLs or credentials through PHP's access log.
         process = subprocess.Popen([php, '-S', '127.0.0.1:'+str(args.port), '-t', str(web), str(web/'router.php')],
                                    env=environment, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         (args.state/'local-url.txt').write_text(origin)
-        print('KeeperFX-E PHP website at '+origin, flush=True)
-        server.timeout = .5
+        print('Keeper-Enhanced PHP website at '+origin, flush=True)
         while not stopfile.exists():
             if process.poll() is not None:
                 raise SystemExit('PHP website stopped; check that the selected port is available.')
-            server.handle_request()
+            time.sleep(.5)
     except KeyboardInterrupt:
         pass
     finally:
-        server.server_close()
-        relay.close()
         if process is not None and process.poll() is None:
             process.terminate()
             try:

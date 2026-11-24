@@ -7,12 +7,13 @@ root=Path(__file__).resolve().parents[2]
 def module(name,file):
  s=importlib.util.spec_from_file_location(name,file);m=importlib.util.module_from_spec(s);s.loader.exec_module(m);return m
 sys.path.insert(0,str(root/'services/keeperhub'))
+sys.path.insert(0,str(Path(__file__).resolve().parent/'relay-fixtures'))
 from relay import Relay
 from relay_worker import serve_control
 ded=module('dedicated',root/'services/keeperhub/dedicated.py')
 work=Path(tempfile.mkdtemp(prefix='kfx-community-e2e-'));Path('/tmp/kfx-community-e2e-profile').write_text(str(work));relay=Relay();admin_key='test-'+os.urandom(24).hex();control_key='control-'+os.urandom(24).hex();http=serve_control(relay,control_key);threading.Thread(target=http.serve_forever,daemon=True).start()
 with socket.socket() as sock:sock.bind(('127.0.0.1',0));web_port=sock.getsockname()[1]
-base='http://127.0.0.1:'+str(web_port);web=root/'public-web';web_process=subprocess.Popen([shutil.which('php'),'-S','127.0.0.1:'+str(web_port),'-t',str(web),str(web/'router.php')],env=dict(os.environ,KFX_DB_CONFIG='',KFX_DB_DSN='',KFX_DB_USER='',KFX_DB_PASSWORD='',KFX_HUB_DB='',KFX_PUBLIC_ORIGIN=base,KFX_HUB_STATE=str(work/'service'),KFX_HUB_ADMIN_KEY=admin_key,KFX_RELAY_CONTROL='http://127.0.0.1:'+str(http.server_port),KFX_RELAY_CONTROL_KEY=control_key),stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+base='http://127.0.0.1:'+str(web_port);web=root/'public-web';web_process=subprocess.Popen([shutil.which('php'),'-S','127.0.0.1:'+str(web_port),'-t',str(web),str(web/'router.php')],env=dict(os.environ,KFX_DB_CONFIG='',KFX_DB_DSN='',KFX_DB_USER='',KFX_DB_PASSWORD='',KFX_HUB_DB=str(work/'service/community.sqlite3'),KFX_PUBLIC_ORIGIN=base,KFX_HUB_STATE=str(work/'service'),KFX_HUB_ADMIN_KEY=admin_key,KFX_RELAY_CONTROL='http://127.0.0.1:'+str(http.server_port),KFX_RELAY_CONTROL_KEY=control_key),stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
 class PublicPHP:
  admin_key=admin_key
  def handle(self,method,path,data,token=''):
@@ -32,7 +33,7 @@ for attempt in range(100):
 else:raise RuntimeError('Native PHP API did not start')
 processes=[];supervisor=None;hostthread=None
 
-app=Path(os.environ.get('KFX_TEST_APP','/Applications/KeeperFX-E.app'));launcher=app/'Contents/MacOS'/plistlib.loads((app/'Contents/Info.plist').read_bytes())['CFBundleExecutable'];engine=root/'build-mac-universal/keeperfx'
+app=Path(os.environ.get('KFX_TEST_APP','/Applications/Keeper-Enhanced.app'));launcher=app/'Contents/MacOS'/plistlib.loads((app/'Contents/Info.plist').read_bytes())['CFBundleExecutable'];engine=root/'build-mac-universal/keeperfx'
 def port(udp=False):
  with socket.socket(socket.AF_INET,socket.SOCK_DGRAM if udp else socket.SOCK_STREAM) as s:s.bind(('127.0.0.1',0));return s.getsockname()[1]
 def profile(name):
@@ -71,7 +72,7 @@ def launch(p,apiport,token=None):
  env=dict(os.environ,KFX_USER_DATA_DIR=str(p),KFX_HEADLESS='1',KFX_LOCAL_NETWORK_ONLY='1',SDL_VIDEODRIVER='dummy',SDL_RENDER_DRIVER='software',SDL_AUDIODRIVER='dummy',ALSOFT_DRIVERS='null',KFX_APP_RESOURCES=str(app/'Contents/Resources'))
  log=open(p/'stdout.log','w');proc=subprocess.Popen([str(p/'GameData/keeperfx'),'-nointro','-nosound','-nick','LocalTester','-log','community.log'],executable=str(engine),env=env,cwd=p/'GameData',stdout=log,stderr=subprocess.STDOUT,start_new_session=True);processes.append((proc,log));until(lambda:rpc(apiport,'community_status'));return proc
 try:
- hostprofile=profile('host');hostport=port(True);cfg=dict(name='Local Dedicated QA',engine_binary=str(engine),user_data=str(hostprofile),hub_url=base,endpoint='127.0.0.1:1',port=hostport,rotation=[{'campaign':'classic','level':52}],humans=1,spectators=True,app_resources=str(app/'Contents/Resources'));os.environ['KFX_HUB_ADMIN_KEY']=hub.admin_key;supervisor=ded.Host(cfg);hosterrors=[]
+ hostprofile=profile('host');hostport=port(True);cfg=dict(name='Local Dedicated QA',engine_binary=str(engine),user_data=str(hostprofile),hub_url=base,endpoint='127.0.0.1:'+str(hostport),visibility='public',port=hostport,rotation=[{'campaign':'classic','level':52}],humans=1,spectators=True,app_resources=str(app/'Contents/Resources'));os.environ['KFX_HUB_ADMIN_KEY']=hub.admin_key;supervisor=ded.Host(cfg);hosterrors=[]
  def run_host():
   try:supervisor.run()
   except Exception:hosterrors.append(traceback.format_exc())
@@ -80,8 +81,8 @@ try:
   query.settimeout(2);query.sendto(b'KFXQ1 local-probe',('127.0.0.1',hostport));assert query.recvfrom(100)[0]==b'KFXA1 local-probe'
  print('PASS: server latency query does not allocate a player',flush=True)
  user=hub.handle('POST','/api/register',{'name':'LocalKeeper','password':'local game test password'});clientprofile=profile('client');clientport=port();client=launch(clientprofile,clientport,user['token']);rpc(clientport,'community_action',command=2000);until(lambda:rpc(clientport,'community_status').get('servers')==1);rpc(clientport,'community_action',command=2010);rpc(clientport,'community_action',command=2040)
- # Advertised direct port is deliberately unreachable: the same game browser must fall back to relay.
- until(lambda:rpc(clientport).get('turn',0)>=20,seconds=90);status=rpc(clientport);assert status['active'] and status['dedicated_player']==0,status;until(lambda:any(v.get('account') for v in supervisor.status.get('users',[])));assert relay.channels,'No relay channel was created';print('PASS: actual browser direct attempt falls back to authenticated ENet relay; dedicated AI and cloud identity agree',flush=True)
+ # The public listing must connect directly, without allocating a relay channel.
+ until(lambda:rpc(clientport).get('turn',0)>=20,seconds=90);status=rpc(clientport);assert status['active'] and status['dedicated_player']==0,status;until(lambda:any(v.get('account') for v in supervisor.status.get('users',[])));assert not relay.channels,'Unexpected relay channel';print('PASS: public server joins directly; dedicated AI and cloud identity agree',flush=True)
  if os.environ.get('KFX_TEST_RECONNECT')=='1':
   old=rpc(clientport);old_users=[(v.get('peer'),v.get('account')) for v in supervisor.status.get('users',[]) if v.get('account')]
   os.kill(client.pid,signal.SIGSTOP)

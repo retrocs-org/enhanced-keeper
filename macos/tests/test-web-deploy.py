@@ -63,7 +63,9 @@ class WebDeployTests(unittest.TestCase):
         text=(ROOT/'public-web/config.inc.php').read_text();config.write_text(text)
         scanner.scan(source,{'public-web/config.inc.php':{}})
         for key in ['password','admin_key','relay_control_key']:
-            config.write_text(text.replace("'"+key+"' => ''", "'"+key+"' => 'test-only-secret'"))
+            candidate=text
+            if key=='relay_control_key':candidate=candidate.replace("return [", "return [\n    'relay_control_key' => '',")
+            config.write_text(candidate.replace("'"+key+"' => ''", "'"+key+"' => 'test-only-secret'"))
             with self.assertRaises(ReleaseError):scanner.scan(source,{'public-web/config.inc.php':{}})
     def test_explicit_permission_refresh_preserves_config_and_sets_ownership(self):
         import pwd,grp

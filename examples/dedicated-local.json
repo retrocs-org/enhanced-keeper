@@ -1,9 +1,9 @@
 {
-  "name": "KeeperFX-E Local Server",
+  "name": "Keeper-Enhanced Local Server",
   "engine_binary": "build-mac-universal/keeperfx",
   "engine_version": "1.4.0.0",
   "user_data": ".local/dedicated-user",
-  "app_resources": "/Applications/KeeperFX-E.app/Contents/Resources",
+  "app_resources": "/Applications/Keeper-Enhanced.app/Contents/Resources",
   "hub_url": "http://127.0.0.1:8765",
   "endpoint": "127.0.0.1:5556",
   "port": 5556,
@@ -15,5 +15,6 @@
       "campaign": "classic",
       "level": 52
     }
-  ]
+  ],
+  "visibility": "private"
 }

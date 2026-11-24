@@ -70,7 +70,7 @@ if ((kfxWebConfig)); then
     printf '%s\n' "$kfxLine" >&3
   done < "$kfxRepoRoot/public-web/config.inc.php"
 else
-printf "<?php\n// Private KeeperFX-E database settings. Keep outside the web document root.\nreturn [\n 'dsn'=>'mysql:host=%s;port=3306;dbname=%s;charset=utf8mb4',\n 'user'=>'%s',\n 'password'=>'%s',\n];\n" "$kfxDbHost" "$kfxDbName" "$kfxDbUser" "$kfxPassword" >&3
+printf "<?php\n// Private Keeper-Enhanced database settings. Keep outside the web document root.\nreturn [\n 'dsn'=>'mysql:host=%s;port=3306;dbname=%s;charset=utf8mb4',\n 'user'=>'%s',\n 'password'=>'%s',\n];\n" "$kfxDbHost" "$kfxDbName" "$kfxDbUser" "$kfxPassword" >&3
 fi
 exec 3>&-
 echo "Created database $kfxDbName and account $kfxDbUser@$kfxWebHost with application-only CRUD permissions."

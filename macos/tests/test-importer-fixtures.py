@@ -1,7 +1,7 @@
 from pathlib import Path
 import os,tempfile,subprocess
 root=Path(__file__).resolve().parents[2]
-exe=Path(os.environ.get('KFX_TEST_BOOTSTRAP',Path('/Applications/KeeperFX-E.app/Contents/MacOS/KeeperFXE')))
+exe=Path(os.environ.get('KFX_TEST_BOOTSTRAP',Path('/Applications/Keeper-Enhanced.app/Contents/MacOS/KeeperFXE')))
 with tempfile.TemporaryDirectory(prefix='kfx-import-fixture-') as folder:
  folder=Path(folder);prefs=folder/'Profile';resources=folder/'Resources';game=resources/'game';game.mkdir(parents=True)
  (game/'keeperfx.cfg').write_text('RENDERER=SOFTWARE\n');(game/'marker.dat').write_text('version one');(resources/'asset-version.txt').write_text('1')

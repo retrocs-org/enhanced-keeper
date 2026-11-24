@@ -47,15 +47,7 @@ final class KeeperHub {
         }catch(Throwable $e){$this->db->exec('ROLLBACK');throw $e;}
         demand($count<=$max,'Too many requests; try again later',429);
     }
-    public function relay(string $action,array $data=[]): array {
-        demand($this->relayUrl!==''&&$this->relayKey!=='','Relay is unavailable',503);
-        demand(preg_match('~^http://(?:127\.0\.0\.1|localhost|\[::1\]):[0-9]{1,5}$~D',$this->relayUrl),'Relay control is not configured correctly',503);
-        $context=stream_context_create(['http'=>['method'=>'POST','timeout'=>2,'ignore_errors'=>true,'follow_location'=>0,'header'=>"Content-Type: application/json\r\nAuthorization: Bearer ".$this->relayKey."\r\nConnection: close",'content'=>json_encode(['action'=>$action]+$data,JSON_THROW_ON_ERROR)]]);
-        $bytes=@file_get_contents($this->relayUrl.'/control',false,$context,0,65537);$status=$http_response_header[0]??'';
-        demand(is_string($bytes)&&strlen($bytes)<=65536&&preg_match('~^HTTP/\S+ 200\b~',$status),'Relay worker is unavailable',503);
-        $value=json_decode($bytes,true,32,JSON_THROW_ON_ERROR);demand(is_array($value),'Invalid relay response',503);return $value;
-    }
-    public function relayAvailable(): bool {if($this->relayUrl==='')return false;try{return ($this->relay('health')['ok']??false)===true;}catch(Throwable){return false;}}
+    public function relayAvailable(): bool {return false;}
     public function handle(string $method,string $uri,array $data=[],string $token='',string $peer='local',string $csrf='',bool $cookie=false): array {
         $route=parse_url($uri,PHP_URL_PATH);$parts=explode('/',trim((string)$route,'/'));parse_str((string)(parse_url($uri,PHP_URL_QUERY)??''),$query);
         demand(in_array($method,['GET','POST'],true),'Unsupported method',405);
@@ -75,7 +67,7 @@ final class KeeperHub {
         }catch(Throwable $e){if($this->db->inTransaction())$this->db->rollBack();throw $e;}
     }
     private function read(string $route,array $parts,array $query,array|false $session,?string $uid): array {
-        if($route==='/api/health'){ $relay=$this->relayAvailable();demand($this->relayUrl===''||$relay,'Relay service unavailable',503);return ['ok'=>true,'protocol'=>1,'relay'=>$relay,'authority'=>'client-simulated','http_backend'=>'php'];}
+        if($route==='/api/health'){ return ['ok'=>true,'protocol'=>1,'relay'=>false,'authority'=>'client-simulated','http_backend'=>'php'];}
         if($route==='/api/session')return ['signed_in'=>(bool)$session,'name'=>$session['name']??'','csrf'=>$session['csrf']??''];
         if($route==='/api/me'){demand($uid,'Sign in first',401);return $this->one('SELECT id,name,public FROM users WHERE id=?',[$uid]);}
         if($route==='/api/servers'){$this->q("UPDATE matches SET ended=?,status=CASE WHEN status='lobby' THEN 'cancelled' ELSE 'abandoned' END WHERE ended=0 AND server IN (SELECT id FROM servers WHERE last_seen<?)",[$this->now,$this->now-90]);return ['servers'=>$this->rows('SELECT id,name,endpoint,engine,map,mods,players,capacity,password,region,kind,status FROM servers WHERE last_seen>? ORDER BY name LIMIT 128',[$this->now-90])];}
@@ -104,6 +96,6 @@ final class KeeperHub {
         if(!$global||str_starts_with(strtolower($peer),'::ffff:')||str_starts_with(strtolower($peer),'ff')||preg_match('/^(?:22[4-9]|23[0-9])\./',$peer)||preg_match('/^100\.(?:6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\./',$peer))return ['reachable'=>null,'reason'=>'A loopback/LAN service cannot verify Internet reachability. Use a public service or a second machine.'];
         $colon=strrpos($value,':');$host=trim(substr($value,0,$colon),'[]');$port=(int)substr($value,$colon+1);$addresses=filter_var($host,FILTER_VALIDATE_IP)?[$host]:array_merge(array_column(dns_get_record($host,DNS_A)?:[],'ip'),array_column(dns_get_record($host,DNS_AAAA)?:[],'ipv6'));
         demand($addresses,'The host name could not be resolved');foreach($addresses as $address)demand(inet_pton($address)===inet_pton($peer),'The endpoint must resolve only to this connection’s public address.');
-        $socket=@stream_socket_client('udp://'.(str_contains($peer,':')?'['.$peer.']':$peer).':'.$port,$errno,$error,.8);$reachable=false;if($socket){stream_set_timeout($socket,0,800000);$nonce=bin2hex(random_bytes(16));fwrite($socket,'KFXQ1 '.$nonce);$reachable=fread($socket,128)==='KFXA1 '.$nonce;fclose($socket);}return ['reachable'=>$reachable,'reason'=>$reachable?'Incoming UDP challenge answered by the game.':'No valid UDP reply. Open a lobby, then retry. Firewall, NAT or CGNAT may block direct hosting; try relay.'];
+        $socket=@stream_socket_client('udp://'.(str_contains($peer,':')?'['.$peer.']':$peer).':'.$port,$errno,$error,.8);$reachable=false;if($socket){stream_set_timeout($socket,0,800000);$nonce=bin2hex(random_bytes(16));fwrite($socket,'KFXQ1 '.$nonce);$reachable=fread($socket,128)==='KFXA1 '.$nonce;fclose($socket);}return ['reachable'=>$reachable,'reason'=>$reachable?'Incoming UDP challenge answered by the game.':'No valid UDP reply. Open a lobby, then retry. Firewall, NAT or CGNAT may block direct hosting; join a public server instead.'];
     }
 }

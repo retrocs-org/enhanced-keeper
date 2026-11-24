@@ -1,5 +1,5 @@
 <?php
-/** KeeperFX-E public website and native KeeperHub HTTP API. PHP 8.1+. */
+/** Keeper-Enhanced public website and native KeeperHub HTTP API. PHP 8.1+. */
 declare(strict_types=1);
 ini_set('display_errors','0');
 umask(0077);

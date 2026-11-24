@@ -51,7 +51,7 @@ bool enhancement_action(int action){
  if(action==1512){SDL_CreateDirectory((profiles_base()+"/Exports").c_str());open_folder(profiles_base()+"/Exports");return true;}
  if(action==1513){if(access(profile_file("reset-profile-next.cfg").c_str(),F_OK)==0){notice=unlink(profile_file("reset-profile-next.cfg").c_str())==0?"Scheduled reset cancelled.":"Could not cancel the scheduled reset.";return true;}reset_confirm=!reset_confirm;notice=reset_confirm?"Confirm Reset to move this profile's files to ProfileBackups on restart.":"Reset cancelled.";return true;}
  if(action==1514){if(!reset_confirm){notice="Choose Reset Profile first, then Confirm Reset.";return true;}notice=write_small_file(profile_file("reset-profile-next.cfg"),"reset\n")?"Reset scheduled. Quit and reopen. Files will be kept in ProfileBackups.":"Could not schedule reset.";reset_confirm=false;return true;}
- if(action==1515){open_folder("/Applications");notice="Quit the game, then move KeeperFX-E.app to Trash. Personal data stays in its data folder.";return true;}
+ if(action==1515){open_folder("/Applications");notice="Quit the game, then move Keeper-Enhanced.app to Trash. Personal data stays in its data folder.";return true;}
  if(action==1521){open_panel(5);return true;}
  if(action==1522){open_panel(26);return true;}
  if(action==1523){SDL_ShowOpenFolderDialog(import_folder_selected,nullptr,SDL_GetKeyboardFocus(),nullptr,false);return true;}

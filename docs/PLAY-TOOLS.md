@@ -47,7 +47,7 @@ name of 1–32 letters, numbers, underscores or hyphens. Open Mod Folder opens t
 profile's `EnhancedData/` overlay: place content using its normal relative layout,
 for example `mods/my-mod/` and `mods/load_order.cfg`.
 
-Choose Use Next Launch, then quit and reopen KeeperFX-E. The active game is never
+Choose Use Next Launch, then quit and reopen Keeper-Enhanced. The active game is never
 hot-swapped. Each non-default profile gets a separate `GameData/`, `save/`, settings
 and screenshots folder under `ContentProfiles/NAME/`. Imported original CD files
 are shared read-only as preparation inputs. The default profile retains the
@@ -61,7 +61,7 @@ in EnhancedData instead of modifying the signed app or the default profile.
 
 ## Connection test
 
-Network → Connection Test checks the configured community service and relay
+Network → Connection Test checks the configured community service and direct hosting
 readiness. For incoming UDP verification, first open a lobby and configure its
 public address under Server Browser → Host Public Game, then retry the test.
 
@@ -71,7 +71,7 @@ that route at that moment. A timeout is not proof of a particular firewall/NAT
 fault. Loopback/LAN services report Internet reachability as unverified, never as
 successful. Arbitrary/internal destinations are rejected; probes are rate limited.
 
-Relay availability is separate from a completed relay join. If direct hosting is
-blocked by firewall/NAT/CGNAT, use the community relay or LAN/direct play where
+If direct hosting is
+blocked by firewall/NAT/CGNAT, join a public server or use LAN/direct play where
 appropriate. The local port is expected to be in use while the game is hosting.
 No community account is required for this test.

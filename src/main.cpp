@@ -2189,7 +2189,7 @@ int LbBullfrogMain(unsigned short argc, char *argv[])
     retval &= (RendererInit((RendererType)requested_renderer_type) != 0);
     RendererSettings_Load();
 #ifdef __APPLE__
-    PlatformManager_SetWindowTitle("KeeperFX-E");
+    PlatformManager_SetWindowTitle("Keeper Enhanced");
 #else
     PlatformManager_SetWindowTitle(PROGRAM_NAME);
 #endif

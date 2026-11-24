@@ -1,6 +1,6 @@
 <?php
 /**
- * KeeperFX-E website + HTTP API settings (PHP 8.1+).
+ * Keeper-Enhanced website + HTTP API settings (PHP 8.1+).
  * Edit the deployed copy. The vhost refresh script preserves this file.
  * Keep real passwords out of the source checkout and Git.
  */
@@ -20,9 +20,5 @@ return [
     'database_config_file' => '',
     'admin_key' => '',
     'admin_key_file' => '/var/lib/keeperfx-e/admin.key',
-    // Accounts, directory and direct joining work without the optional UDP worker.
-    'relay_control_url' => '', // e.g. http://127.0.0.1:8766
-    'relay_control_key' => '',
-    'relay_control_key_file' => '/var/lib/keeperfx-e/relay-control.key',
     'release_manifest' => '/var/lib/keeperfx-e/releases.json',
 ];

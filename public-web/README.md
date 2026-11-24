@@ -1,13 +1,13 @@
-# KeeperFX-E website and native PHP API
+# Keeper-Enhanced website and native PHP API
 
-KeeperFX-E is an independent fork of [KeeperFX](https://github.com/dkfans/keeperfx).
+Keeper-Enhanced is an independent fork of [KeeperFX](https://github.com/dkfans/keeperfx).
 
 This directory is the **complete deployable PHP website**: homepage, original
 dungeon-themed artwork, server browser, network service status, accounts and
 statistics, pairing, events, challenges, replays and an unlisted developer API browser.
 Every public `/api/` HTTP endpoint is implemented here in PHP. No build step,
 Composer install, Node server or Python HTTP backend is needed on the web server.
-The optional real-time UDP relay remains a separate worker.
+Gameplay uses LAN or direct UDP connections, including listed public servers.
 
 Requirements: PHP 8.1+, JSON, mbstring, PDO and pdo_mysql for MariaDB. PDO SQLite
 is supported for local development. Serve this directory as the vhost document
@@ -21,20 +21,19 @@ Clean `/servers` and `/api/session` aliases remain available when front-controll
 routing is enabled. This directory contains routes.js, all page templates and
 all HTTP account/directory/community API handlers under lib; no external API proxy
 or sibling service checkout is required. Database/runtime files stay outside the
-public document root. The optional UDP relay is a separate persistent worker.
+public document root. No relay worker is used.
 
 ## Configuration
 
 Edit **the deployed `config.inc.php`**. It contains the public origin, database
-DSN/user/password, private runtime directory, optional relay URL/control credentials,
+DSN/user/password, private runtime directory,
 administrator key and verified release manifest path. Defaults select:
 
 - `https://keeperfx-e.retrocs.org`
 - MariaDB `172.16.1.121:3306`, database/user `keeperfx_e`
 - Runtime state `/var/lib/keeperfx-e`, outside the vhost
 
-The template contains no passwords or service keys. Enable the optional relay by
-setting `relay_control_url` and its key/key file. A private database file can still
+The template contains no passwords or service keys. A private database file can still
 be selected with `database_config_file`; environment overrides remain supported
 for local tests and existing installations. The precedence is environment override,
 then this config; an explicitly selected external database file supplies its own
@@ -98,7 +97,7 @@ python3 services/keeperhub/dev.py
 ```
 
 This starts PHP on loopback with an isolated SQLite configuration and an optional
-private relay, using `.local/keeperhub/` state. Use `--state` and `--port` for an
+local service, using `.local/keeperhub/` state. Use `--state` and `--port` for an
 isolated test instance. The source config does not need editing for this workflow.
 
 Routes: `/`, `/servers`, `/services`, `/api-browser`, `/profile`, `/device`, `/events`,

@@ -1,13 +1,13 @@
-# Releasing KeeperFX-E
+# Releasing Keeper-Enhanced
 
 This macOS workflow adapts the supplied Beam68 release system. Python 3.9+,
 Xcode command-line tools, CMake, Ninja and PHP 8.1+ CLI (mbstring and pdo_sqlite for local checks) are required. The runtime requires
 macOS 13+. Public releases use a clean committed checkout; local review builds
 can use `--allow-dirty` and are deliberately ineligible for publication.
 
-`VERSION` is the KeeperFX-E app/release version. `macos/BUILD_NUMBER` is the
+`VERSION` is the Keeper-Enhanced app/release version. `macos/BUILD_NUMBER` is the
 monotonic Apple bundle build number. The upstream engine's version stays in
-`version.mk` for game/network compatibility. The product is KeeperFX-E;
+`version.mk` for game/network compatibility. The product is Keeper-Enhanced;
 the engine executable, bundle identifier and Application Support directory keep
 their existing names so saves and settings carry over. The repository directory
 and remote repositories are not renamed by packaging.
@@ -46,10 +46,10 @@ inputs and rebuild in a fresh output directory before publication.
 
 The four public assets are exactly:
 
-- `KeeperFX-E-1.4.0-macOS-Universal.dmg`
-- `KeeperFX-E-1.4.0-macOS-Universal.dmg.sha256`
-- `KeeperFX-E-1.4.0-macOS-Universal.zip`
-- `KeeperFX-E-1.4.0-macOS-Universal.zip.sha256`
+- `Keeper-Enhanced-1.4.0-macOS-Universal.dmg`
+- `Keeper-Enhanced-1.4.0-macOS-Universal.dmg.sha256`
+- `Keeper-Enhanced-1.4.0-macOS-Universal.zip`
+- `Keeper-Enhanced-1.4.0-macOS-Universal.zip.sha256`
 
 Each checksum is SHA-256, two spaces, exact filename and newline. Build logs,
 full source/toolchain/app provenance (`release/build.json`), accepted notary
@@ -59,7 +59,7 @@ inputs, not reproducible Apple signatures or universal runtime certification.
 
 `CHANGELOG.md` keeps history; `docs/RELEASE-NOTES.md` must contain the complete
 matching version entry alone. Tags default to the exact unprefixed VERSION;
-release titles are `KeeperFX-E <version>`. Updating any selected source,
+release titles are `Keeper-Enhanced <version>`. Updating any selected source,
 script, artwork, documentation or package invalidates the prepared build.
 The underlying `macos/package-app.sh` remains available for standalone local
 packaging, but public uploads always use the checked release workflow.
@@ -97,7 +97,7 @@ publication is performed by the tests.
 
 ## Upgrade
 
-Drag KeeperFX-E.app to Applications. When replacing the former KeeperFX.app,
+Drag Keeper-Enhanced.app to Applications. When replacing the former KeeperFX.app,
 quit the old game first. Existing data remains under
 `~/Library/Application Support/keeperfx/keeperfx/`. The Enhanced name does not
 change the engine/save format. Original Dungeon Keeper data is still required.
@@ -118,7 +118,7 @@ For a new source folder with a reviewed `.gitignore` and empty remote repositori
 
 ```sh
 python3 scripts/release.py source --init --to github --dry-run
-python3 scripts/release.py source --init --to github --confirm-push --commit-message "Initial KeeperFX-E source"
+python3 scripts/release.py source --init --to github --confirm-push --commit-message "Initial Keeper-Enhanced source"
 ```
 
 The initialization dry run leaves the folder and Git metadata unchanged. A
@@ -150,8 +150,8 @@ content in its history and cannot be pushed by this tool.
 Create a fresh source-only copy before the first repository push:
 
 ```sh
-python3 scripts/export_source.py --output /tmp/KeeperFX-E-source
-cd /tmp/KeeperFX-E-source
+python3 scripts/export_source.py --output /tmp/Keeper-Enhanced-source
+cd /tmp/Keeper-Enhanced-source
 python3 scripts/release.py source --init --to github --dry-run
 python3 scripts/release.py source --init --to github --confirm-push
 ```

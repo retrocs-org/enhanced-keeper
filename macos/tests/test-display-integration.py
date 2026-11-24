@@ -3,7 +3,7 @@
 from pathlib import Path
 import tempfile,os,subprocess,time,signal,socket,json,re,struct,plistlib
 root=Path(__file__).resolve().parents[2];engine=root/'build-mac-universal/keeperfx';prefs=Path(tempfile.mkdtemp(prefix='kfx-display-integration-'));env=dict(os.environ,KFX_USER_DATA_DIR=str(prefs),KFX_AUTOSAVE_SECONDS='0')
-app=Path(os.environ.get('KFX_TEST_APP','/Applications/KeeperFX-E.app' if Path('/Applications/KeeperFX-E.app').exists() else '/Applications/KeeperFX.app'))
+app=Path(os.environ.get('KFX_TEST_APP','/Applications/Keeper-Enhanced.app' if Path('/Applications/Keeper-Enhanced.app').exists() else '/Applications/KeeperFX.app'))
 launcher=app/'Contents/MacOS'/plistlib.loads((app/'Contents/Info.plist').read_bytes())['CFBundleExecutable']
 subprocess.run([str(launcher),'--import',str(root/'.local/keeperfx')],env=env,check=True);subprocess.run([str(launcher),'--prepare-only'],env=env,check=True)
 runtime=prefs/'GameData';cfg=runtime/'keeperfx.cfg';text=cfg.read_text();sock=socket.socket();sock.bind(('127.0.0.1',0));port=sock.getsockname()[1];sock.close()
