@@ -52,15 +52,14 @@ mkdir "$TEMP/new"
 cp -R "$SOURCE/." "$TEMP/new/"
 
 # Always prefer the live server settings. Never merge in the repository template.
-if [ -e "$SITE" ]; then
-    [ -f "$SITE/config.inc.php" ] && [ ! -L "$SITE/config.inc.php" ] || {
-        echo 'Existing vhost needs a regular config.inc.php; site left unchanged.' >&2
-        exit 1
-    }
+if [ -L "$SITE/config.inc.php" ] || { [ -e "$SITE/config.inc.php" ] && [ ! -f "$SITE/config.inc.php" ]; }; then
+    echo 'Existing config.inc.php is not a regular file; site left unchanged.' >&2
+    exit 1
+elif [ -f "$SITE/config.inc.php" ]; then
     cp -p "$SITE/config.inc.php" "$TEMP/new/config.inc.php"
     echo 'Preserving existing config.inc.php contents.'
 else
-    echo 'First installation: using default config.inc.php; configure it before enabling services.'
+    echo 'Installing sample config.inc.php; configure it before enabling services.'
 fi
 
 # Validate the FINAL tree, including the preserved config. Suppress PHP diagnostics

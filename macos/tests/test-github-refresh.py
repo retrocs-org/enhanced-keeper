@@ -69,6 +69,11 @@ os.execv(os.environ['TEST_REAL_MV'],[os.environ['TEST_REAL_MV'],*sys.argv[1:]])
     def test_first_install_uses_default_config(self):
         result=self.run_refresh();self.assertEqual(result.returncode,0,result.stderr)
         self.assertEqual((self.site/'config.inc.php').read_bytes(),(self.fixture/'public-web/config.inc.php').read_bytes())
+    def test_upgrades_older_site_without_config_using_sample(self):
+        self.old_site();(self.site/'config.inc.php').unlink()
+        result=self.run_refresh();self.assertEqual(result.returncode,0,result.stderr)
+        self.assertEqual((self.site/'config.inc.php').read_bytes(),(self.fixture/'public-web/config.inc.php').read_bytes())
+        self.assertIn('Installing sample config.inc.php',result.stdout)
     def test_locked_update_and_symlink_config_are_refused(self):
         self.old_site();result=self.run_refresh(TEST_LOCK_FAIL='1');self.assertNotEqual(result.returncode,0)
         self.assertFalse((self.root/'git.log').exists())

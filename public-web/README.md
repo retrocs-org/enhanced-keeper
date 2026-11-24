@@ -110,5 +110,6 @@ final PHP tree, and applies wwwrun:wwwrun ownership, directories 0750 and files
 final rename fails. A flock lock prevents overlapping refreshes. The default vhost
 is `/srv/www/vhosts/keeperfx-e.retrocs.org`; edit PARENT in the script if needed.
 Dependencies are git, PHP CLI, getent, flock and standard POSIX file utilities.
-An existing config must be a regular file. On first install, the credential-free
-config template is installed. No database migrations or service restarts run.
+An existing config must be a regular file and is always preserved. On first
+install, or when upgrading an older site without config.inc.php, the credential-free
+sample at public-web/config.inc.php is installed. No database migrations or service restarts run.
