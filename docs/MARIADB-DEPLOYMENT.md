@@ -64,7 +64,7 @@ Give it owner/group and mode 0640 so the deployment owner and PHP-FPM can read i
 while unrelated users cannot. For example, after selecting your actual PHP group:
 
 ```sh
-PHP_FPM_GROUP=www-data   # replace if your PHP-FPM pool uses a different group
+PHP_FPM_GROUP=wwwrun   # replace if your PHP-FPM pool uses a different group
 sudo install -o root -g "$PHP_FPM_GROUP" -m 0640 \
   "$HOME/keeperfx-e.config.inc.php" /var/www/keeperfx-e/public-web/config.inc.php
 ```
@@ -149,6 +149,25 @@ obsolete ones. **Existing config.inc.php contents, mtime and permissions are lef
 untouched.** New template options must be added manually to your server config as
 needed; defaults in code remain compatible. Store runtime data outside the vhost.
 Database migrations are a separate administrative step; refresh never resets data.
+
+### Refresh with wwwrun permissions
+
+On sth-ts-web003, from the checkout, use your actual vhost document root:
+
+```sh
+sudo bash scripts/refresh-vhost.sh /path/to/keeperfx-e.retrocs.org --apply
+```
+
+This does the same payload refresh and applies ownership `wwwrun:wwwrun` recursively
+within that dedicated document root. It sets directories to 0755, ordinary files to
+0644, and config.inc.php to 0640. The config's bytes and mtime stay unchanged; only
+its ownership and mode are explicitly repaired. Preview by omitting `--apply`.
+For a new/empty first deployment, add `--initialize`. An existing managed vhost
+needs no initialization flag. Other accounts can use deploy-web.py with
+`--owner USER --group GROUP --set-permissions`.
+
+The script does not touch parent directories, other vhosts, database permissions,
+or `/var/lib/keeperfx-e`. Keep logs and uploads outside this managed document root.
 
 ## Optional UDP relay
 

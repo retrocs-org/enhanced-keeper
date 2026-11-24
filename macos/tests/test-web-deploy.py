@@ -64,6 +64,30 @@ class WebDeployTests(unittest.TestCase):
         for key in ['password','admin_key','relay_control_key']:
             config.write_text(text.replace("'"+key+"' => ''", "'"+key+"' => 'test-only-secret'"))
             with self.assertRaises(ReleaseError):scanner.scan(source,{'public-web/config.inc.php':{}})
+    def test_explicit_permission_refresh_preserves_config_and_sets_ownership(self):
+        import pwd,grp
+        from unittest.mock import patch
+        self.refresh(apply=True,initialize=True)
+        config=self.target/'config.inc.php';config.write_bytes(b'<?php /* private server settings */');config.chmod(0o600)
+        before=config.stat().st_mtime_ns
+        owner=pwd.getpwuid(os.geteuid()).pw_name;group=grp.getgrgid(os.getegid()).gr_name
+        with patch.object(deploy.os,'chown') as chown:
+            self.refresh(apply=True,owner=owner,group=group,set_permissions=True)
+        self.assertEqual(config.read_bytes(),b'<?php /* private server settings */')
+        self.assertEqual(config.stat().st_mtime_ns,before)
+        for path in [self.target,*self.target.rglob('*')]:
+            expected=0o755 if path.is_dir() else 0o640 if path==config else 0o644
+            self.assertEqual(stat.S_IMODE(path.stat().st_mode),expected)
+        self.assertEqual(chown.call_count,1+len(list(self.target.rglob('*'))))
+        chown.assert_any_call(config.resolve(),os.geteuid(),os.getegid())
+    def test_permission_preview_does_not_chown_or_chmod(self):
+        import pwd,grp
+        from unittest.mock import patch
+        self.refresh(apply=True,initialize=True)
+        config=self.target/'config.inc.php';config.chmod(0o600)
+        with patch.object(deploy.os,'chown') as chown:
+            self.refresh(owner=pwd.getpwuid(os.geteuid()).pw_name,group=grp.getgrgid(os.getegid()).gr_name,set_permissions=True)
+        chown.assert_not_called();self.assertEqual(stat.S_IMODE(config.stat().st_mode),0o600)
     def test_public_web_runs_alone_using_only_its_config(self):
         self.refresh(apply=True,initialize=True)
         with socket.socket() as sock:

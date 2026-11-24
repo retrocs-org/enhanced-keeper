@@ -3,7 +3,8 @@
 import argparse
 import os
 from pathlib import Path
-import shutil
+import pwd
+import grp
 import sys
 import tempfile
 
@@ -17,7 +18,17 @@ def fail(message):
     raise ValueError(message)
 
 
-def refresh(target, apply=False, initialize=False):
+def refresh(target, apply=False, initialize=False, owner=None, group=None, set_permissions=False):
+    if (owner is None) != (group is None):
+        fail('Specify both --owner and --group.')
+    identity = None
+    if owner is not None:
+        try:
+            identity = (pwd.getpwnam(owner).pw_uid, grp.getgrnam(group).gr_gid)
+        except KeyError:
+            fail('The requested owner/group does not exist on this server.')
+        if apply and os.geteuid() != 0 and (identity[0] != os.geteuid() or identity[1] not in [os.getegid(), *os.getgroups()]):
+            fail('Run with sudo to set the requested vhost ownership.')
     if target.is_symlink():
         fail('The vhost must be a real directory, not a symlink.')
     target = target.resolve()
@@ -56,7 +67,11 @@ def refresh(target, apply=False, initialize=False):
             updates.append((name, src))
     print(('Refresh' if apply else 'Preview') + ': ' + str(target))
     print(f'{len(updates)} files to copy; {len(stale)} obsolete files to remove.')
-    print('config.inc.php: ' + ('preserved without changes' if preserve else 'installing credential-free defaults'))
+    print('config.inc.php: ' + ('contents preserved' if preserve else 'installing credential-free defaults'))
+    if identity:
+        print('Ownership: ' + owner + ':' + group + ' (dedicated document root and its contents only)')
+    if set_permissions:
+        print('Permissions: directories 0755, files 0644, config.inc.php 0640')
     if not apply:
         print('No changes made. Add --apply to refresh this dedicated vhost.')
         return
@@ -81,6 +96,15 @@ def refresh(target, apply=False, initialize=False):
             directory.rmdir()
     marker.write_text(SIGNATURE)
     marker.chmod(0o644)
+    # Permission changes are opt-in; the ordinary refresh preserves existing config mode.
+    managed = [target, *target.rglob('*')]
+    for path in managed:
+        if path.is_symlink():
+            fail('A symlink appeared during refresh; refusing permission changes.')
+        if identity:
+            os.chown(path, *identity)
+        if set_permissions:
+            path.chmod(0o755 if path.is_dir() else 0o640 if path == target / CONFIG else 0o644)
     print('Vhost refreshed. No migrations, builds, accounts or service restarts were performed.')
 
 
@@ -89,9 +113,12 @@ def main():
     parser.add_argument('destination', type=Path, help='Dedicated local vhost document root (run on the web server).')
     parser.add_argument('--apply', action='store_true', help='Apply the refresh; default is preview only.')
     parser.add_argument('--initialize', action='store_true', help='Allow the first deployment into a new/empty directory.')
+    parser.add_argument('--owner', help='Existing server account for all deployed files; requires --group.')
+    parser.add_argument('--group', help='Existing server group for all deployed files; requires --owner.')
+    parser.add_argument('--set-permissions', action='store_true', help='Set directories 0755, files 0644 and config 0640.')
     args = parser.parse_args()
     try:
-        refresh(args.destination, args.apply, args.initialize)
+        refresh(args.destination, args.apply, args.initialize, args.owner, args.group, args.set_permissions)
     except (ValueError, OSError) as error:
         print('Refresh refused: ' + str(error), file=sys.stderr)
         return 1

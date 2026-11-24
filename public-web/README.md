@@ -52,7 +52,7 @@ python3 scripts/deploy-web.py /var/www/keeperfx-e/public-web --apply
 
 Omit `--apply` to preview. The script copies this directory only, updates changed
 files and removes obsolete payload files. **An existing `config.inc.php` is never
-overwritten, merged, deleted or chmodded.** It installs defaults only when config
+overwritten, merged or deleted.** The ordinary refresh also preserves its mode. It installs defaults only when config
 is absent. A marker identifies the dedicated vhost, and unowned nonempty directories
 and symlinks are refused. Do not store uploads, logs or application data in this
 managed directory. Database migrations and UDP worker deployment are separate.
@@ -62,6 +62,23 @@ Check the deployed database configuration as the PHP service user:
 ```sh
 php /var/www/keeperfx-e/public-web/check-database.php
 ```
+
+## wwwrun ownership and permissions
+
+On your web server, use the convenience wrapper with the absolute **document root**:
+
+```sh
+sudo bash scripts/refresh-vhost.sh /path/to/keeperfx-e.retrocs.org --apply
+```
+
+It refreshes the payload, then sets the document root and its contents to
+`wwwrun:wwwrun`, directories to 0755, ordinary files to 0644 and config.inc.php to
+0640. The config's contents and modification time remain unchanged. This wrapper
+explicitly updates ownership/mode; it never overwrites the existing config.
+Omit `--apply` to preview, or add `--initialize` for a new/empty first deployment.
+Use the document root only, not a parent containing other sites, logs or vhost configs.
+The lower-level deploy script supports `--owner USER --group GROUP --set-permissions`
+for other server accounts. Both user and group must already exist.
 
 ## Local development
 
