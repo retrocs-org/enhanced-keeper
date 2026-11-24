@@ -309,8 +309,14 @@ void update_controller_inputs()
         
 }
 
+#ifdef KFX_DEDICATED
+void kfx_server_tick(void);
+#endif
 TbBool poll_inputs(void)
 {
+#ifdef KFX_DEDICATED
+    kfx_server_tick();
+#endif
     TbBool user_not_quit = LbPollInputs();
     update_controller_inputs();
 

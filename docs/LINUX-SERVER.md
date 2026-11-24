@@ -10,8 +10,27 @@ Source: https://github.com/retrocs-org/KeeperFX-E (existing repository URL).
 
 ## Build and import
 
-On Linux install the dependencies documented in `build/docker/deck.Dockerfile`
-(and the SDL3 dependencies resolved by CMake), plus Python 3, GNU Make and patchelf. Ninja is not required.
+The dedicated target excludes SDL_image/mixer, OpenAL, FFmpeg, OpenGL, desktop
+window backends, controller devices, and desktop matchmaking/NAT discovery. It
+uses a statically built SDL core for the existing timing/thread/filesystem and
+legacy in-memory surface APIs; all video/audio/render/device drivers are disabled.
+The PNG parser is built privately for shared custom-animation metadata; no system
+`spng` development package is needed. Presentation frames are never rendered.
+
+On openSUSE Leap 16.0 x86_64, install the toolchain and remaining development
+libraries from your configured repositories:
+
+```sh
+zypper install --no-recommends gcc gcc-c++ cmake make git python3 patchelf pkgconf-pkg-config \
+  'pkgconfig(libcurl)' 'pkgconfig(luajit)' 'pkgconfig(minizip)' 'pkgconfig(zlib)' 'pkgconfig(openssl)'
+```
+
+Python 3.9+, CMake 3.20+ and a C++20 compiler are needed. CMake fetches pinned
+build-only SDL core, PNG-metadata and engine-support sources into the build
+directory. No original game assets or desktop dependency packages are fetched.
+Ninja is not required. Do not remove other installed packages automatically;
+other applications may use them.
+
 Build natively for the target distribution/architecture:
 
 ```sh
@@ -88,7 +107,7 @@ UDP reachability or test a multiplayer match.
 Run `scripts/refresh-keeper-enhanced.sh` as root on the Linux host. It defaults to
 `/root/keeper-enhanced` on branch `main`; override with `KFX_SERVER_SOURCE` if your
 checkout has another location. Build dependencies must already be installed, including `make`. The scripts use
-CMake’s Unix Makefiles generator and separate `*-make*` build directories so old
+CMake’s Unix Makefiles generator and separate `*-minimal*` build directories so old
 Ninja caches can remain untouched.
 
 ```sh

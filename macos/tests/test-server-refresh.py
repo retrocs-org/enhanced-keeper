@@ -11,7 +11,9 @@ if name=='id':print('0')
 elif name=='uname':print('Linux')
 elif name=='git':
  if '--show-current' in a:print('main')
-elif name=='pkg-config' or name=='ldd':pass
+elif name=='pkg-config':pass
+elif name=='ldd':
+ if os.environ.get('FAIL_MEDIA'):print('libopenal.so => /lib/libopenal.so')
 elif name=='flock':pass
 elif name=='nproc':print('2')
 elif name=='runuser':os.execvp(a[3],a[3:])
@@ -57,6 +59,9 @@ class RefreshTests(unittest.TestCase):
   result=self.run_refresh();self.assertEqual(result.returncode,0,result.stderr)
   self.assertEqual((self.dest/'engine/keeperfx').read_text(),'new-engine');self.assertEqual(self.unit.read_text(),'custom-unit');self.assertEqual(self.secret.read_text(),'private-secret')
   self.assertEqual((self.root/'var/lib/keeper-enhanced/GameData/keeperfx.cfg').read_text(),'game-data')
+ def test_media_dependency_is_rejected_before_stop(self):
+  result=self.run_refresh('FAIL_MEDIA');self.assertNotEqual(result.returncode,0)
+  self.assertEqual((self.dest/'engine/keeperfx').read_text(),'old-engine');self.assertNotIn('stop ',(self.root/'events').read_text())
  def test_build_failure_leaves_running_installation(self):
   result=self.run_refresh('FAIL_BUILD');self.assertNotEqual(result.returncode,0)
   self.assertEqual((self.dest/'engine/keeperfx').read_text(),'old-engine');self.assertNotIn('stop ',(self.root/'events').read_text())

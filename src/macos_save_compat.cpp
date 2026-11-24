@@ -16,18 +16,18 @@
 #include <cstdio>
 #include <stdexcept>
 #include "post_inc.h"
-#ifdef __APPLE__
-#include <CommonCrypto/CommonDigest.h>
+#if defined(__APPLE__) || defined(KFX_DEDICATED)
+#include "kfx/sha256.h"
 namespace {
 namespace fs=std::filesystem;
 std::string version(){return std::to_string(VER_MAJOR)+"."+std::to_string(VER_MINOR)+"."+std::to_string(VER_RELEASE)+"."+std::to_string(VER_BUILD);}
 std::string hash(const fs::path &path,uint64_t &budget){
  if(fs::is_symlink(path)||!fs::is_regular_file(path))throw std::runtime_error("A required file is missing or linked.");
  auto length=fs::file_size(path);auto modified=fs::last_write_time(path);if(length>512ull*1024*1024||budget+length>512ull*1024*1024)throw std::runtime_error("Content exceeds the check limit.");budget+=length;
- CC_SHA256_CTX context;CC_SHA256_Init(&context);std::ifstream in(path,std::ios::binary);if(!in)throw std::runtime_error("Cannot read a required file.");char bytes[32768];auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(15);
- while(in){in.read(bytes,sizeof(bytes));auto count=in.gcount();if(count)CC_SHA256_Update(&context,bytes,(CC_LONG)count);if(std::chrono::steady_clock::now()>deadline)throw std::runtime_error("Content check timed out.");}
+ KfxSha256Context context;KfxSha256Init(&context);std::ifstream in(path,std::ios::binary);if(!in)throw std::runtime_error("Cannot read a required file.");char bytes[32768];auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(15);
+ while(in){in.read(bytes,sizeof(bytes));auto count=in.gcount();if(count)KfxSha256Update(&context,bytes,(size_t)count);if(std::chrono::steady_clock::now()>deadline)throw std::runtime_error("Content check timed out.");}
  if(in.bad()||fs::file_size(path)!=length||fs::last_write_time(path)!=modified)throw std::runtime_error("Content changed during the check.");
- unsigned char out[32];CC_SHA256_Final(out,&context);const char *hex="0123456789abcdef";std::string result;for(unsigned char b:out){result+=hex[b>>4];result+=hex[b&15];}return result;
+ unsigned char out[32];KfxSha256Final(out,&context);const char *hex="0123456789abcdef";std::string result;for(unsigned char b:out){result+=hex[b>>4];result+=hex[b&15];}return result;
 }
 bool safe_relative(const fs::path &path){if(path.empty()||path.is_absolute())return false;for(const auto &part:path)if(part==".."||part==".")return false;std::string text=path.generic_string();for(unsigned char c:text)if(c<32||c>126)return false;return true;}
 fs::path checked(const fs::path &root,const fs::path &relative){if(!safe_relative(relative))throw std::runtime_error("Invalid required content path.");fs::path path=root;for(const auto &part:relative){path/=part;if(fs::is_symlink(path))throw std::runtime_error("Linked content is unsupported.");}return path;}
@@ -43,7 +43,7 @@ void add_tree(std::set<std::string> &files,const fs::path &root,const fs::path &
 }
 #endif
 extern "C" void kfx_save_write_requirements(const char *destination,const CatalogueEntry *entry){
-#ifdef __APPLE__
+#if defined(__APPLE__) || defined(KFX_DEDICATED)
  std::string pending=std::string(destination)+".requirements.pending",output=std::string(destination)+".requirements";
  try{
   fs::path root=fs::absolute(keeper_runtime_directory);std::set<std::string> files;
@@ -62,7 +62,7 @@ extern "C" void kfx_save_write_requirements(const char *destination,const Catalo
 #endif
 }
 extern "C" int kfx_save_check_requirements(const char *source,char *report,unsigned int size){
-#ifdef __APPLE__
+#if defined(__APPLE__) || defined(KFX_DEDICATED)
  auto result=[&](int code,const std::string &text){if(report&&size)snprintf(report,size,"%s",text.c_str());return code;};
  try{
   if(fs::is_symlink(source))return result(-1,"Linked saves cannot be loaded.");
@@ -92,7 +92,7 @@ extern "C" int kfx_save_check_requirements(const char *source,char *report,unsig
 #endif
 }
 extern "C" int kfx_save_preserve_before_load(const char *source){
-#ifdef __APPLE__
+#if defined(__APPLE__) || defined(KFX_DEDICATED)
  try{uint64_t budget=0;std::string checksum=hash(source,budget);fs::path from=source,folder=from.parent_path()/"CompatibilityBackups";if(fs::is_symlink(folder))return 0;fs::create_directories(folder);fs::path backup=folder/(from.filename().string()+"."+checksum.substr(0,16));
   if(fs::exists(backup)){uint64_t verify_budget=0;return hash(backup,verify_budget)==checksum;}
   if(!fs::copy_file(from,backup,fs::copy_options::none))return 0;for(const char *suffix:{".requirements",".json",".png"})if(fs::is_regular_file(std::string(source)+suffix)&&!fs::is_symlink(std::string(source)+suffix))fs::copy_file(std::string(source)+suffix,backup.string()+suffix,fs::copy_options::none);return 1;
@@ -103,7 +103,7 @@ extern "C" int kfx_save_preserve_before_load(const char *source){
 }
 
 extern "C" int kfx_content_fingerprint(const char *base,const char *map,char *output,unsigned capacity){
-#ifdef __APPLE__
+#if defined(__APPLE__) || defined(KFX_DEDICATED)
  try{fs::path root=fs::absolute(base);std::set<std::string> files;add_tree(files,root,checked(root,"fxdata"),true);add_tree(files,root,checked(root,"creatrs"),true);add_tree(files,root,checked(root,"mods"));
   std::string spec=map?map:"";if(!spec.empty()){
    auto colon=spec.rfind(':');if(colon==std::string::npos)throw std::runtime_error("Map selection is unavailable.");std::string name=spec.substr(0,colon),level=spec.substr(colon+1);if(name.size()>80||level.empty()||level.size()>5||!std::all_of(level.begin(),level.end(),[](unsigned char c){return c>='0'&&c<='9';}))throw std::runtime_error("Invalid map selection.");
@@ -112,7 +112,7 @@ extern "C" int kfx_content_fingerprint(const char *base,const char *map,char *ou
    while(std::getline(in,line)){auto equal=line.find('=');if(equal==std::string::npos)continue;std::string key=line.substr(0,equal),value=line.substr(equal+1);key.erase(std::remove_if(key.begin(),key.end(),[](unsigned char c){return std::isspace(c);}),key.end());auto comment=value.find(';');if(comment!=std::string::npos)value.resize(comment);auto begin=value.find_first_not_of(" \t\r"),end=value.find_last_not_of(" \t\r");value=begin==std::string::npos?"":value.substr(begin,end-begin+1);std::transform(key.begin(),key.end(),key.begin(),[](unsigned char c){return std::toupper(c);});if(key=="LEVELS_LOCATION")levels=value;if((key=="CONFIGS_LOCATION"||key=="CREATURES_LOCATION")&&!value.empty())add_tree(files,root,checked(root,value),true);}
    if(levels.empty())throw std::runtime_error("Campaign levels folder is missing.");char prefix[32];snprintf(prefix,sizeof(prefix),"map%05d.",std::stoi(level));size_t before=files.size();for(auto &entry:fs::directory_iterator(checked(root,levels)))if(entry.path().filename().string().rfind(prefix,0)==0)files.insert(fs::relative(entry.path(),root).generic_string());if(files.size()==before)throw std::runtime_error("Selected map files are missing.");
   }
-  CC_SHA256_CTX context;CC_SHA256_Init(&context);uint64_t budget=0;for(auto &name:files){std::string row=name+" "+hash(checked(root,name),budget)+"\n";CC_SHA256_Update(&context,row.data(),(CC_LONG)row.size());}unsigned char digest[32];CC_SHA256_Final(digest,&context);std::string result;for(unsigned char b:digest){result+="0123456789abcdef"[b>>4];result+="0123456789abcdef"[b&15];}snprintf(output,capacity,"%s",result.c_str());return 1;
+  KfxSha256Context context;KfxSha256Init(&context);uint64_t budget=0;for(auto &name:files){std::string row=name+" "+hash(checked(root,name),budget)+"\n";KfxSha256Update(&context,row.data(),(size_t)row.size());}unsigned char digest[32];KfxSha256Final(digest,&context);std::string result;for(unsigned char b:digest){result+="0123456789abcdef"[b>>4];result+="0123456789abcdef"[b&15];}snprintf(output,capacity,"%s",result.c_str());return 1;
  }catch(const std::exception &e){snprintf(output,capacity,"%s",e.what());return 0;}
 #else
  (void)base;(void)map;if(capacity)output[0]=0;return 0;

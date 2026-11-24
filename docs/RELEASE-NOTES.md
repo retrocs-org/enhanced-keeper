@@ -1,117 +1,63 @@
 ## Features
-- Use GNU Make for Linux server builds and refreshes, with separate build
-  directories that avoid conflicts with existing Ninja caches.
-- Add an existing-install Linux server refresh script with staged engine/library
-  replacement, configuration preservation, engine readiness checks and rollback.
-- Present Dungeon Keeper, KeeperFX and KeeperFX Enhanced in a compact website
-  timeline, with four concise feature sections and expandable project sources.
-- Rename the project to keeper-enhanced while preserving existing service URLs,
-  repository addresses, save paths and database settings.
-- Add private/public dedicated-host modes, optional passwords, native Linux server
-  packaging, prepared-data import and a hardened systemd service template.
-- Remove relay connection options and fallback; use LAN, private direct connections
-  or listed public servers. Private dedicated hosts never contact the directory.
-- Add Features, Network, Servers, Leaderboard and Downloads navigation, with shared
-  Network subpages and account-only actions hidden until a session is verified.
-- Rank only opt-in public profiles with completed server-verified matches; show
-  available verified release downloads or the GitHub release listing.
-- Keep all website/HTTP API code in the deployable public-web tree and use direct
-  PHP routes when Apache does not enable clean-URL routing; retain clean aliases.
-- Retry game service requests through the direct PHP endpoint only after an HTML
-  404, retaining same-origin authorization, request bodies and API error handling.
-- Default the in-game Internet community service to keeperfx-e.retrocs.org while
-  retaining saved custom HTTPS services and local development overrides.
-- Present the PHP portal with an open layout, olive dungeon tones, antique gold
-  and ember-red menu typography; keep developer API tools out of public navigation.
-- Configure the standalone public-web payload through config.inc.php and refresh
-  a dedicated vhost while preserving existing config contents and permissions.
-- Generate a complete private web config during MariaDB provisioning, and reject
-  production credentials in the source config during release checks.
-- Serve the complete HTTP account/directory/community API natively in PHP under
-  public-web, with MariaDB production support and SQLite interoperability.
-- Integrate server browsing, service status, accounts/statistics, game pairing,
-  events, challenges, replays and a searchable safe-read API browser into one site.
-- Add MariaDB provisioning using an existing administrative option file, a
-  web-server-scoped CRUD account and private generated PHP connection settings.
-- Recover safe windowed settings after interrupted display startup or monitor removal,
-  retaining the previous configuration.
-- Browse rotating, preserved and trashed save copies in a recovery screen; restore
-  into a free slot after compatibility checks.
-- Add a local replay library with campaign/map, turn and player counts, dates,
-  titles, favourites and exclusive export.
-- Add in-game setup, music detection, personal-data export and reversible profile
-  reset tools; exports omit imported originals and account credentials.
-- Add readable focus markers, separate caption/tooltip sizes, reduced damage
-  flashes, adjustable controller response and horizontal navigation repeat.
-- Compare advertised content fingerprints before public-server joins, retaining
-  lobby readiness checks for unadvertised or subsequently selected maps.
-- Resume upgraded ENet peers using a reserved slot and a random session key after
-  an unclean timeout; bound multiplayer clock correction after long interruptions.
-- Add a performance graph, FPS/logic/ping overlay and bounded 15-second CSV capture.
-- Check saved-game engine versions and content before loading; preserve a
-  content-addressed copy and record campaign/map/configuration/mod requirements.
-- Add offline replay pause, 0.5x–4x speed, persistent bookmarks and a local file picker.
-- Add restart-safe content profiles with separate runtimes, saves and settings.
-- Add service/direct-host readiness and requester-pinned incoming UDP connection tests.
-- Add an optional community service and original-style in-game server browser with
-  Internet, LAN, favourites, recent connections, search, sorting and engine filters.
-- Add hostname/IPv6 direct joining, password entry, no-slot latency queries and
-  direct ENet connections for community-listed hosts.
-- Add headless hosting with map rotation, one synchronized AI and up to three
-  human players, plus buffered live spectators that consume no player slots.
-- Add browser-paired accounts, private/public website profiles, friends, match
-  history, verified statistics, achievements, events, tournament brackets,
-  cooperative challenge completions and checksum-verified replay downloads.
-- Preserve guest LAN/direct play and access to the original public lobby service.
-- Native universal macOS app with integrated display, controller, performance,
-  saves, remapping, guide, network and accessibility sections.
-- DualSense and Xbox controller support, configurable physical button bindings,
-  illustrated controls and adjustable stick, pointer and vibration settings.
-- Atomic saves, rotating backups, previews, search and local automatic saves.
-- Connection diagnostics, version comparison and direct IPv4 joining.
+- Native macOS application and Universal build workflow for Apple Silicon and Intel.
+- In-game sections for display, controller, performance, save and network settings.
+- Xbox and DualSense remapping, stick calibration, illustrated controller guides,
+  and camera zoom/rotation controls.
+- Content profiles with separate runtime files, settings and saves.
+- Replay organization, playback controls, bookmarks and export tools.
+- Text/cursor sizing, captions, reduced damage flashes and performance diagnostics.
 
-## Enhancements
-- Remove all five hosted GitHub Actions workflows; CI/runners are deferred.
-- Make source-only macOS builds fetch pinned vendor source and packaging art locally.
-- Add Developer ID signing preflight before package assembly.
-- Add bounded frame-time/CPU/memory capture and sleeping macOS frame waits.
-- Limit interpolated menus to 60 FPS and reduce background/minimized dungeon drawing.
-- Add live controller testing and resting-stick drift calibration with cancellation.
-- Handle Retina scale changes and window restoration through existing display recovery.
-- Record bounded desync/disconnect diagnostics without player credentials.
-- Add password-confirmed offline recovery codes, session revocation and verified SQLite backups.
-- Show checksum-verified published release downloads from a private website cache.
-- Add a new Keeper-Enhanced landing page and PHP-hosted community website, with a
-  same-origin API gateway and documented Apache/Nginx deployment.
-- Rename the application, website branding and release packages to Keeper-Enhanced.
-- Configure the retrocs-org GitHub repository and project website.
-- Select and remember an active controller, with automatic Xbox/DualSense labels.
-- Rename saves, protect favourites, preview backups and move save groups to Trash.
-- Check selected multiplayer map, engine and mod content before a host starts.
-- Hold an unassigned R3 during dungeon play for the controller quick-action wheel.
-- Add large-text, comfort and reduced-camera-movement accessibility presets.
-- Add a controller camera guide with current zoom and rotation bindings.
-- Match original animated menu borders for mouse, keyboard and controller focus,
-  with consistent large text and parent navigation.
-- Detect controller button labels automatically and show current custom bindings.
-- Add independent save feedback, last-autosave status and recovery help.
-- Remember host addresses and expose persisted player names, with copyable reports.
-- Add in-game About & Diagnostics, version/controller details and log/save access.
-- Remember window position and fit windows after monitor changes.
-- Restore original menu artwork, large gold buttons and readable native text.
-- Keep the existing KeeperFX save/settings location when upgrading to Enhanced.
-- Add Beam68-style build/check/prepare/publish stages, source provenance,
-  checksum-verified DMG/ZIP packages and GitHub publication receipts.
-- Sign, notarize and staple the universal application and DMG.
+## Fixes
+- Improve save locations, backup browsing, compatibility checks and nondestructive
+  restoration into a free save slot.
+- Restore readable menu layouts, original-style highlights and pointer visibility.
+- Correct in-game options navigation and add resolution/fullscreen configuration.
+- Make windowed cursor confinement optional and recover unconfirmed display changes.
+- Retry community requests through the PHP front controller when clean routes
+  return an Apache HTML 404, retaining request bodies and authentication.
+- Hide private account actions until a session is verified, including logout and
+  unavailable-service handling.
 
-## Bugs
-- Keep distinct campaign/map-pack identities in save and replay metadata.
-- Fix overlapping replay filename copies and preserve dedicated-AI replay state.
-- Keep simultaneous tab/row highlight animations independent.
-- Prevent early departures from becoming verified victories.
-- Open Display Options directly from the in-game Graphics resolution icon.
-- Release the pointer when the settings window loses focus or crosses a letterbox.
-- Render the original cursor above the settings panel and release windowed
-  cursor confinement by default.
-- Confirm display changes with Keep/Revert and a 15-second rollback timeout.
-- Bound stalled lobby requests and preserve existing saves during recovery.
+## Multiplayer and dedicated servers
+- Support LAN, private direct connections and publicly listed servers. Remove
+  relay joining and automatic relay fallback.
+- Add private/public dedicated-host modes, each with optional password protection.
+  Private hosts do not contact the community directory or publish spectator streams.
+- Add a simulation-only build mode excluding desktop window/render backends,
+  OpenGL, OpenAL, SDL_image/mixer, FFmpeg and controller devices.
+- Retain a static SDL core for legacy timing/thread/filesystem/in-memory surface
+  APIs, and privately build the parser needed for custom-animation PNG metadata.
+  No system SDL multimedia, FFmpeg, OpenAL or spng development packages are required.
+- Keep directory heartbeats, account identity and readiness checks running without
+  UI frames; enable the shared content-check implementation in Linux server builds.
+- Add native Linux packaging, prepared-data import and a systemd service template.
+- Add a GNU Make refresh script with staged engine/library replacement, preserved
+  configuration/secrets/data, fresh engine readiness checks and rollback.
+
+## Website and services
+- Keep the complete PHP website, HTTP API and configuration template in public-web.
+- Add accounts, pairing, public server browsing, match records, events, challenges,
+  replays and an unlisted developer API browser.
+- Rank only opted-in public profiles with completed, server-verified matches.
+- Add MariaDB configuration, CLI schema initialization and safe connection checks.
+- Preserve deployed config.inc.php during website refreshes.
+- Add a compact Dungeon Keeper → KeeperFX → KeeperFX Enhanced features timeline,
+  short feature sections and a Steam link for the original game.
+
+## Packaging and source management
+- Add local source-push and macOS release/signing/notarization tooling.
+- Exclude imported original game graphics, sounds and data from source publication;
+  use the import tools with the user's own game files.
+- Rename package/project branding to keeper-enhanced while preserving existing
+  repository/service URLs, database names, saves and application identity.
+- Keep release notes generated from this changelog. CI/runners remain deferred.
+
+## Verification and current limits
+- The simulation-only target has been compiled and tested on macOS with a normal
+  game client: direct joining, dedicated AI, content readiness, account identity
+  and buffered replay spectating. Live openSUSE Leap validation remains pending.
+- Dedicated hosting uses the existing lockstep protocol: one synchronized AI host
+  leaves up to three human slots. It is not a new authoritative simulation protocol.
+- Original Dungeon Keeper data is required and is not distributed by this project.
+
+Earlier working notes are preserved in [development history](docs/DEVELOPMENT-HISTORY.md).

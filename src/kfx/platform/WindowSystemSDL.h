@@ -8,6 +8,21 @@ struct SDL_Window;  // forward declaration; full type in WindowSystemSDL.cpp
 /** SDL3 desktop window-system implementation.
  *
  */
+#ifdef KFX_DEDICATED
+// Legacy screen dimensions remain available to loaders, without an OS window.
+class WindowSystemSDL : public IWindowSystem {
+public:
+    SDL_Window* GetSDLWindow() const { return nullptr; }
+    bool CreateWindow(const char*,int,int,int w,int h,unsigned int) override { width=w;height=h;return true; }
+    void GetWindowSize(int* w,int* h) const override { if(w)*w=width;if(h)*h=height; }
+    void GetDrawableSize(int* w,int* h) const override { GetWindowSize(w,h); }
+    int GetDesktopDisplayMode(int,int* w,int* h) const override { GetWindowSize(w,h); return 0; }
+    int GetNumVideoDisplays() const override { return 1; }
+    void HandleWindowEvent(const union SDL_Event*) {}
+private:
+    int width=640,height=480;
+};
+#else
 class WindowSystemSDL : public IWindowSystem {
 public:
     bool IsAppActive() const override;
@@ -74,6 +89,8 @@ private:
     int m_gameW = 0;
     int m_gameH = 0;
 };
+
+#endif
 
 /** Shared singleton desktop window system. */
 WindowSystemSDL* GetSDLWindowSystem();

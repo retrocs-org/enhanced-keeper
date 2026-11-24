@@ -114,7 +114,13 @@ TbFileFind* PlatformLinux::FileFindFirst(const char* filespec, TbFileEntry* entr
 
 bool PlatformLinux::VideoInit()
 {
-    if (!SDL_Init(SDL_INIT_VIDEO))
+    if (!SDL_Init(
+#ifdef KFX_DEDICATED
+        0
+#else
+        SDL_INIT_VIDEO
+#endif
+    ))
         return false;
     atexit(SDL_Quit);
     return true;

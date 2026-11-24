@@ -1,8 +1,10 @@
 #include "pre_inc.h"
 #include "kfx/renderer/RendererManager.h"
 #include "kfx/renderer/RendererManager_Internal.h"
+#ifndef KFX_DEDICATED
 #include "kfx/renderer/RendererSoftware.h"
 #include "kfx/renderer/RendererOpenGL.h"
+#endif
 #include "bflib_basics.h"
 #include "bflib_video.h"
 #include "bflib_sprfnt.h"   // LbTextDrawResizedImmediate
@@ -20,7 +22,7 @@
 #include "macos_controls.h"
 #include "macos_game_options.h"
 #include "bflib_fileio.h"
-#include <SDL3_image/SDL_image.h>
+
 #include <cstring>          // memcpy (s_last_palette_rgb8 buffering)
 #include "post_inc.h"
 
@@ -36,17 +38,33 @@ static bool          s_have_last_palette = false;
 // Allocate a backend for the requested type, or nullptr if unknown.
 static IRenderer* create_renderer(RendererType type)
 {
+#ifdef KFX_DEDICATED
+    class SimulationRenderer final : public IRenderer {
+        bool Init() override { return true; }
+        void Shutdown() override {}
+        const char* GetName() const override { return "simulation-only"; }
+        bool BeginFrame() override { return false; }
+        void EndFrame() override {}
+    };
+    return new SimulationRenderer();
+#else
     switch (type)
     {
         case RENDERER_SOFTWARE: return new RendererSoftware();
         case RENDERER_OPENGL:   return new RendererOpenGL();
         default:                return nullptr;
     }
+#endif
 }
 
 RendererType RendererResolveType(RendererType requested)
 {
+#ifdef KFX_DEDICATED
+    (void)requested;
+    return RENDERER_SOFTWARE;
+#else
     return (requested == RENDERER_AUTO) ? RENDERER_SOFTWARE : requested;
+#endif
 }
 
 unsigned int RendererGetRequiredWindowFlags(RendererType type)

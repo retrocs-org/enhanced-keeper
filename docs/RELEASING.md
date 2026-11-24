@@ -32,9 +32,9 @@ Build subprocesses do not inherit release API tokens. Never check local config i
 
 ```sh
 python3 scripts/release.py plan
-python3 scripts/release.py build --output outputs/release-1.4.0-new
-python3 scripts/release.py check --output outputs/release-1.4.0-new
-python3 scripts/release.py prepare --output outputs/release-1.4.0-new --tag 1.4.0
+python3 scripts/release.py build --output outputs/release-0.1.0-new
+python3 scripts/release.py check --output outputs/release-0.1.0-new
+python3 scripts/release.py prepare --output outputs/release-0.1.0-new --tag 0.1.0
 ```
 
 For a local test of uncommitted changes, add `--allow-dirty` to build. It still
@@ -46,10 +46,10 @@ inputs and rebuild in a fresh output directory before publication.
 
 The four public assets are exactly:
 
-- `Keeper-Enhanced-1.4.0-macOS-Universal.dmg`
-- `Keeper-Enhanced-1.4.0-macOS-Universal.dmg.sha256`
-- `Keeper-Enhanced-1.4.0-macOS-Universal.zip`
-- `Keeper-Enhanced-1.4.0-macOS-Universal.zip.sha256`
+- `Keeper-Enhanced-0.1.0-macOS-Universal.dmg`
+- `Keeper-Enhanced-0.1.0-macOS-Universal.dmg.sha256`
+- `Keeper-Enhanced-0.1.0-macOS-Universal.zip`
+- `Keeper-Enhanced-0.1.0-macOS-Universal.zip.sha256`
 
 Each checksum is SHA-256, two spaces, exact filename and newline. Build logs,
 full source/toolchain/app provenance (`release/build.json`), accepted notary
@@ -71,8 +71,8 @@ Source branch pushing is separate and never forced:
 ```sh
 python3 scripts/release.py source --to github --dry-run
 python3 scripts/release.py source --to github --confirm-push
-python3 scripts/release.py publish --output outputs/release-1.4.0-new \
-  --tag 1.4.0 --to github --confirm-publish
+python3 scripts/release.py publish --output outputs/release-0.1.0-new \
+  --tag 0.1.0 --to github --confirm-publish
 ```
 
 Choose the configured public repository. No repositories are created, remote repositories

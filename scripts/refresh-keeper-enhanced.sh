@@ -4,7 +4,7 @@ set -Eeuo pipefail
 umask 077
 SOURCE=${KFX_SERVER_SOURCE:-/root/keeper-enhanced}
 # Separate directory avoids conflicts with earlier Ninja-generated caches.
-BUILD="$SOURCE/build-server-make"
+BUILD="$SOURCE/build-server-minimal"
 DEST=/opt/keeper-enhanced-server
 CONFIG=/etc/keeper-enhanced/server.json
 STATE=/var/lib/keeper-enhanced
@@ -14,8 +14,8 @@ for tool in git cmake make pkg-config systemctl install flock nproc mktemp pytho
     command -v "$tool" >/dev/null || { echo "Missing command: $tool" >&2; exit 1; }
 done
 python3 -c 'import sys; assert sys.version_info >= (3,9), "Python 3.9+ required"'
-pkg-config --exists libavformat libavcodec libswresample libswscale libavutil openal luajit spng minizip zlib || {
-    echo 'Missing development libraries. See docs/LINUX-SERVER.md and the CMake dependency report.' >&2; exit 1;
+pkg-config --exists libcurl luajit minizip zlib openssl || {
+    echo 'Missing server libraries. Install providers of pkgconfig(libcurl), pkgconfig(luajit), pkgconfig(minizip), pkgconfig(zlib), pkgconfig(openssl).' >&2; exit 1;
 }
 exec 9>/run/lock/keeper-enhanced-server-refresh.lock
 flock -n 9 || { echo 'Another server refresh is running.' >&2; exit 1; }
@@ -75,7 +75,7 @@ trap 'exit 143' TERM
 echo 'Updating and building; the current server stays running.'
 git -C "$SOURCE" pull --ff-only origin main
 cmake -S "$SOURCE" -B "$BUILD" -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release \
-    -DKFX_DECK_BUNDLE=ON -DKFX_INSTALL_GAME_DATA=OFF
+    -DKFX_DEDICATED=ON -DKFX_DECK_BUNDLE=ON -DKFX_INSTALL_GAME_DATA=OFF
 cmake --build "$BUILD" --target keeperfx --parallel "${KFX_JOBS:-$(nproc)}"
 cmake --install "$BUILD" --prefix "$STAGED/new/engine"
 cp "$SOURCE/services/keeperhub/dedicated.py" "$STAGED/new/dedicated.py"
@@ -88,6 +88,9 @@ ldd "$STAGED/new/engine/keeperfx" > "$STAGED/libraries.log"
 if grep -q 'not found' "$STAGED/libraries.log"; then
     cat "$STAGED/libraries.log" >&2
     echo 'Runtime libraries missing; current server left unchanged.' >&2; exit 1
+fi
+if grep -Eiq 'lib(SDL[23](_image|_mixer)?|openal|avcodec|avformat|avutil|swscale|swresample|GL|EGL|GLX|vulkan|X11|wayland|asound|pulse)' "$STAGED/libraries.log"; then
+    echo 'Unexpected presentation dependency in dedicated binary; current server left unchanged.' >&2; exit 1
 fi
 # Validate with the new supervisor and staged executable as the service user.
 # Do not source server.env: it uses systemd syntax and may contain secrets.

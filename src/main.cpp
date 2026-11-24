@@ -1734,7 +1734,13 @@ static short process_command_line(unsigned short argc, char *argv[])
 #endif
 
   AssignCpuKeepers = 0;
+#ifdef KFX_DEDICATED
+  setenv("KFX_HEADLESS","1",1);
+  setenv("KFX_LOCAL_NETWORK_ONLY","1",1);
+  SoundDisabled = 1;
+#else
   SoundDisabled = 0;
+#endif
   // Note: the working log file is set up in LbBullfrogMain
 
   set_default_startup_parameters();
@@ -2252,6 +2258,15 @@ int LbBullfrogMain(unsigned short argc, char *argv[])
 
 int kfxmain(int argc, char *argv[])
 {
+#ifdef KFX_DEDICATED
+  if(argc==2 && (!strcmp(argv[1],"--version") || !strcmp(argv[1],"--server-build-info"))) {
+    printf("Keeper Enhanced dedicated server %s (engine %s); presentation backends disabled\n",KFX_APP_VERSION,VER_STRING);
+    return 0;
+  }
+  bool dedicated_requested=false;
+  for(int i=1;i<argc;i++)if(!strcasecmp(argv[i],"-server"))dedicated_requested=true;
+  if(!dedicated_requested){fprintf(stderr,"Dedicated build: start through dedicated.py or supply -server PORT.\n");return 2;}
+#endif
   try {
   LbBullfrogMain(argc, argv);
   } catch (...)

@@ -28,8 +28,8 @@
 #include <cstring>
 #include <cctype>
 #include "post_inc.h"
-#ifdef __APPLE__
-#include <CommonCrypto/CommonDigest.h>
+#if defined(__APPLE__) || defined(KFX_DEDICATED)
+#include "kfx/sha256.h"
 namespace {
 namespace fs=std::filesystem;
 struct ReadyDigest{std::string version,map,mods,error;bool complete=false;};
@@ -46,16 +46,16 @@ Uint64 started=0;
 std::string engine_version(){return std::to_string(VER_MAJOR)+"."+std::to_string(VER_MINOR)+"."+std::to_string(VER_RELEASE)+"."+std::to_string(VER_BUILD)+"+hub1";}
 std::string short_campaign(std::string value){value=fs::path(value).filename().string();auto dot=value.rfind('.');if(dot!=std::string::npos)value.resize(dot);return value;}
 bool parse_start(const std::string &message,std::string &camp,int &level){size_t pos=message.find(':');if(pos==std::string::npos)pos=message.find(' ');if(pos==std::string::npos||pos<1||pos>63)return false;camp=message.substr(0,pos);std::string component=camp;for(const char *prefix:{"campgns/","levels/","multiplayer/"})if(component.rfind(prefix,0)==0){component.erase(0,strlen(prefix));break;}if(component.empty())return false;for(unsigned char c:component)if(!std::isalnum(c)&&c!='_'&&c!='-'&&c!='.')return false;std::string number=message.substr(pos+1);while(!number.empty()&&number.front()==' ')number.erase(0,1);while(!number.empty()&&number.back()==' ')number.pop_back();if(number.empty()||number.size()>7||!std::all_of(number.begin(),number.end(),[](unsigned char c){return std::isdigit(c);}))return false;level=std::stoi(number);return level>0&&level<=99999;}
-std::string hex_digest(CC_SHA256_CTX &ctx){unsigned char bytes[CC_SHA256_DIGEST_LENGTH];CC_SHA256_Final(bytes,&ctx);const char chars[]="0123456789abcdef";std::string value;for(unsigned char c:bytes){value+=chars[c>>4];value+=chars[c&15];}return value;}
-void hash_text(CC_SHA256_CTX &ctx,const std::string &value){CC_SHA256_Update(&ctx,value.data(),(CC_LONG)value.size());const char zero=0;CC_SHA256_Update(&ctx,&zero,1);}
+std::string hex_digest(KfxSha256Context &ctx){unsigned char bytes[32];KfxSha256Final(bytes,&ctx);const char chars[]="0123456789abcdef";std::string value;for(unsigned char c:bytes){value+=chars[c>>4];value+=chars[c&15];}return value;}
+void hash_text(KfxSha256Context &ctx,const std::string &value){KfxSha256Update(&ctx,value.data(),(size_t)value.size());const char zero=0;KfxSha256Update(&ctx,&zero,1);}
 ReadyInput snapshot_input(int level){ReadyInput input;input.base=keeper_runtime_directory;input.level=level;input.levels=campaign.levels_location;short group=get_current_campaign_fgroup();if(group==FGrp_None)group=FGrp_Campgn;input.campaign_file=prepare_file_path(group,campaign.fname);const ModsConfig *mods=get_loaded_mods_conf();const ModConfigItem *lists[]={mods->after_base_item,mods->after_campaign_item,mods->after_map_item};int counts[]={mods->after_base_cnt,mods->after_campaign_cnt,mods->after_map_cnt};for(int stage=0;stage<3;stage++)for(int i=0;i<std::clamp(counts[stage],0,MOD_ITEM_MAX);i++)input.mods.push_back(std::to_string(stage)+":"+lists[stage][i].name);return input;}
 ReadyDigest scan_input(ReadyInput input,std::shared_ptr<std::atomic<bool>> stop){
-    ReadyDigest result;result.version=engine_version();CC_SHA256_CTX mapctx,modctx;CC_SHA256_Init(&mapctx);CC_SHA256_Init(&modctx);uint64_t total=0;size_t files=0;auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(25);
-    auto file=[&](CC_SHA256_CTX &ctx,const fs::path &path,const std::string &name){
+    ReadyDigest result;result.version=engine_version();KfxSha256Context mapctx,modctx;KfxSha256Init(&mapctx);KfxSha256Init(&modctx);uint64_t total=0;size_t files=0;auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(25);
+    auto file=[&](KfxSha256Context &ctx,const fs::path &path,const std::string &name){
         if(stop->load()||std::chrono::steady_clock::now()>deadline)throw std::runtime_error("Content scan cancelled or timed out.");
         if(fs::is_symlink(path)||!fs::is_regular_file(path))throw std::runtime_error("Content contains a link or a missing file.");
         auto size=fs::file_size(path);auto modified=fs::last_write_time(path);if(++files>16000||(total+=size)>512ull*1024*1024)throw std::runtime_error("Content scan exceeds its size limit.");hash_text(ctx,name);FILE *stream=fopen(path.c_str(),"rb");if(!stream)throw std::runtime_error("A selected content file cannot be read.");
-        unsigned char bytes[32768];size_t count;bool stopped=false;while((count=fread(bytes,1,sizeof(bytes),stream))>0){CC_SHA256_Update(&ctx,bytes,(CC_LONG)count);if(stop->load()||std::chrono::steady_clock::now()>deadline){stopped=true;break;}}bool bad=ferror(stream)||stopped;fclose(stream);if(bad||fs::file_size(path)!=size||fs::last_write_time(path)!=modified)throw std::runtime_error("Content changed or could not be read. Retry the check.");
+        unsigned char bytes[32768];size_t count;bool stopped=false;while((count=fread(bytes,1,sizeof(bytes),stream))>0){KfxSha256Update(&ctx,bytes,(size_t)count);if(stop->load()||std::chrono::steady_clock::now()>deadline){stopped=true;break;}}bool bad=ferror(stream)||stopped;fclose(stream);if(bad||fs::file_size(path)!=size||fs::last_write_time(path)!=modified)throw std::runtime_error("Content changed or could not be read. Retry the check.");
     };
     try{
         if(input.level<=0||input.level>99999)throw std::runtime_error("Choose a map before checking readiness.");

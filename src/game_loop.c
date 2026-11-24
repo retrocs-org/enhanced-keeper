@@ -498,6 +498,9 @@ void gameplay_loop_draw()
     uint64_t interval=(PlatformManager_GetWindowFlags()&KFX_WF_MINIMIZED)?100000000ULL:(!LbIsActive()?33333333ULL:0);
     if(!getenv("KFX_HEADLESS")&&interval){if(background_now-last_background_draw<interval)do_draw=false;else last_background_draw=background_now;}
 #endif
+#ifdef KFX_DEDICATED
+    do_draw = false;
+#endif
     // Lights need updating only for a rendered frame.
     if(do_draw)update_light_render_area();
 

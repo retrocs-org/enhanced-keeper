@@ -52,7 +52,9 @@
 #include "gui_frontbtns.h"
 #include "kfx/renderer/RendererManager.h"
 #include <SDL3/SDL.h>
+#ifndef KFX_DEDICATED
 #include <SDL3_image/SDL_image.h>
+#endif
 #include <algorithm>
 #include <string>
 #include <vector>
@@ -73,7 +75,7 @@
 #endif
 #include "post_inc.h"
 
-#if defined(__APPLE__)
+#if defined(__APPLE__) && !defined(KFX_DEDICATED)
 namespace {
 constexpr int WIDTH=640,HEIGHT=480;
 int button_animation_frame(Uint64 elapsed);
@@ -898,8 +900,7 @@ void kfx_options_open(struct GuiButton*){}
 void kfx_options_show_page(int){}
 void kfx_options_preview(int){}
 void kfx_options_button(struct GuiButton*){}
-void kfx_options_draw(void){
-    enhancement_sample();}
+void kfx_options_draw(void){}
 void kfx_caption_speech(int){}
 void kfx_save_feedback(int,int,const char*){}
 void kfx_options_display(struct GuiButton*){}
