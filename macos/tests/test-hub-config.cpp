@@ -1,10 +1,19 @@
-#include "net_hub.h"
+#include "../../src/net_hub.cpp"
 #include <cassert>
 #include <cstring>
 #include <fstream>
 #include <string>
 #include <unistd.h>
-int main() {
+int main(int argc,char **argv) {
+    if(argc>1){
+        auto get=http(argv[1],"check","/api/streams/test?offset=4","","test-token");
+        assert(get.status==200&&get.body=="{\"ok\":true}");
+        auto post=http(argv[1],"check","/api/device/start","{}","test-token");
+        assert(post.status==200&&post.body=="{\"ok\":true}");
+        auto missing=http(argv[1],"check","/api/not-found","","test-token");
+        assert(missing.status==404);
+        return 0;
+    }
     assert(std::string(kfx_hub_url()) == "https://keeperfx-e.retrocs.org");
     char temporary[]="/tmp/kfx-hub-config-XXXXXX";
     const char *folder=mkdtemp(temporary);assert(folder);

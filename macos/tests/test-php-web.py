@@ -135,6 +135,20 @@ class PHPWebsiteTests(unittest.TestCase):
         self.request('/api/logout', {}, csrf).close()
         self.assertFalse(json.load(self.request('/api/session'))['signed_in'])
 
+    def test_direct_routes_keep_authentication_and_reject_invalid_paths(self):
+        from urllib.parse import quote
+        route=lambda path:'/index.php?route='+quote(path,safe='')
+        account=json.load(self.request(route('/api/register'),{'name':'DirectKeeper','password':'a direct long password'}))
+        self.assertTrue(json.load(self.request(route('/api/session')))['signed_in'])
+        with self.assertRaises(urllib.error.HTTPError) as error:self.request(route('/api/profile'),{'public':True})
+        self.assertEqual(error.exception.code,403)
+        self.request(route('/api/profile'),{'public':True},{'X-CSRF-Token':account['csrf']}).close()
+        for path in ['/index.php?route[]=x',route('//evil.invalid/api/session'),route('/api/session#bad'),route('/api/session\n')]:
+            with self.assertRaises(urllib.error.HTTPError) as error:self.request(path)
+            self.assertEqual(error.exception.code,400)
+        with self.assertRaises(urllib.error.HTTPError) as error:self.request(route('/lib/Hub.php'))
+        self.assertEqual(error.exception.code,404)
+
     def test_cross_origin_host_and_method_rejected(self):
         for headers in [{'Origin':'https://evil.invalid'}, {'Host':'evil.invalid'}]:
             with self.assertRaises(urllib.error.HTTPError) as error:

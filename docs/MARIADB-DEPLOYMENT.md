@@ -6,7 +6,8 @@
 | PHP web server | sth-ts-web003.kladhest.se | 172.16.1.133 |
 | Public site | keeperfx-e.retrocs.org | Your existing HTTPS endpoint |
 
-The website and HTTP API are entirely inside `public-web/`. Deployment refreshes
+The website and HTTP API are entirely inside `public-web/`. Navigation/API requests
+use direct `index.php?route=...` URLs, so no rewrite support is required for them. Deployment refreshes
 that directory into your vhost, with no build step. All database and website service
 settings live in its `config.inc.php`, which refreshes always preserve. Remote
 servers have not been changed during development.

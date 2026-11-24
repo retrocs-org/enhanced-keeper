@@ -13,6 +13,7 @@ import time
 import unittest
 import urllib.error
 import urllib.request
+import urllib.parse
 
 ROOT=Path(__file__).resolve().parents[2]
 spec=importlib.util.spec_from_file_location('deploy_web',ROOT/'scripts/deploy-web.py')
@@ -98,7 +99,7 @@ class WebDeployTests(unittest.TestCase):
         text=text.replace('mysql:host=172.16.1.121;port=3306;dbname=keeperfx_e;charset=utf8mb4',str(self.base/'state/community.sqlite3'))
         config.write_text(text)
         env={key:value for key,value in os.environ.items() if not key.startswith('KFX_')}
-        php=subprocess.Popen(['php','-S','127.0.0.1:'+str(port),'-t',str(self.target),str(self.target/'router.php')],env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        php=subprocess.Popen(['php','-S','127.0.0.1:'+str(port),'-t',str(self.target)],env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
         try:
             for _ in range(100):
                 try:
@@ -106,12 +107,17 @@ class WebDeployTests(unittest.TestCase):
                     break
                 except urllib.error.URLError:time.sleep(.03)
             else:self.fail('Deployed PHP site did not start')
-            request=urllib.request.Request(origin+'/api/register',data=json.dumps({'name':'ConfigKeeper','password':'a long config password'}).encode(),headers={'Content-Type':'application/json'})
+            direct=lambda path:origin+'/index.php?route='+urllib.parse.quote(path,safe='')
+            for path in ['/servers','/services','/api-browser','/events','/replays','/profile','/device']:
+                with urllib.request.urlopen(direct(path),timeout=2) as response:
+                    self.assertEqual(response.status,200);self.assertIn('routes.js',response.read().decode())
+            with urllib.request.urlopen(origin,timeout=2) as response:self.assertIn('/index.php?route=%2Fservers',response.read().decode())
+            request=urllib.request.Request(direct('/api/register'),data=json.dumps({'name':'ConfigKeeper','password':'a long config password'}).encode(),headers={'Content-Type':'application/json'})
             with urllib.request.urlopen(request,timeout=4) as response:
                 account=json.load(response);self.assertIn('csrf',account);self.assertNotIn('token',account)
-            with urllib.request.urlopen(origin+'/api/health',timeout=4) as response:self.assertEqual(json.load(response)['http_backend'],'php')
+            with urllib.request.urlopen(direct('/api/health'),timeout=4) as response:self.assertEqual(json.load(response)['http_backend'],'php')
             for path in ['/config.inc.php','/config.inc.php~','/lib/settings.php','/lib/mariadb.sql']:
-                with self.assertRaises(urllib.error.HTTPError) as error:urllib.request.urlopen(origin+path,timeout=2)
+                with self.assertRaises(urllib.error.HTTPError) as error:urllib.request.urlopen(direct(path),timeout=2)
                 self.assertEqual(error.exception.code,404)
             with urllib.request.urlopen(origin+'/assets/dungeon-heart.svg',timeout=2) as response:self.assertEqual(response.headers.get_content_type(),'image/svg+xml')
         finally:php.terminate();php.wait(timeout=5)

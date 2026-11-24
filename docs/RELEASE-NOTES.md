@@ -1,4 +1,8 @@
 ## Features
+- Keep all website/HTTP API code in the deployable public-web tree and use direct
+  PHP routes when Apache does not enable clean-URL routing; retain clean aliases.
+- Retry game service requests through the direct PHP endpoint only after an HTML
+  404, retaining same-origin authorization, request bodies and API error handling.
 - Default the in-game Internet community service to keeperfx-e.retrocs.org while
   retaining saved custom HTTPS services and local development overrides.
 - Restyle the PHP portal with original guardian artwork, olive dungeon stone,

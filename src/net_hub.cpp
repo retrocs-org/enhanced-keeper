@@ -40,7 +40,14 @@ Reply http(std::string url,std::string tag,std::string route,std::string body,st
  curl_slist *headers=nullptr;headers=curl_slist_append(headers,"Content-Type: application/json");if(!token.empty())headers=curl_slist_append(headers,("Authorization: Bearer "+token).c_str());
  curl_easy_setopt(c,CURLOPT_URL,(url+route).c_str());curl_easy_setopt(c,CURLOPT_HTTPHEADER,headers);curl_easy_setopt(c,CURLOPT_NOSIGNAL,1L);curl_easy_setopt(c,CURLOPT_CONNECTTIMEOUT_MS,2000L);curl_easy_setopt(c,CURLOPT_TIMEOUT_MS,5000L);curl_easy_setopt(c,CURLOPT_FOLLOWLOCATION,0L);curl_easy_setopt(c,CURLOPT_PROTOCOLS_STR,"http,https");curl_easy_setopt(c,CURLOPT_WRITEFUNCTION,receive);curl_easy_setopt(c,CURLOPT_WRITEDATA,&reply.body);
  if(!body.empty()){curl_easy_setopt(c,CURLOPT_POSTFIELDS,body.c_str());curl_easy_setopt(c,CURLOPT_POSTFIELDSIZE,(long)body.size());}
- CURLcode code=curl_easy_perform(c);curl_easy_getinfo(c,CURLINFO_RESPONSE_CODE,&reply.status);if(code!=CURLE_OK)reply.body="{\"error\":\"Community service unavailable. LAN and direct play remain available.\"}";
+ CURLcode code=curl_easy_perform(c);curl_easy_getinfo(c,CURLINFO_RESPONSE_CODE,&reply.status);
+ // Retry only a web-server HTML 404, not an API JSON error or an uncertain request.
+ char *type=nullptr;curl_easy_getinfo(c,CURLINFO_CONTENT_TYPE,&type);
+ if(code==CURLE_OK&&reply.status==404&&type&&!strncmp(type,"text/html",9)){
+  char *escaped=curl_easy_escape(c,route.c_str(),(int)route.size());
+  if(escaped){std::string direct=url+"/index.php?route="+escaped;curl_free(escaped);reply.body.clear();curl_easy_setopt(c,CURLOPT_URL,direct.c_str());code=curl_easy_perform(c);curl_easy_getinfo(c,CURLINFO_RESPONSE_CODE,&reply.status);}
+ }
+ if(code!=CURLE_OK)reply.body="{\"error\":\"Community service unavailable. LAN and direct play remain available.\"}";
  curl_slist_free_all(headers);curl_easy_cleanup(c);return reply;
 }
 void save_token(){if(folder.empty())return;std::string p=folder+"/community-session.cfg",temp=p+".pending";FILE *f=fopen(temp.c_str(),"w");if(!f)return;fchmod(fileno(f),0600);bool ok=fprintf(f,"%s\n%s\n%s\n%s\n",base.c_str(),account.c_str(),name.c_str(),account_id.c_str())>0;ok=fflush(f)==0&&fsync(fileno(f))==0&&ok;if(fclose(f))ok=false;if(!ok||rename(temp.c_str(),p.c_str()))unlink(temp.c_str());}

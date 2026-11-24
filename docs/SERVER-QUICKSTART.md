@@ -1,5 +1,9 @@
 # Existing Apache vhost and new MariaDB account
 
+The website now uses direct `/index.php?route=...` page and API URLs. Refreshing
+public-web is sufficient for those links; the Apache change below enables the
+older clean URL aliases too. All website and HTTP API code ships in public-web.
+
 ## Web server: sth-ts-web003 (172.16.1.133), as root
 
 The existing document root is `/srv/www/vhosts/keeperfx-e.retrocs.org`.

@@ -14,6 +14,15 @@ is supported for local development. Serve this directory as the vhost document
 root with the supplied Apache `.htaccess`, or the Nginx routing in the deployment
 guide. Only `index.php` should be exposed as an HTTP PHP entry point.
 
+Navigation and browser API requests use `/index.php?route=...` by default, so
+no Apache rewrite configuration is required for those links. For example:
+`/index.php?route=%2Fservers` and `/index.php?route=%2Fapi%2Fsession`.
+Clean `/servers` and `/api/session` aliases remain available when front-controller
+routing is enabled. This directory contains routes.js, all page templates and
+all HTTP account/directory/community API handlers under lib; no external API proxy
+or sibling service checkout is required. Database/runtime files stay outside the
+public document root. The optional UDP relay is a separate persistent worker.
+
 ## Configuration
 
 Edit **the deployed `config.inc.php`**. It contains the public origin, database

@@ -149,3 +149,8 @@ front-controller routing, then verifies the server-config overlay and the
 .htaccess fallback (without mod_rewrite), including private-config/schema blocking.
 It uses a disposable loopback Apache instance with inert placeholder files;
 PHP business behavior is checked separately by test-php-web.py.
+
+Direct-route checks cover all deployed pages, cookie/CSRF security, invalid routes,
+and a copied public-web with no router script. run-hub-config-tests.py additionally
+checks game GET/POST fallback after a web-server HTML 404, preserving Authorization
+and JSON bodies, and confirms JSON API 404s are not retried.

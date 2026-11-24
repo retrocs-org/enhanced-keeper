@@ -38,6 +38,14 @@ $uri = $_SERVER['REQUEST_URI'] ?? '/';
 if (preg_match('/[\x00-\x20\x7f]/', $uri)) {
     problem(400, 'Invalid request path.');
 }
+// Direct front-controller URLs work even when the host ignores .htaccess.
+$requestPath = parse_url($uri, PHP_URL_PATH);
+if (array_key_exists('route', $_GET)) {
+    if (!in_array($requestPath, ['/', '/index.php'], true) || !is_string($_GET['route'])) problem(400, 'Invalid route');
+    $uri = $_GET['route'];
+    if (strlen($uri)>2048 || !str_starts_with($uri,'/') || str_starts_with($uri,'//')
+        || str_contains($uri,'\\') || str_contains($uri,'#') || preg_match('/[\x00-\x20\x7f]/',$uri)) problem(400,'Invalid route');
+}
 $path = parse_url($uri, PHP_URL_PATH);
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 if (!in_array($method, ['GET', 'POST'], true)) {
@@ -63,7 +71,7 @@ if (in_array($path, ['/assets/keeper-sigil.svg','/assets/dungeon-heart.svg','/as
     readfile(__DIR__.$path);
     exit;
 }
-if (in_array($path, ['/app.js', '/portal.js', '/api-browser.js', '/style.css', '/site.css'], true)) {
+if (in_array($path, ['/routes.js', '/app.js', '/portal.js', '/api-browser.js', '/style.css', '/site.css'], true)) {
     header('Content-Type: ' . (str_ends_with($path,'.js') ? 'text/javascript' : 'text/css') . '; charset=utf-8');
     readfile(__DIR__ . $path);
     exit;

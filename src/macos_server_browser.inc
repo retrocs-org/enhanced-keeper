@@ -33,7 +33,7 @@ void browser_tick(){
   std::string tag=kfx_hub_result_tag();HubDocument d(kfx_hub_result());std::string error=hub_field(&d.root,"error");if(!error.empty()){hub_message=error;if(tag=="community")community_text=error;}
   else if(tag.rfind("ping:",0)==0){browser_pings[hub_field(&d.root,"address")]=hub_integer(&d.root,"ping_ms");}
   else if(tag=="servers"){public_servers.clear();const VALUE *list=value_dict_get(&d.root,"servers");for(size_t i=0;list&&i<std::min(value_array_size(list),(size_t)128);i++){const VALUE *r=value_array_get(list,i);BrowserServer s;s.id=hub_field(r,"id");s.name=hub_field(r,"name");s.address=hub_field(r,"endpoint");s.engine=hub_field(r,"engine");s.map=hub_field(r,"map");s.content=hub_field(r,"mods");if(s.content.size()!=64||!std::all_of(s.content.begin(),s.content.end(),[](unsigned char c){return std::isxdigit(c);}))s.content.clear();s.kind=hub_field(r,"kind");s.region=hub_field(r,"region");s.players=hub_integer(r,"players");s.capacity=hub_integer(r,"capacity");s.password=hub_integer(r,"password")!=0;public_servers.push_back(s);}for(auto *saved:{&favourite_servers,&recent_servers})for(auto &entry:*saved)for(const auto &fresh:public_servers)if(entry.address==fresh.address&&entry.name==fresh.name)entry=fresh;browser_filter();hub_message=public_servers.empty()?"No public servers. LAN and direct play are available.":"Directory updated.";}
-  else if(tag=="pair-start"){device_code=hub_field(&d.root,"device_code");pair_code=hub_field(&d.root,"user_code");pair_at=SDL_GetTicks()+3000;pair_deadline=SDL_GetTicks()+600000;hub_message="Approve this code in your browser.";SDL_OpenURL((std::string(kfx_hub_url())+"/device").c_str());}
+  else if(tag=="pair-start"){device_code=hub_field(&d.root,"device_code");pair_code=hub_field(&d.root,"user_code");pair_at=SDL_GetTicks()+3000;pair_deadline=SDL_GetTicks()+600000;hub_message="Approve this code in your browser.";SDL_OpenURL((std::string(kfx_hub_url())+"/index.php?route=%2Fdevice").c_str());}
   else if(tag=="pair-poll"&&!hub_field(&d.root,"token").empty()){device_code.clear();pair_code.clear();hub_message="Game connected to your account.";kfx_hub_request("me","/api/me",nullptr,1);}
   else if(tag=="join"){std::string endpoint=hub_field(&d.root,"endpoint");if(relay_join){const VALUE *r=value_dict_get(&d.root,"relay");std::string host=hub_field(r,"host"),token=hub_field(r,"token");int port=hub_integer(r,"port");if(!host.empty()&&!token.empty()&&port>0){kfx_hub_client_relay(host.c_str(),port,token.c_str());endpoint=host+":"+std::to_string(port);}else{hub_message="No relay was allocated.";return;}}else kfx_hub_client_relay("",0,"");join_ip=endpoint;pending_join=true;}
   else if(tag=="spectate-start"){std::string id=hub_field(&d.root,"stream_id");if(normalized_version(hub_field(&d.root,"engine"))!=normalized_version(VER_STRING)){hub_message="Spectator engine version differs.";return;}if(!id.empty()){kfx_hub_spectator_start(id.c_str());hub_message="Buffering a read-only spectator replay...";}}
@@ -63,7 +63,7 @@ bool browser_action(int action){
  if(action==2042&&!browser_servers.empty()){BrowserServer s=browser_servers[browser_index];auto i=std::find_if(favourite_servers.begin(),favourite_servers.end(),[&](const BrowserServer &v){return v.address==s.address;});if(i==favourite_servers.end())favourite_servers.push_back(s);else favourite_servers.erase(i);hub_message=browser_save("servers-favourites.cfg",favourite_servers)?"Favourites updated.":"Could not save favourites. Check folder permissions.";browser_filter();return true;}
  if(action==2043&&!browser_servers.empty()){SDL_SetClipboardText(browser_servers[browser_index].address.c_str());hub_message="Server address copied.";return true;}
  if(action==2050){if(!kfx_hub_request("pair-start","/api/device/start","{}",0))hub_message="Wait for the current request.";return true;}
- if(action==2051){SDL_OpenURL((std::string(kfx_hub_url())+"/profile").c_str());return true;}
+ if(action==2051){SDL_OpenURL((std::string(kfx_hub_url())+"/index.php?route=%2Fprofile").c_str());return true;}
  if(action==2052){device_code.clear();pair_code.clear();kfx_hub_sign_out();hub_message="Signed out on this game.";return true;}
  if(action==2053){page=25;selected=0;hub_edit=kfx_hub_url();return true;}
  if(action==2064){start_edit(13);hub_message="Optional preview map, for example classic:52. Lobby readiness checks the final choice.";return true;}
@@ -79,7 +79,7 @@ bool browser_action(int action){
  if(action==2070){start_edit(9);return true;}
  if(action==2071){if(kfx_hub_set_url(hub_edit.c_str())){write_small_file(path("community-url.cfg"),hub_edit);hub_message="Community service address saved.";}else hub_message="Use HTTPS, or HTTP on localhost with a port.";return true;}
  if(action==2080||action==2081){community_tab=(community_tab+(action==2080?4:1))%5;community_request();return true;}
- if(action==2082){SDL_OpenURL((std::string(kfx_hub_url())+"/events").c_str());return true;}
+ if(action==2082){SDL_OpenURL((std::string(kfx_hub_url())+"/index.php?route=%2Fevents").c_str());return true;}
  if(action==2083||action==2084){community_offset=std::max(0,community_offset+(action==2083?-4:4));return true;}
  return false;
 }
