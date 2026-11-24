@@ -4,7 +4,7 @@ KeeperFX-E is an independent fork of [KeeperFX](https://github.com/dkfans/keeper
 
 This directory is the **complete deployable PHP website**: homepage, original
 dungeon-themed artwork, server browser, network service status, accounts and
-statistics, pairing, events, challenges, replays and the interactive API browser.
+statistics, pairing, events, challenges, replays and an unlisted developer API browser.
 Every public `/api/` HTTP endpoint is implemented here in PHP. No build step,
 Composer install, Node server or Python HTTP backend is needed on the web server.
 The optional real-time UDP relay remains a separate worker.
@@ -104,7 +104,7 @@ isolated test instance. The source config does not need editing for this workflo
 Routes: `/`, `/servers`, `/services`, `/api-browser`, `/profile`, `/device`, `/events`,
 `/challenges`, `/replays`, `/keeper/{id}` and `/api-catalog.json`. Browser changes use
 HttpOnly/SameSite cookies plus CSRF; game/host clients use Bearer credentials. The
-API explorer runs listed GET requests and redacts credentials from its output.
+unlisted API explorer runs listed GET requests and redacts credentials from its output.
 
 See [MariaDB deployment](../docs/MARIADB-DEPLOYMENT.md) for the two-server setup.
 
@@ -122,3 +122,8 @@ Dependencies are git, PHP CLI, getent, flock and standard POSIX file utilities.
 An existing config must be a regular file and is always preserved. On first
 install, or when upgrading an older site without config.inc.php, the credential-free
 sample at public-web/config.inc.php is installed. No database migrations or service restarts run.
+
+The API browser is intentionally absent from public menus, homepage links and
+network-page links. It remains available directly at
+`/index.php?route=%2Fapi-browser` for development; this is a navigation choice,
+not an authentication boundary. Public game/account API endpoints remain active.

@@ -112,6 +112,8 @@ class PHPWebsiteTests(unittest.TestCase):
         with self.request('/') as response:
             page = response.read().decode()
         self.assertIn('Your dungeon.', page)
+        self.assertNotIn('API browser',page)
+        self.assertNotIn('%2Fapi-browser',page)
         self.assertIn('KeeperFX-E is a fork of',page)
         self.assertIn('https://github.com/dkfans/keeperfx',page)
         self.assertIn('Browse downloads', page)
