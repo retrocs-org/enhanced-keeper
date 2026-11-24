@@ -2,32 +2,45 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 GAME="${KFX_GAME_DIR:-$ROOT/.local/keeperfx}"
-ENGINE="${KFX_ENGINE:-$ROOT/build-mac-universal/keeperfx}"
+ENGINE="${KFX_ENGINE:-$ROOT/build-mac-universal/keeper-enhanced}"
 VERSION="$(cat "$ROOT/VERSION")"
 BUILD_NUMBER="$(cat "$ROOT/macos/BUILD_NUMBER")"
 OUT="${KFX_PACKAGE_DIR:-$ROOT/outputs/local-$VERSION-$BUILD_NUMBER}"
 IDENTITY="${KFX_SIGN_IDENTITY:?Set KFX_SIGN_IDENTITY to a Developer ID Application identity}"
+LOCAL_DATA=${KFX_INCLUDE_LOCAL_DATA:-0}
+[[ "$LOCAL_DATA" == 0 || "$LOCAL_DATA" == 1 ]] || { echo 'KFX_INCLUDE_LOCAL_DATA must be 0 or 1' >&2; exit 1; }
+if [[ "$LOCAL_DATA" == 1 && ( "$IDENTITY" != - || -n "${KFX_NOTARY_PROFILE:-}" ) ]]; then
+  echo 'Imported game data is local-only: use ad-hoc signing without notarization.' >&2; exit 1
+fi
+sign_flags=()
+[[ "$IDENTITY" == - ]] || sign_flags=(--options runtime --timestamp)
 PROFILE="${KFX_NOTARY_PROFILE:-}"
 APP="$OUT/Keeper-Enhanced.app"
 DMG="$OUT/Keeper-Enhanced-$VERSION-macOS-Universal.dmg"
-[[ -x "$ENGINE" && -f "$GAME/keeperfx.cfg" ]] || { echo "Missing engine or KeeperFX runtime data" >&2; exit 1; }
+[[ -x "$ENGINE" && -f "$GAME/keeper-enhanced.cfg" ]] || { echo "Missing engine or KeeperFX runtime data" >&2; exit 1; }
 [[ ! -e "$APP" && ! -e "$DMG" ]] || { echo "Output exists; choose a new KFX_PACKAGE_DIR" >&2; exit 1; }
 # Check keychain access before copying assets or compiling helpers.
-"$ROOT/macos/signing-preflight.sh" "$IDENTITY"
+[[ "$IDENTITY" == - ]] || "$ROOT/macos/signing-preflight.sh" "$IDENTITY"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 ditto "$GAME" "$APP/Contents/Resources/game"
 # A distributable package must not contain files imported from the owner's CD,
 # personal progress, generated caches, or previous executable signatures.
-python3 - "$APP/Contents/Resources/game" <<'PY'
+python3 - "$APP/Contents/Resources/game" "$LOCAL_DATA" <<'PY'
 from pathlib import Path
-import shutil,sys
+import shutil,sys,json,re
 root=Path(sys.argv[1])
+manifest=root/'original-audio-files.json'
+if sys.argv[2]=='0' and manifest.exists():
+ for name in json.loads(manifest.read_text()):
+  if not isinstance(name,str) or not re.fullmatch(r'track[0-9]{2}\.wav',name):raise SystemExit('Invalid imported audio manifest')
+  (root/'music'/name).unlink(missing_ok=True)
+ manifest.unlink()
 required={'data':['bluepal.dat','bluepall.dat','dogpal.pal','hitpall.dat','lightng.pal','redpal.col','redpall.dat','slab0-0.dat','slab0-1.dat','vampal.pal','whitepal.col'],'sound':['atmos1.sbk','atmos2.sbk','bullfrog.sbk']}
-for folder,names in required.items():
+for folder,names in (required.items() if sys.argv[2]=='0' else []):
  for name in names:(root/folder/name).unlink(missing_ok=True)
 for p in (root/'ldata').glob('*'):
- if p.suffix.lower()=='.smk':p.unlink()
-for name in ('save','scrshots','keeperfx','_CodeSignature'):
+ if sys.argv[2]=='0' and p.suffix.lower()=='.smk':p.unlink()
+for name in ('save','scrshots','recordings','community-session.cfg','keeperfx','keeper-enhanced','_CodeSignature'):
  p=root/name
  if p.is_dir():shutil.rmtree(p)
  elif p.exists():p.unlink()
@@ -35,7 +48,7 @@ for name in ('colours.col','tables.dat','alpha.col'):(root/'data'/name).unlink(m
 for p in root.rglob('.DS_Store'):p.unlink()
 for p in root.glob('*.log'):p.unlink()
 PY
-cp "$ENGINE" "$APP/Contents/Resources/game/keeperfx"
+cp "$ENGINE" "$APP/Contents/Resources/game/keeper-enhanced"
 mkdir -p "$APP/Contents/Resources/controllers"
 cp "$ROOT"/macos/packaging/controllers/* "$APP/Contents/Resources/controllers/"
 cp "$ROOT"/macos/packaging/controllers/*.png "$APP/Contents/Resources/game/fxdata/"
@@ -101,8 +114,8 @@ for item in "SDL-3.4.16/LICENSE.txt" "SDL_image-3.4.6/LICENSE.txt" "SDL_mixer-3.
 done
 # One process signs nested code first and the enclosing app last. This avoids
 # repeatedly requesting access from separate codesign processes.
-codesign --force --options runtime --timestamp --sign "$IDENTITY" \
- "$APP/Contents/Resources/game/keeperfx" \
+codesign --force "${sign_flags[@]}" --sign "$IDENTITY" \
+ "$APP/Contents/Resources/game/keeper-enhanced" \
  "$APP/Contents/Resources/connection-check" \
  "$APP/Contents/Resources/controller-check" \
  "$APP/Contents/Resources/video-check" "$APP"
@@ -121,11 +134,11 @@ mkdir -p "$OUT/dmg-stage"
 ditto "$APP" "$OUT/dmg-stage/Keeper-Enhanced.app"
 ln -s /Applications "$OUT/dmg-stage/Applications"
 printf '%s\n' 'Drag Keeper-Enhanced into Applications and open it.' \
-  'On first launch choose Import Original Game, then select your original KEEPER folder or mounted CD.' \
+  'Local builds include your imported originals. Public builds require Import Original Game on first launch.' \
   'Game data, saves, logs and settings stay in ~/Library/Application Support/keeperfx/keeperfx/.' \
   'The app opens the game directly. Options → More Options opens the integrated settings. F9 opens the controller guide.' > "$OUT/dmg-stage/Read Me.txt"
 hdiutil create -volname "Keeper-Enhanced" -srcfolder "$OUT/dmg-stage" -format UDZO "$DMG"
-codesign --timestamp --sign "$IDENTITY" "$DMG"
+codesign "${sign_flags[@]}" --sign "$IDENTITY" "$DMG"
 if [[ -n "$PROFILE" ]]; then
  xcrun notarytool submit "$DMG" --keychain-profile "$PROFILE" --wait --output-format json > "$OUT/dmg-notarization.json"
  python3 - "$OUT/dmg-notarization.json" <<'PY'

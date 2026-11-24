@@ -33,7 +33,7 @@ def main():
         for flags in (['--import',str(args.game_dir.resolve())],['--prepare-only']):
             subprocess.run([str(launcher),*flags],env=env,check=True,stdout=subprocess.DEVNULL)
         with socket.socket() as sock:sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
-        cfg=runtime/'keeperfx.cfg';text=cfg.read_text()
+        cfg=runtime/'keeper-enhanced.cfg';text=cfg.read_text()
         for key,value in {'API_ENABLED':'TRUE','API_PORT':str(port),'FRONTEND_RES':'640x480w32 1280x800w32 1280x800w32','INGAME_RES':'1280x800w32','FREEZE_GAME_ON_FOCUS_LOST':'FALSE'}.items():
             text=re.sub(r'(?m)^'+key+r'=.*$',key+'='+value,text)
         cfg.write_text(text)

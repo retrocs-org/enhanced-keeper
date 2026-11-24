@@ -7,12 +7,12 @@
 # audio / system-integration libraries — those must come from the Deck so they
 # match its drivers and compositor. See docs/steam-deck.md.
 #
-# Usage:  cmake -S . -B out -DKFX_DECK_BUNDLE=ON && cmake --build out --target keeperfx
-#         cmake --install out --prefix keeperfx-deck
+# Usage:  cmake -S . -B out -DKFX_DECK_BUNDLE=ON && cmake --build out --target keeper-enhanced
+#         cmake --install out --prefix keeper-enhanced-deck
 # ---------------------------------------------------------------------------
 
 option(KFX_DECK_BUNDLE
-    "Bundle runtime shared libraries next to keeperfx for portable Linux/Steam Deck deployment" OFF)
+    "Bundle runtime shared libraries next to keeper-enhanced for portable Linux/Steam Deck deployment" OFF)
 
 if(KFX_DECK_BUNDLE)
     if(WIN32 OR MINGW OR CMAKE_CROSSCOMPILING)
@@ -24,7 +24,7 @@ if(KFX_DECK_BUNDLE)
     endif()
 
     # The installed binary finds its bundled libraries in ./lib next to itself.
-    set_target_properties(keeperfx PROPERTIES INSTALL_RPATH "$ORIGIN/lib")
+    set_target_properties(keeper-enhanced PROPERTIES INSTALL_RPATH "$ORIGIN/lib")
 
     # The heavy lifting (dependency resolution + copy + rpath) runs at install
     # time, when the built binary exists, via a configured script.
@@ -35,5 +35,5 @@ if(KFX_DECK_BUNDLE)
         @ONLY)
     install(SCRIPT "${_deck_install_script}")
 
-    message(STATUS "KFX_DECK_BUNDLE=ON: keeperfx will be installed as a self-contained Deck bundle")
+    message(STATUS "KFX_DECK_BUNDLE=ON: keeper-enhanced will be installed as a self-contained Deck bundle")
 endif()

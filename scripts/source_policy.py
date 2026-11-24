@@ -2,7 +2,7 @@
 from pathlib import PurePosixPath
 from release_support import ReleaseError
 
-CONTENT_ROOTS = {'data', 'sound', 'music', 'speech', 'ldata', 'fxdata', 'gfx', 'sfx',
+CONTENT_ROOTS = {'import', 'data', 'sound', 'music', 'speech', 'ldata', 'fxdata', 'gfx', 'sfx',
                  'campgns', 'levels', 'multiplayer', 'lang', 'config', 'res',
                  'save', 'screenshots', 'recordings', 'deps', 'external', 'third_party'}
 CONTENT_SUFFIXES = {'.dat', '.fon', '.sbk', '.smk', '.raw', '.pal', '.wav', '.ogg',

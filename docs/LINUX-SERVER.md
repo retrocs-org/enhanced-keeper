@@ -34,14 +34,14 @@ other applications may use them.
 Build natively for the target distribution/architecture:
 
 ```sh
-scripts/build-linux-server.sh
+make package-server-linux JOBS=4
 ```
 
 The tarball in `out/` contains the engine, its bundled non-system libraries,
 supervisor and service files. System libraries, including glibc, remain provided
 by the target OS. No original game graphics, sounds or data ship in this package.
 Extract it to `/opt/keeper-enhanced-server`. Import your own **prepared matching
-Keeper Enhanced game directory** (containing keeperfx.cfg and campaign/data
+Keeper Enhanced game directory** (containing keeper-enhanced.cfg and campaign/data
 folders), rather than an unprepared original CD:
 
 ```sh
@@ -106,9 +106,15 @@ UDP reachability or test a multiplayer match.
 
 Run `scripts/refresh-keeper-enhanced.sh` as root on the Linux host. It defaults to
 `/root/keeper-enhanced` on branch `main`; override with `KFX_SERVER_SOURCE` if your
-checkout has another location. Build dependencies must already be installed, including `make`. The scripts use
-CMake’s Unix Makefiles generator and separate `*-minimal*` build directories so old
-Ninja caches can remain untouched.
+checkout has another location. A missing checkout is cloned automatically. Each run
+fetches GitHub `main` directly and fast-forwards the clean local `main` branch;
+local changes or unpublished commits stop the refresh without resetting them.
+Source is fetched even when first-time service installation is still required. Build dependencies must already be installed, including `make`. The scripts use
+CMake’s Unix Makefiles generator without Ninja. Refresh uses `out/server-linux`,
+the same directory as `make server-linux`, with `KFX_DEDICATED=ON`. It additionally
+enables `KFX_DECK_BUNDLE=ON` to stage the runtime libraries for installation.
+Earlier build directories remain untouched. Set `KFX_JOBS=4` to control parallelism.
+The staged binary must pass `--version` before the running service is stopped.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/retrocs-org/KeeperFX-E/main/scripts/refresh-keeper-enhanced.sh \
@@ -131,3 +137,22 @@ run during refresh. The standard `/opt/keeper-enhanced-server` and
 than overwritten. An active match is interrupted during the final restart.
 Linux/Leap runtime validation is still pending; swap/rollback behavior is covered
 by isolated tests with simulated builds and systemd.
+
+## Minimal server-data import
+
+`import-data.py` now defaults to a minimal import. It retains `keeper-enhanced.cfg` and
+`data`, `fxdata`, `ldata`, `creatrs`, `campgns`, `levels`, `multiplayer`, `mods`.
+Standalone music, sound banks, movies, executables, saves and session credentials
+are excluded. Legacy binary graphics/bootstrap files remain necessary. Complete
+mod media and map companions are retained for matching multiplayer content hashes.
+Use `--full` for campaigns referencing nonstandard directories. `--dry-run` reports
+selected bytes without writing anything. Existing GameData is never overwritten.
+
+```sh
+python3 linux/import-data.py /path/to/prepared/GameData /path/to/server-profile --dry-run
+python3 linux/import-data.py /path/to/prepared/GameData /path/to/server-profile
+```
+
+This is a conservative media reduction, not a data-free server. Minimal imports
+have fixture coverage; a full dedicated multiplayer match with reduced data is
+still pending validation.

@@ -35,7 +35,7 @@ docker run --rm \
         mkdir -p /work/deps && cp -r /src/deps/centitoml /work/deps/centitoml
         find /src/deps -maxdepth 1 -type f -name "*.h" -exec cp {} /work/deps/ \;
         cmake -S /work -B /work/out -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DKFX_DECK_BUNDLE=ON
-        cmake --build /work/out --target keeperfx -j"$(nproc)"
+        cmake --build /work/out --target keeper-enhanced -j"$(nproc)"
         rm -rf /out/keeperfx-deck
         cmake --install /work/out --prefix /out/keeperfx-deck
     '

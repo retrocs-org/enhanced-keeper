@@ -1,7 +1,7 @@
 {
   "name": "Keeper Enhanced Server",
   "visibility": "private",
-  "engine_binary": "/opt/keeper-enhanced-server/engine/keeperfx",
+  "engine_binary": "/opt/keeper-enhanced-server/engine/keeper-enhanced",
   "user_data": "/var/lib/keeper-enhanced",
   "hub_url": "https://keeperfx-e.retrocs.org",
   "endpoint": "REPLACE_WITH_PUBLIC_HOSTNAME:5556",

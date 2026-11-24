@@ -16,7 +16,7 @@ int main(int argc, char **argv)
     char *separator = strrchr(resolved, '/');
     if (!separator) return 1;
     *separator = '\0';
-    if (snprintf(game, sizeof(game), "%s/../Resources/game/keeperfx", resolved) >= sizeof(game))
+    if (snprintf(game, sizeof(game), "%s/../Resources/game/keeper-enhanced", resolved) >= sizeof(game))
         return 1;
     char **arguments = calloc((size_t)argc + 1, sizeof(*arguments));
     if (!arguments) return 1;

@@ -8,7 +8,7 @@ launcher, hosted CI or runner requirement.
 The app marks a display startup before launching the engine. After three seconds
 of healthy rendering, or a clean exit, the marker is removed. An interrupted
 startup restores all frontend/game modes to 800×600 windowed on the next launch;
-the old configuration and Mac display preferences are copied beside keeperfx.cfg.
+the old configuration and Mac display preferences are copied beside keeper-enhanced.cfg.
 An unconfirmed display change also leaves the marker armed. Monitor removal
 requests the safe windowed mode without reverting to the removed monitor.
 

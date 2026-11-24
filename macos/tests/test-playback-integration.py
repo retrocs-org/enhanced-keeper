@@ -9,7 +9,7 @@ with tempfile.TemporaryDirectory(prefix='keeperfx-playback-') as temporary:
  env=dict(os.environ,KFX_USER_DATA_DIR=str(profile),KFX_AUTOSAVE_SECONDS='0',KFX_HEADLESS='1',KFX_LOCAL_NETWORK_ONLY='1',SDL_VIDEODRIVER='dummy',SDL_RENDER_DRIVER='software',SDL_AUDIODRIVER='dummy',ALSOFT_DRIVERS='null',KFX_APP_RESOURCES=str(app/'Contents/Resources'))
  for args in [['--import',str(ROOT/'.local/keeperfx')],['--prepare-only']]:subprocess.run([str(launcher),*args],env=env,check=True,stdout=subprocess.DEVNULL)
  with socket.socket() as sock:sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
- cfg=runtime/'keeperfx.cfg';text=cfg.read_text()
+ cfg=runtime/'keeper-enhanced.cfg';text=cfg.read_text()
  for key,value in {'API_ENABLED':'TRUE','API_PORT':str(port),'FREEZE_GAME_ON_FOCUS_LOST':'FALSE'}.items():text=re.sub(r'(?m)^'+key+r'=.*$',key+'='+value,text)
  cfg.write_text(text)
  process=None;connection=None;buffer=b'';serial=0;logs=[]

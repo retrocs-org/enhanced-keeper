@@ -155,7 +155,7 @@ TbScreenMode chosen_mode(int mode,int resolution){
     if(mode==1)return LbRegisterVideoModeString("DESKTOP");
     char name[32];snprintf(name,sizeof(name),"%dx%dw32",resolutions[resolution][0],resolutions[resolution][1]);return LbRegisterVideoModeString(name);
 }
-void set_modes(TbScreenMode mode){set_frontend_vidmode(mode);for(int i=0;i<MAX_GAME_VIDMODE_COUNT;i++)set_game_vidmode(i,mode);}
+void set_modes(TbScreenMode mode){set_movies_vidmode(mode);set_frontend_vidmode(mode);for(int i=0;i<MAX_GAME_VIDMODE_COUNT;i++)set_game_vidmode(i,mode);}
 void infer_display(){
     if(display_mode>=0)return;
     const TbScreenModeInfo *info=LbScreenGetModeInfo(LbScreenActiveMode());
@@ -602,6 +602,8 @@ int kfx_options_select_replay(const char *file){if(!file||!*file||strlen(file)>=
 int kfx_options_community_action(int action){if(action<2000||action>2084)return 0;if(!kfx_controller_guide_visible)open_panel(20);return browser_action(action);}
 const char *kfx_options_community_status(void){static std::string output;output="{\"page\":"+std::to_string(page)+",\"servers\":"+std::to_string(browser_servers.size())+",\"status\":"+hub_quote(hub_message)+",\"account\":"+hub_quote(kfx_hub_account_name())+",\"busy\":"+(kfx_hub_busy()?"true":"false")+"}";return output.c_str();}
 void kfx_options_initialize(void){
+    // Movies follow the configured menu mode, then any saved in-game override.
+    set_movies_vidmode(get_frontend_vidmode());
     feature_init();load_network_profile();browser_initialize();
     for(int i=0;i<4;i++)if(start_params.num_fps_draw_main==caps[i])preset=i;
     actions.clear();for(int i=0;i<GAME_KEYS_COUNT;i++)if(game_key_settings[i].binding_menu_visibility!=BMV_Hidden && game_key_settings[i].binding_menu_visibility!=BMV_KeyMouseOnly)actions.push_back(i);

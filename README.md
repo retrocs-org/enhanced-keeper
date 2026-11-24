@@ -5,7 +5,7 @@
 > **This repository is the native macOS fork of KeeperFX.**
 > It carries the Apple Silicon + Intel macOS port, Universal build work,
 > self-contained macOS dependencies, and Mac-specific runtime/FMV fixes.
-> The upstream KeeperFX project is maintained at [dkfans/keeperfx](https://github.com/dkfans/keeperfx).
+> The upstream KeeperFX project is maintained at [dkfans/keeperfx](https://github.com/dkfans/keeper-enhanced).
 > See [MACOS-CHANGES.md](MACOS-CHANGES.md) for the Mac port changelog, validation status and known limitations.
 
 ![macOS](https://img.shields.io/badge/macOS-13%2B-black?style=flat-square&logo=apple)
@@ -14,6 +14,46 @@
 [![Discord](https://img.shields.io/discord/480505152806191114?style=flat-square)](https://discord.gg/hE4p7vy2Hb)
 
 [Upstream KeeperFX website](https://keeperfx.net) | [Keeper Klan Discord](https://discord.gg/hE4p7vy2Hb)
+
+## Building
+
+Compiled executables are named `keeper-enhanced` (`keeper-enhanced.exe` on Windows);
+the heavy-log variant is `keeper-enhanced-hvlog`. Existing configuration filenames
+and user-data directories remain compatible. Server refresh keeps a `keeperfx`
+compatibility link for older server configurations.
+
+CMake controls platform dependencies and compiler settings. Optional Make shortcuts:
+
+```sh
+make server-linux JOBS=4   # simulation-only server; no desktop multimedia libraries
+make client-linux JOBS=4
+make client-macos JOBS=4   # local universal app with imported BIN/CUE data, on macOS
+make client-windows JOBS=4 # i686 MinGW-w64 toolchain required
+make all JOBS=4            # native targets; Linux builds both server and client
+```
+
+`make` lists the targets. Each platform uses a separate build directory. Linux
+and Windows shortcuts use GNU Make through CMake, without Ninja. The universal
+macOS dependency pipeline currently requires Ninja and Xcode command-line tools.
+`BUILD_TYPE=Debug` is supported by the Linux/Windows shortcuts; the universal
+macOS pipeline always builds Release. Windows cross-compilation requires the
+MinGW-w64 toolchain; macOS builds must run on macOS.
+
+For a Linux server alone, use CMake directly:
+
+```sh
+cmake -S . -B out/server-linux -G "Unix Makefiles" \
+  -DCMAKE_BUILD_TYPE=Release -DKFX_DEDICATED=ON -DKFX_INSTALL_GAME_DATA=OFF
+cmake --build out/server-linux --target keeper-enhanced --parallel 4
+out/server-linux/keeper-enhanced --version
+```
+
+`make package-server-linux` builds the portable server archive for first-time
+installation. Building does not install or restart a service. See
+[Linux server setup](docs/LINUX-SERVER.md) for dependencies, game-data import,
+configuration and systemd installation. The original Windows Make recipes are
+preserved in `Makefile.legacy` (`make -f Makefile.legacy standard`, for example).
+No target includes original game assets.
 
 ## Community website
 
@@ -171,13 +211,13 @@ KFX_NOTARY_PROFILE="your-saved-profile" macos/package-app.sh
 ```
 
 `KFX_GAME_DIR` selects a complete KeeperFX runtime-data directory (defaults to
-`.local/keeperfx`). `KFX_PACKAGE_DIR` selects a new output directory. Packaging
+`.local/keeper-enhanced`). `KFX_PACKAGE_DIR` selects a new output directory. Packaging
 signs the engine, connection tester and launcher, notarizes/staples both app and
 DMG, and verifies their signatures and disk-image checksum. Without
 `KFX_NOTARY_PROFILE`, it produces a signed package without notarization.
 
 The standalone build directory contains only the engine. For developer use,
-`macos/play.command` starts the prepared `.local/keeperfx` runtime.
+`macos/play.command` starts the prepared `.local/keeper-enhanced` runtime.
 
 See [MACOS-CHANGES.md](MACOS-CHANGES.md) for validation details and the current
 Mac-specific change history.
@@ -193,7 +233,7 @@ be added to the KeeperFX development channel.
 ## Components
 | Component | Language | Info |
 |---|---|---|
-| [KeeperFX](https://github.com/dkfans/keeperfx) | C, C++ | - |
+| [KeeperFX](https://github.com/dkfans/keeper-enhanced) | C, C++ | - |
 | [Launcher](https://github.com/dkfans/keeperfx-launcherwx) | C++ | Official Launcher to edit settings and start the game with run options. |
 | [FXGraphics](https://github.com/dkfans/FXGraphics) | - | Sources of KeeperFX graphics files. |
 | [FXSounds](https://github.com/dkfans/FXsounds) | - | Sources of KeeperFX audio files. |
@@ -210,7 +250,6 @@ be added to the KeeperFX development channel.
 | png2ico | Converts `.png` files to `.ico`. |
 | pngpal2raw | Creates a `.raw` image file that can be used by the game from a `.png` and a `.pal` (palette) file. The palette file can be created with _png2bestpal_. |
 | rnctools | Handles the RNC compression of many original DK data files. |
-| dkillconv | An unfinished tool to convert a map to a text based format. |
 
 
 ## Further Improvements
@@ -282,3 +321,37 @@ The project is now named **keeper-enhanced** (Keeper Enhanced), formerly KeeperF
 Existing repository/service URLs, database names and save paths remain compatible.
 See [Linux dedicated-server setup](docs/LINUX-SERVER.md) for private or public hosting
 with optional passwords. Relay connections are no longer supported.
+
+## Local macOS app with your game data
+
+Place your own CUE and matching BIN tracks (or ISO images) in `import/`.
+Both single-BIN mixed-mode and separate-track MODE1/2352 CUE layouts are supported.
+When multiple discs are present, choose one explicitly (no edition is guessed):
+
+```sh
+KFX_IMPORT_IMAGE="Dungeon Keeper.cue" make client-macos JOBS=4
+# Or choose the Gold Edition CUE filename instead.
+```
+
+`make client-macos JOBS=4` imports the required original data and movies, builds
+the universal client, and creates an ad-hoc signed app/DMG/ZIP under
+`outputs/local-client-<timestamp>/`. The app includes the imported originals and
+starts without an import prompt. CD audio tracks are imported losslessly as 44.1 kHz stereo WAV files.
+Both multi-BIN and single-BIN CUE layouts preserve track order and omit pregaps.
+Plain ISO files contain no CD audio; use CUE/BIN to include the soundtrack.
+
+The base Enhanced runtime must already exist at `.local/keeperfx`; override with
+`KFX_GAME_DIR=/path/to/prepared/runtime`. A CD supplies the original files, not
+the additional Enhanced assets. The runtime has been prepared locally in this
+checkout from the previous packaged app and your disc. On a fresh clone supply
+that base separately. `macos/build-universal.sh` remains a compile-only entry.
+
+`import/`, `.local/` and `outputs/` are Git-ignored. Source export/push policy also
+rejects the entire import directory. Imported packages are for local use; public
+release packaging continues to strip original data and reject data-bearing apps.
+No Developer ID or notarization is used by the local build.
+
+The main configuration is `keeper-enhanced.cfg`. The engine still reads legacy
+`keeperfx.cfg` when the new file is absent. Importers write the new name; the
+macOS launcher copies existing legacy user settings to the new file without
+overwriting an existing new configuration.

@@ -57,7 +57,7 @@ const char* PlatformWindows::GetUserPrefDir()
     }
     else
     {
-        // Fall back to the game's own runtime directory (where keeperfx.cfg
+        // Fall back to the game's own runtime directory (where keeper-enhanced.cfg
         // already lives) rather than an SDL-less user-pref concept this
         // branch doesn't otherwise have.
         snprintf(pref_path, sizeof(pref_path), "%s", keeper_runtime_directory);

@@ -10,7 +10,7 @@ class Modes(unittest.TestCase):
   for visibility in ('private','public'):
    for password in ('','test-secret'):
     with self.subTest(visibility=visibility,password=bool(password)),tempfile.TemporaryDirectory() as folder:
-     profile=Path(folder);(profile/'GameData').mkdir();(profile/'GameData/keeperfx.cfg').write_text('OTHER=TRUE\n')
+     profile=Path(folder);(profile/'GameData').mkdir();(profile/'GameData/keeper-enhanced.cfg').write_text('OTHER=TRUE\n')
      config={'visibility':visibility,'engine_binary':'/usr/bin/true','user_data':folder,'name':'Test','rotation':[{'campaign':'classic','level':52}]}
      if visibility=='public':config.update(hub_url='https://example.invalid',endpoint='example.invalid:5556')
      process=MagicMock();process.poll.side_effect=[None,0,0];process.returncode=0
@@ -23,9 +23,9 @@ class Modes(unittest.TestCase):
        request.assert_not_called();self.assertEqual(env['KFX_PRIVATE_SERVER'],'1');self.assertNotIn('KFX_HUB_SERVER_ID',env)
       else:
        self.assertEqual(request.call_args_list[0].args[2]['password'],bool(password));self.assertEqual(request.call_count,2)
-      self.assertIn('API_ENABLED=TRUE',(profile/'GameData/keeperfx.cfg').read_text())
+      self.assertIn('API_ENABLED=TRUE',(profile/'GameData/keeper-enhanced.cfg').read_text())
  def test_password_limit(self):
   with tempfile.TemporaryDirectory() as folder,patch.dict(os.environ,{'KFX_SERVER_PASSWORD':'x'*32}):
-   profile=Path(folder);(profile/'GameData').mkdir();(profile/'GameData/keeperfx.cfg').touch()
+   profile=Path(folder);(profile/'GameData').mkdir();(profile/'GameData/keeper-enhanced.cfg').touch()
    with self.assertRaises(AssertionError):mod.validate({'visibility':'private','engine_binary':'/usr/bin/true','user_data':folder,'name':'Test','rotation':[{'campaign':'classic','level':52}]})
 if __name__=='__main__':unittest.main()

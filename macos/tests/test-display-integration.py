@@ -6,7 +6,7 @@ root=Path(__file__).resolve().parents[2];engine=root/'build-mac-universal/keeper
 app=Path(os.environ.get('KFX_TEST_APP','/Applications/Keeper-Enhanced.app' if Path('/Applications/Keeper-Enhanced.app').exists() else '/Applications/KeeperFX.app'))
 launcher=app/'Contents/MacOS'/plistlib.loads((app/'Contents/Info.plist').read_bytes())['CFBundleExecutable']
 subprocess.run([str(launcher),'--import',str(root/'.local/keeperfx')],env=env,check=True);subprocess.run([str(launcher),'--prepare-only'],env=env,check=True)
-runtime=prefs/'GameData';cfg=runtime/'keeperfx.cfg';text=cfg.read_text();sock=socket.socket();sock.bind(('127.0.0.1',0));port=sock.getsockname()[1];sock.close()
+runtime=prefs/'GameData';cfg=runtime/'keeper-enhanced.cfg';text=cfg.read_text();sock=socket.socket();sock.bind(('127.0.0.1',0));port=sock.getsockname()[1];sock.close()
 for key,value in {'API_ENABLED':'TRUE','API_PORT':str(port),'FRONTEND_RES':'640x480w32 1280x800w32 1280x800w32','INGAME_RES':'1280x800w32'}.items():text=re.sub(r'(?m)^'+key+r'=.*$',key+'='+value,text)
 cfg.write_text(text)
 def run(frontend):

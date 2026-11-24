@@ -26,7 +26,7 @@ def rpc(port):
 
 def validate(config):
     for field in ('engine_binary','user_data','name','rotation'):assert field in config,'Missing '+field
-    engine=Path(config['engine_binary']).resolve();profile=Path(config['user_data']).resolve();assert engine.is_file() and os.access(engine,os.X_OK),'Engine is not executable';assert (profile/'GameData/keeperfx.cfg').is_file(),'Prepare a separate dedicated profile first';assert '.app/' not in str(profile),'User data must be outside the application';assert 1<=config.get('humans',1)<=3,'Dedicated mode supports 1–3 humans plus its AI';assert config['rotation'] and len(config['rotation'])<=32,'Choose 1–32 maps'
+    engine=Path(config['engine_binary']).resolve();profile=Path(config['user_data']).resolve();assert engine.is_file() and os.access(engine,os.X_OK),'Engine is not executable';assert any((profile/'GameData'/n).is_file() for n in ('keeper-enhanced.cfg','keeperfx.cfg')),'Prepare a separate dedicated profile first';assert '.app/' not in str(profile),'User data must be outside the application';assert 1<=config.get('humans',1)<=3,'Dedicated mode supports 1–3 humans plus its AI';assert config['rotation'] and len(config['rotation'])<=32,'Choose 1–32 maps'
     for item in config['rotation']:assert re.fullmatch('[A-Za-z0-9_-]{1,63}',item['campaign']) and type(item['level'])==int and 0<item['level']<=99999,'Invalid map'
     assert config.get('visibility','public') in ('private','public'),'Visibility must be private or public'
     assert type(config.get('port',5556)) is int and 1<=config.get('port',5556)<=65535,'Invalid gameplay port'
@@ -64,7 +64,7 @@ class Host:
         while not self.stop:
             item=cfg['rotation'][self.index%len(cfg['rotation'])];self.index+=1;self.next=False
             with socket.socket() as sock:sock.bind(('127.0.0.1',0));api_port=sock.getsockname()[1]
-            runtime=self.profile/'GameData';gamecfg=runtime/'keeperfx.cfg';text=gamecfg.read_text();text=re.sub(r'(?mi)^\s*(?:API_ENABLED|API_PORT|RENDERER)\s*=.*\n?','',text);gamecfg.write_text(text+f'\nAPI_ENABLED=TRUE\nAPI_PORT={api_port}\nRENDERER=SOFTWARE\n')
+            runtime=self.profile/'GameData';gamecfg=runtime/'keeper-enhanced.cfg';legacy=runtime/'keeperfx.cfg';text=(gamecfg if gamecfg.exists() else legacy).read_text();text=re.sub(r'(?mi)^\s*(?:API_ENABLED|API_PORT|RENDERER)\s*=.*\n?','',text);gamecfg.write_text(text+f'\nAPI_ENABLED=TRUE\nAPI_PORT={api_port}\nRENDERER=SOFTWARE\n')
             room={'id':secrets.token_hex(12),'secret':''}
             if public:room=request(base,'/api/servers/register',{'name':cfg['name'],'endpoint':cfg['endpoint'],'engine':cfg.get('engine_version','1.4.0.0'),'kind':'dedicated','admin_key':key,'map':item['campaign']+':'+str(item['level']),'rotation':[v['campaign']+':'+str(v['level']) for v in cfg['rotation']],'password':bool(os.environ.get('KFX_SERVER_PASSWORD'))})
             env=dict(os.environ,KFX_USER_DATA_DIR=str(self.profile),KFX_HEADLESS='1',KFX_LOCAL_NETWORK_ONLY='1',SDL_VIDEODRIVER='dummy',SDL_RENDER_DRIVER='software',SDL_AUDIODRIVER='dummy',ALSOFT_DRIVERS='null',KFX_HUB_URL=base,KFX_HUB_SERVER_ID=room['id'],KFX_HUB_SERVER_SECRET=room['secret'])

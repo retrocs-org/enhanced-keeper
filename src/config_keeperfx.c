@@ -3,7 +3,7 @@
 /******************************************************************************/
 /** @file config_keeperfx.c
  * @par Purpose:
- *     load the main keeperfx.cfg config file.
+ *     load the main keeper-enhanced.cfg config file.
  * @par Comment:
  *     None.
  * @par  Copying and copyrights:
@@ -52,7 +52,8 @@ extern "C" {
 /******************************************************************************/
 
 
-static const char keeper_config_file[]="keeperfx.cfg";
+static const char keeper_config_file[]="keeper-enhanced.cfg";
+static const char legacy_keeper_config_file[]="keeperfx.cfg";
 
 char cmd_char = '!';
 unsigned short AtmosRepeat = 1013;
@@ -1110,7 +1111,9 @@ static void load_configuration_for_mod(const struct ModConfigItem *mod_item)
     sprintf(config_textname, "Mod config '%s'", mod_item->name);
 
     char *fname = get_mod_file_path_fmt(mod_dir, FGrp_Main, "%s", keeper_config_file);
-    load_file_configuration(fname, keeper_config_file, config_textname, CnfLd_IgnoreErrors);
+    const char *name = keeper_config_file;
+    if (!LbFileExists(fname)) { name=legacy_keeper_config_file; fname=get_mod_file_path_fmt(mod_dir,FGrp_Main,"%s",name); }
+    load_file_configuration(fname, name, config_textname, CnfLd_IgnoreErrors);
 }
 
 static void load_configuration_for_mod_list(const struct ModConfigItem *mod_items, long mod_cnt)
@@ -1190,6 +1193,7 @@ short load_configuration(void)
   {
     sname = keeper_config_file;
     fname = prepare_file_path(FGrp_Main, sname);
+    if (!LbFileExists(fname)) { sname=legacy_keeper_config_file; fname=prepare_file_path(FGrp_Main,sname); }
   }
 
   const char *config_textname = "Base config";
@@ -1210,7 +1214,7 @@ void process_cmdline_overrides(void)
   if (flag_is_set(start_params.operation_flags, GOF_SingleLevel)) {
     clear_flag(start_params.startup_flags, SFlg_Legal | SFlg_FX | SFlg_Intro);
   }
-  // Renderer command-line/profile selection must win over keeperfx.cfg.
+  // Renderer command-line/profile selection must win over keeper-enhanced.cfg.
   if (start_params.overrides[Clo_Renderer]) {
     requested_renderer_type = start_params.renderer_type;
   }

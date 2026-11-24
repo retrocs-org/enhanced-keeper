@@ -2637,7 +2637,6 @@ FrontendMenuState frontend_setup_state(FrontendMenuState nstate)
           set_pointer_graphic_none();
           break;
       case FeSt_MAIN_MENU:
-          stop_music(true);
           continue_game_option_available = continue_game_available();
           if (!continue_game_option_available)
           {
@@ -2647,6 +2646,8 @@ FrontendMenuState frontend_setup_state(FrontendMenuState nstate)
           if (!is_campaign_loaded()) {
               change_campaign(CampgnT_Default,"");
           }
+          // Resume the imported menu soundtrack after intros or gameplay.
+          play_music_track(2);
           turn_on_menu(GMnu_FEMAIN);
           last_mouse_x = GetMouseX();
           last_mouse_y = GetMouseY();

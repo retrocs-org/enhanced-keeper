@@ -42,12 +42,12 @@ if(NOT WIN32 AND NOT KFX_DEDICATED)
     list(APPEND KEEPERFX_SOURCES_C "${KFX_ICON_C}")
 endif()
 
-add_executable(keeperfx       ${KEEPERFX_SOURCES_C} ${KEEPERFX_SOURCES_CXX})
-add_executable(keeperfx_hvlog ${KEEPERFX_SOURCES_C} ${KEEPERFX_SOURCES_CXX})
-target_compile_definitions(keeperfx       PUBLIC BFDEBUG_LEVEL=0)
-target_compile_definitions(keeperfx_hvlog PUBLIC BFDEBUG_LEVEL=10)
+add_executable(keeper-enhanced       ${KEEPERFX_SOURCES_C} ${KEEPERFX_SOURCES_CXX})
+add_executable(keeper-enhanced-hvlog ${KEEPERFX_SOURCES_C} ${KEEPERFX_SOURCES_CXX})
+target_compile_definitions(keeper-enhanced       PUBLIC BFDEBUG_LEVEL=0)
+target_compile_definitions(keeper-enhanced-hvlog PUBLIC BFDEBUG_LEVEL=10)
 
-set(KFX_TARGETS keeperfx keeperfx_hvlog)
+set(KFX_TARGETS keeper-enhanced keeper-enhanced-hvlog)
 
 if(WIN32)
     foreach(_t IN LISTS KFX_TARGETS)
@@ -67,7 +67,7 @@ if(WIN32)
     endif()
 
     if(NOT MSVC)
-        # keeperfx.exe itself is statically linked against libgcc/libstdc++
+        # keeper-enhanced.exe itself is statically linked against libgcc/libstdc++
         # (see apply_keeperfx_link_flags), but vcpkg builds its own packages
         # (openal-soft, fmt) with that toolchain's own default flags, which
         # link them dynamically against libgcc_s_dw2-1.dll/libstdc++-6.dll/
@@ -98,4 +98,4 @@ foreach(_t IN LISTS KFX_TARGETS)
     apply_windows_system_libs(${_t})
 endforeach()
 
-kfx_status("BUILD" "${CMAKE_CXX_COMPILER_ID} -> keeperfx, keeperfx_hvlog")
+kfx_status("BUILD" "${CMAKE_CXX_COMPILER_ID} -> keeper-enhanced, keeper-enhanced-hvlog")

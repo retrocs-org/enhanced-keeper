@@ -3,24 +3,47 @@
 set -Eeuo pipefail
 umask 077
 SOURCE=${KFX_SERVER_SOURCE:-/root/keeper-enhanced}
-# Separate directory avoids conflicts with earlier Ninja-generated caches.
-BUILD="$SOURCE/build-server-minimal"
+REPOSITORY=https://github.com/retrocs-org/KeeperFX-E.git
+# Same CMake build directory as make server-linux; old caches remain untouched.
+BUILD="$SOURCE/out/server-linux"
 DEST=/opt/keeper-enhanced-server
 CONFIG=/etc/keeper-enhanced/server.json
 STATE=/var/lib/keeper-enhanced
 SERVICE=keeper-enhanced-server.service
 [[ $(id -u) == 0 && $(uname -s) == Linux ]] || { echo 'Run as root on Linux.' >&2; exit 1; }
-for tool in git cmake make pkg-config systemctl install flock nproc mktemp python3 runuser ldd; do
+for tool in git cmake make pkg-config systemctl install flock nproc mktemp python3 runuser ldd patchelf; do
     command -v "$tool" >/dev/null || { echo "Missing command: $tool" >&2; exit 1; }
 done
+JOBS=${KFX_JOBS:-$(nproc)}
+case "$JOBS" in ''|*[!0-9]*|0) echo 'KFX_JOBS must be a positive integer.' >&2; exit 1;; esac
 python3 -c 'import sys; assert sys.version_info >= (3,9), "Python 3.9+ required"'
 pkg-config --exists libcurl luajit minizip zlib openssl || {
     echo 'Missing server libraries. Install providers of pkgconfig(libcurl), pkgconfig(luajit), pkgconfig(minizip), pkgconfig(zlib), pkgconfig(openssl).' >&2; exit 1;
 }
 exec 9>/run/lock/keeper-enhanced-server-refresh.lock
 flock -n 9 || { echo 'Another server refresh is running.' >&2; exit 1; }
-[[ -d "$DEST" && ! -L "$DEST" && -x "$DEST/engine/keeperfx" && -f "$CONFIG" && -d "$STATE" && ! -L "$STATE" && ! -L "$STATE/dedicated" ]] || {
-    echo 'An existing dedicated-server installation and imported game data are required.' >&2; exit 1;
+# Always obtain source from the public project, independent of local origin settings.
+[[ ! -L "$SOURCE" ]] || { echo 'Source checkout must not be a symlink.' >&2; exit 1; }
+if [[ ! -e "$SOURCE" ]]; then
+    git clone --single-branch --branch main "$REPOSITORY" "$SOURCE"
+fi
+[[ -d "$SOURCE/.git" || -f "$SOURCE/.git" ]] || { echo "$SOURCE is not a Git checkout; nothing overwritten." >&2; exit 1; }
+[[ $(git -C "$SOURCE" branch --show-current) == main ]] || { echo "$SOURCE must be on main." >&2; exit 1; }
+git -C "$SOURCE" diff --quiet && git -C "$SOURCE" diff --cached --quiet || { echo 'Commit or stash tracked source changes first.' >&2; exit 1; }
+echo 'Fetching latest GitHub main; the current server stays running.'
+git -C "$SOURCE" fetch --no-tags "$REPOSITORY" refs/heads/main
+LATEST=$(git -C "$SOURCE" rev-parse FETCH_HEAD)
+git -C "$SOURCE" merge --ff-only "$LATEST"
+[[ $(git -C "$SOURCE" rev-parse HEAD) == "$LATEST" ]] || {
+    echo 'Local main has unpublished commits; refusing to deploy code that differs from GitHub.' >&2; exit 1;
+}
+echo "Building GitHub revision: $LATEST"
+[[ -d "$DEST" && ! -L "$DEST" && ( -x "$DEST/engine/keeper-enhanced" || -x "$DEST/engine/keeperfx" ) && -f "$CONFIG" && -d "$STATE" && ! -L "$STATE" && ! -L "$STATE/dedicated" ]] || {
+    echo 'Refresh requires an installed dedicated server; it does not perform first-time setup.' >&2
+    echo 'For a first build, run make package-server-linux in the source checkout, then follow docs/LINUX-SERVER.md.' >&2
+    echo "Expected engine: $DEST/engine/keeper-enhanced (legacy keeperfx also accepted)" >&2
+    echo "Expected configuration: $CONFIG; state directory: $STATE" >&2
+    exit 1;
 }
 UNIT=$(systemctl show "$SERVICE" -p FragmentPath --value)
 case "$UNIT" in
@@ -29,14 +52,12 @@ case "$UNIT" in
 esac
 [[ -f "$UNIT" && ! -L "$UNIT" && ! -L "$CONFIG" ]] || { echo 'Unit and config must be regular files.' >&2; exit 1; }
 [[ $(systemctl show "$SERVICE" -p User --value) == keeper-enhanced ]] || { echo 'Expected service user keeper-enhanced.' >&2; exit 1; }
-[[ $(git -C "$SOURCE" branch --show-current) == main ]] || { echo "$SOURCE must be on main." >&2; exit 1; }
-git -C "$SOURCE" diff --quiet && git -C "$SOURCE" diff --cached --quiet || { echo 'Commit or stash tracked source changes first.' >&2; exit 1; }
 # This refresh targets the standard install paths. Never silently replace custom deployments.
 python3 - "$CONFIG" "$DEST" "$STATE" <<'PY'
 import json,sys
 from pathlib import Path
 c=json.load(open(sys.argv[1]))
-if Path(c['engine_binary']) != Path(sys.argv[2])/'engine/keeperfx' or Path(c['user_data']) != Path(sys.argv[3]):
+if Path(c['engine_binary']) not in (Path(sys.argv[2])/'engine/keeper-enhanced', Path(sys.argv[2])/'engine/keeperfx') or Path(c['user_data']) != Path(sys.argv[3]):
     raise SystemExit('Custom engine/profile paths: adapt this refresh script before use.')
 PY
 WAS_ACTIVE=0
@@ -72,19 +93,21 @@ trap finish EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-echo 'Updating and building; the current server stays running.'
-git -C "$SOURCE" pull --ff-only origin main
+echo 'Updating source and building the dedicated Linux server; the current server stays running.'
 cmake -S "$SOURCE" -B "$BUILD" -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release \
     -DKFX_DEDICATED=ON -DKFX_DECK_BUNDLE=ON -DKFX_INSTALL_GAME_DATA=OFF
-cmake --build "$BUILD" --target keeperfx --parallel "${KFX_JOBS:-$(nproc)}"
+cmake --build "$BUILD" --config Release --target keeper-enhanced --parallel "$JOBS"
 cmake --install "$BUILD" --prefix "$STAGED/new/engine"
+"$STAGED/new/engine/keeper-enhanced" --version
+# Compatibility for existing server.json files pointing at the old executable.
+ln -s keeper-enhanced "$STAGED/new/engine/keeperfx"
 cp "$SOURCE/services/keeperhub/dedicated.py" "$STAGED/new/dedicated.py"
 cp "$SOURCE/linux/import-data.py" "$SOURCE/linux/server.json" "$SOURCE/linux/keeper-enhanced-server.service" "$STAGED/new/"
 cp "$SOURCE/docs/LINUX-SERVER.md" "$STAGED/new/README.md"
 cp "$SOURCE/LICENSE" "$STAGED/new/"
 # Public binaries/scripts only; credentials and user data are never staged here.
 chmod -R a+rX "$STAGED"
-ldd "$STAGED/new/engine/keeperfx" > "$STAGED/libraries.log"
+ldd "$STAGED/new/engine/keeper-enhanced" > "$STAGED/libraries.log"
 if grep -q 'not found' "$STAGED/libraries.log"; then
     cat "$STAGED/libraries.log" >&2
     echo 'Runtime libraries missing; current server left unchanged.' >&2; exit 1
@@ -99,7 +122,7 @@ import importlib.util,json,sys
 from pathlib import Path
 stage=Path(sys.argv[1]);spec=importlib.util.spec_from_file_location('dedicated',stage/'dedicated.py')
 m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
-c=json.load(open(sys.argv[2]));c['engine_binary']=str(stage/'engine/keeperfx');m.validate(c)
+c=json.load(open(sys.argv[2]));c['engine_binary']=str(stage/'engine/keeper-enhanced');m.validate(c)
 print('New supervisor and existing configuration validated.')
 PY
 install -d -m 700 /var/backups/keeper-enhanced-server

@@ -101,7 +101,7 @@ static NSString *AssetVersion(void) {
 }
 static BOOL ReservedRuntimePath(NSString *name) {
     NSString *first=name.pathComponents.firstObject;
-    return [@[@"save",@"scrshots",@"keeperfx",@".asset-version",@".profile-overlay-files.json"] containsObject:first];
+    return [@[@"save",@"scrshots",@"keeperfx",@"keeper-enhanced",@".asset-version",@".profile-overlay-files.json"] containsObject:first];
 }
 static NSString *SafeRuntimePath(NSString *relative) {
     if(relative.isAbsolutePath||![relative.stringByStandardizingPath isEqual:relative]||[relative.pathComponents containsObject:@".."]||[relative.pathComponents containsObject:@"."]||ReservedRuntimePath(relative))return nil;
@@ -110,7 +110,7 @@ static NSString *SafeRuntimePath(NSString *relative) {
 static NSArray<NSString *> *OverlayFiles(void) {
     NSString *root=[Prefs() stringByAppendingPathComponent:@"EnhancedData"];NSMutableArray *files=[NSMutableArray new];
     for(NSString *name in [FM() enumeratorAtPath:root]){
-        if([name isEqual:@"keeperfx.cfg"]||ReservedRuntimePath(name))continue;
+        if(([name isEqual:@"keeper-enhanced.cfg"]||[name isEqual:@"keeperfx.cfg"])||ReservedRuntimePath(name))continue;
         if([[[FM() attributesOfItemAtPath:[root stringByAppendingPathComponent:name] error:nil] objectForKey:NSFileType] isEqual:NSFileTypeRegular])[files addObject:name];
     }
     return [files sortedArrayUsingSelector:@selector(compare:)];
@@ -159,8 +159,8 @@ static BOOL ExportPersonal(NSError **error) {
                 if(!CopyFile(source,[stage stringByAppendingPathComponent:relative],error)){ok=NO;break;}
             }if(!ok)break;
         }if(!ok)break;
-        NSString *config=[[folder stringByAppendingPathComponent:@"GameData"] stringByAppendingPathComponent:@"keeperfx.cfg"];
-        if([[[FM() attributesOfItemAtPath:config error:nil] objectForKey:NSFileType] isEqual:NSFileTypeRegular]&&[[[FM() attributesOfItemAtPath:config.stringByDeletingLastPathComponent error:nil] objectForKey:NSFileType] isEqual:NSFileTypeDirectory]){ok=CopyFile(config,[[stage stringByAppendingPathComponent:prefix] stringByAppendingPathComponent:@"keeperfx.cfg"],error);if(!ok)break;}
+        NSString *config=[[folder stringByAppendingPathComponent:@"GameData"] stringByAppendingPathComponent:@"keeper-enhanced.cfg"];
+        if([[[FM() attributesOfItemAtPath:config error:nil] objectForKey:NSFileType] isEqual:NSFileTypeRegular]&&[[[FM() attributesOfItemAtPath:config.stringByDeletingLastPathComponent error:nil] objectForKey:NSFileType] isEqual:NSFileTypeDirectory]){ok=CopyFile(config,[[stage stringByAppendingPathComponent:prefix] stringByAppendingPathComponent:@"keeper-enhanced.cfg"],error);if(!ok)break;}
     }
     NSString *archive=[stage stringByAppendingString:@".zip"];
     if(ok){NSTask *zip=[NSTask new];zip.executableURL=[NSURL fileURLWithPath:@"/usr/bin/ditto"];zip.arguments=@[@"-c",@"-k",@"--keepParent",stage,archive];ok=[zip launchAndReturnError:error];if(ok){[zip waitUntilExit];ok=zip.terminationStatus==0;}}
@@ -170,7 +170,7 @@ static BOOL ExportPersonal(NSError **error) {
 static BOOL RecoverDisplay(NSError **error) {
     NSString *marker=[Prefs() stringByAppendingPathComponent:@"display-startup.pending"];
     if(![FM() fileExistsAtPath:marker])return YES;
-    NSString *file=[Runtime() stringByAppendingPathComponent:@"keeperfx.cfg"];
+    NSString *file=[Runtime() stringByAppendingPathComponent:@"keeper-enhanced.cfg"];
     NSMutableString *config=[[NSString stringWithContentsOfFile:file encoding:NSUTF8StringEncoding error:error] mutableCopy];if(!config)return NO;
     NSString *backup=[file stringByAppendingFormat:@".before-display-recovery-%@",NSUUID.UUID.UUIDString];if(!CopyFile(file,backup,error))return NO;
     NSRegularExpression *regex=[NSRegularExpression regularExpressionWithPattern:@"(?im)^(FRONTEND_RES|INGAME_RES)\\s*=.*$" options:0 error:nil];
@@ -186,6 +186,11 @@ static BOOL Prepare(NSError **error) {
     if(!ResetRequested(error))return NO;
     for (NSString *sub in @[@"", @"save", @"scrshots", @"GameData"])
         if (!Directory([Prefs() stringByAppendingPathComponent:sub], error)) return NO;
+    NSString *config=[Runtime() stringByAppendingPathComponent:@"keeper-enhanced.cfg"];
+    NSString *legacy=[Runtime() stringByAppendingPathComponent:@"keeperfx.cfg"];
+    if(![FM() fileExistsAtPath:config] && [FM() fileExistsAtPath:legacy]) {
+        if(!SafeRuntimePath(@"keeper-enhanced.cfg") || !SafeRuntimePath(@"keeperfx.cfg") || !CopyFile(legacy,config,error))return NO;
+    }
     NSArray *overlay=OverlayFiles();NSString *desired=[NSString stringWithFormat:@"%@\nOverlay:%@\nOriginal:%.9f",AssetVersion(),OverlayVersion(overlay),[[[FM() attributesOfItemAtPath:Owned() error:nil] objectForKey:NSFileModificationDate] timeIntervalSince1970]];
     NSString *stamp = [Runtime() stringByAppendingPathComponent:@".asset-version"];
     NSString *old = [NSString stringWithContentsOfFile:stamp encoding:NSUTF8StringEncoding error:nil];
@@ -193,22 +198,26 @@ static BOOL Prepare(NSError **error) {
         NSString *manifest=[Runtime() stringByAppendingPathComponent:@".profile-overlay-files.json"];
         NSData *record=[NSData dataWithContentsOfFile:manifest];id previous=record?[NSJSONSerialization JSONObjectWithData:record options:0 error:nil]:nil;
         if([previous isKindOfClass:NSArray.class])for(id item in previous){
-            if(![item isKindOfClass:NSString.class]||[item isEqual:@"keeperfx.cfg"])continue;
+            if(![item isKindOfClass:NSString.class]||[item isEqual:@"keeper-enhanced.cfg"])continue;
             NSString *destination=SafeRuntimePath(item);if(destination&&[[[FM() attributesOfItemAtPath:destination error:nil] objectForKey:NSFileType] isEqual:NSFileTypeRegular])[FM() removeItemAtPath:destination error:nil];
         }
         NSString *assets = [Resources() stringByAppendingPathComponent:@"game"];
         for (NSString *base in @[assets, Owned(), [Prefs() stringByAppendingPathComponent:@"EnhancedData"]]) {
             NSDirectoryEnumerator *files = [FM() enumeratorAtPath:base];
-            for (NSString *relative in files) {
+            for (NSString *__strong relative in files) {
                 if (ReservedRuntimePath(relative)) continue;
                 NSString *source = [base stringByAppendingPathComponent:relative];
                 NSDictionary *attrs = [FM() attributesOfItemAtPath:source error:error];
                 if (!attrs) return NO;
                 if ([attrs[NSFileType] isEqual:NSFileTypeDirectory]) continue;
                 if (![attrs[NSFileType] isEqual:NSFileTypeRegular]) continue;
+                if([relative isEqual:@"keeperfx.cfg"]) {
+                    if([FM() fileExistsAtPath:[base stringByAppendingPathComponent:@"keeper-enhanced.cfg"]])continue;
+                    relative=@"keeper-enhanced.cfg";
+                }
                 NSString *dest = SafeRuntimePath(relative);
                 if(!dest){if(error)*error=[NSError errorWithDomain:@"KeeperFX" code:3 userInfo:@{NSLocalizedDescriptionKey:@"The runtime contains a linked or invalid content path. Remove links from GameData before preparing this profile."}];return NO;}
-                if ([relative isEqual:@"keeperfx.cfg"] && [FM() fileExistsAtPath:dest]) continue;
+                if ([relative isEqual:@"keeper-enhanced.cfg"] && [FM() fileExistsAtPath:dest]) continue;
                 if (!CopyFile(source, dest, error)) return NO;
             }
         }
@@ -259,7 +268,7 @@ static BOOL ApplyControllerBindings(NSMutableString *settings, NSDictionary *bin
 
 static pid_t Launch(NSArray<NSString *> *extra, NSNumber *slot, NSError **error) {
     [@"startup" writeToFile:[Prefs() stringByAppendingPathComponent:@"display-startup.pending"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
-    NSString *engine = [Resources() stringByAppendingPathComponent:@"game/keeperfx"];
+    NSString *engine = [Resources() stringByAppendingPathComponent:@"game/keeper-enhanced"];
     // The engine derives its runtime root from argv[0]; keep the signed executable
     // in the app while directing ALL legacy relative reads/writes to user data.
     NSArray *args = [[@[[Runtime() stringByAppendingPathComponent:@"keeperfx"]] arrayByAddingObjectsFromArray:extra] copy];
@@ -347,7 +356,7 @@ static NSDictionary *LegacySaveMetadata(NSString *path) {
     [stack addArrangedSubview:[NSStackView stackViewWithViews:@[[self button:@"Import Original Game…" action:@selector(importGame:)],[self button:@"Options…" action:@selector(options:)]]]];
     [stack addArrangedSubview:[NSStackView stackViewWithViews:@[[self button:@"Test Online Connection" action:@selector(testConnection:)],[self button:@"Controllers…" action:@selector(controllers:)],[self button:@"Remap…" action:@selector(remapControls:)]]]];
     [stack addArrangedSubview:[NSStackView stackViewWithViews:@[[self button:@"Browse Saves" action:@selector(browseSaves:)],[self button:@"Open Logs" action:@selector(openLogs:)],[self button:@"Open Latest Save" action:@selector(latestSave:)]]]];
-    self.status=[NSTextField wrappingLabelWithString:ValidOriginal(Owned())?@"Original game files are ready.":@"First run: import the KEEPER folder from your CD or existing Dungeon Keeper installation."];[stack addArrangedSubview:self.status];
+    self.status=[NSTextField wrappingLabelWithString:(ValidOriginal(Owned()) || ValidOriginal([Resources() stringByAppendingPathComponent:@"game"]))?@"Original game files are ready.":@"First run: import the KEEPER folder from your CD or existing Dungeon Keeper installation."];[stack addArrangedSubview:self.status];
     self.play=[self button:@"Play Keeper-Enhanced" action:@selector(playGame:)];self.play.keyEquivalent=@"\r";[stack addArrangedSubview:self.play];
     [self.window makeKeyAndOrderFront:nil];[NSApp activateIgnoringOtherApps:YES];
 }
@@ -403,7 +412,7 @@ static NSDictionary *LegacySaveMetadata(NSString *path) {
 }
 - (void)playGame:(id)sender {
     (void)sender;if(self.working||self.gamePID>0)return;
-    if(!ValidOriginal(Owned())){[self importGame:nil];return;}
+    if(!ValidOriginal(Owned()) && !ValidOriginal([Resources() stringByAppendingPathComponent:@"game"])) {[self importGame:nil];return;}
     self.working=YES;self.play.enabled=NO;self.status.stringValue=@"Preparing your game data…";
     NSInteger display=self.display.indexOfSelectedItem,res=self.resolution.indexOfSelectedItem,renderer=self.renderer.indexOfSelectedItem;
     double music=self.volume.doubleValue;BOOL intro=self.intro.state==NSControlStateValueOn;
@@ -412,7 +421,7 @@ static NSDictionary *LegacySaveMetadata(NSString *path) {
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0),^{
         NSError *error=nil;BOOL ok=Prepare(&error);
         if(ok){
-            NSString *path=[Runtime() stringByAppendingPathComponent:@"keeperfx.cfg"];
+            NSString *path=[Runtime() stringByAppendingPathComponent:@"keeper-enhanced.cfg"];
             NSMutableString *cfg=[[NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:&error] mutableCopy];
             NSArray *sizes=@[@"1280x800w32",@"1920x1080w32",@"2560x1440w32",@"640x480w32"];
             NSString *mode=display==0?sizes[res]:(display==1?@"DESKTOP":@"DESKTOP_FULL");
@@ -446,7 +455,7 @@ int main(int argc,char **argv){@autoreleasepool{
     if(![args containsObject:@"--launcher"]){
         NSApplication *setup=NSApplication.sharedApplication;setup.activationPolicy=NSApplicationActivationPolicyAccessory;
         NSError *error=nil;
-        if(!ValidOriginal(Owned()) && !ValidOriginal(Runtime())){
+        if(!ValidOriginal(Owned()) && !ValidOriginal(Runtime()) && !ValidOriginal([Resources() stringByAppendingPathComponent:@"game"])) {
             [setup activateIgnoringOtherApps:YES];NSOpenPanel *panel=[NSOpenPanel openPanel];panel.canChooseDirectories=YES;panel.canChooseFiles=NO;panel.message=@"Select your original Dungeon Keeper KEEPER folder or mounted CD. This is needed only once.";
             if([panel runModal]!=NSModalResponseOK)return 0;
             if(!Import(panel.URL.path,&error)){NSAlert *alert=[NSAlert new];alert.messageText=@"Keeper-Enhanced import failed";alert.informativeText=error.localizedDescription;[alert runModal];return 1;}

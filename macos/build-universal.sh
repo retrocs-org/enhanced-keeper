@@ -38,10 +38,10 @@ rm -rf "$BUILD"
 cmake -S "$ROOT" -B "$BUILD" -G Ninja -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET="$TARGET" \
   -DKFX_MAC_SELF_CONTAINED=ON -DKFX_MAC_DEPS_ROOT="$DEPS"
-cmake --build "$BUILD" -j "${KFX_JOBS:-$(sysctl -n hw.logicalcpu)}"
-file "$BUILD/keeperfx"
-lipo -info "$BUILD/keeperfx"
-if otool -L "$BUILD/keeperfx" | grep -q '/opt/homebrew'; then
+cmake --build "$BUILD" --target keeper-enhanced -j "${KFX_JOBS:-$(sysctl -n hw.logicalcpu)}"
+file "$BUILD/keeper-enhanced"
+lipo -info "$BUILD/keeper-enhanced"
+if otool -L "$BUILD/keeper-enhanced" | grep -q '/opt/homebrew'; then
   echo 'ERROR: Homebrew runtime dependency remains' >&2; exit 1
 fi
-echo "Universal self-contained KeeperFX ready: $BUILD/keeperfx"
+echo "Universal self-contained KeeperFX ready: $BUILD/keeper-enhanced"

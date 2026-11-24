@@ -3,7 +3,7 @@
 # ---------------------------------------------------------------------------
 #
 # Produces the same kind of release archive as `make package`, but takes the
-# keeperfx binary from the CMake build and the game data from the make data
+# keeper-enhanced binary from the CMake build and the game data from the make data
 # pipeline. Usage:
 #
 #   1. Configure (pass the build number / suffix used for the filename):
@@ -11,14 +11,14 @@
 #              -DCMAKE_BUILD_TYPE=RelWithDebInfo \
 #              -DBUILD_NUMBER=1234 -DPACKAGE_SUFFIX=Alpha
 #   2. Build the binary:
-#        cmake --build build --target keeperfx
+#        cmake --build build --target keeper-enhanced
 #   3. Assemble the game data (gfx/lang/sfx pipeline) into pkg/:
-#        make BUILD_NUMBER=1234 PACKAGE_SUFFIX=Alpha pkg-assemble
+#        make -f Makefile.legacy BUILD_NUMBER=1234 PACKAGE_SUFFIX=Alpha pkg-assemble
 #   4. Create the archive:
 #        cmake --build build --target package
 #
 #
-# Output: pkg/keeperfx-<maj>_<min>_<rel>_<build>[-<suffix>]-patch.7z
+# Output: pkg/keeper-enhanced-<maj>_<min>_<rel>_<build>[-<suffix>]-patch.7z
 # ---------------------------------------------------------------------------
 
 set(CPACK_PACKAGE_NAME      "Keeper-Enhanced")
@@ -29,7 +29,7 @@ set(CPACK_PACKAGE_VERSION_MAJOR "${VER_MAJOR}")
 set(CPACK_PACKAGE_VERSION_MINOR "${VER_MINOR}")
 set(CPACK_PACKAGE_VERSION_PATCH "${VER_RELEASE}")
 
-# Archive filename keeperfx-<maj>_<min>_<rel>_<build>[-<suffix>]-patch
+# Archive filename keeper-enhanced-<maj>_<min>_<rel>_<build>[-<suffix>]-patch
 if(PACKAGE_SUFFIX AND NOT "${PACKAGE_SUFFIX}" STREQUAL "")
     set(CPACK_PACKAGE_FILE_NAME
         "Keeper-Enhanced-${VER_MAJOR}_${VER_MINOR}_${VER_RELEASE}_${BUILD_NUMBER}-${PACKAGE_SUFFIX}-patch")
@@ -56,19 +56,19 @@ option(KFX_INSTALL_GAME_DATA "Install locally assembled pkg game data" ON)
 
 # --- Install rules ---------------------------------------------------------
 
-install(TARGETS keeperfx RUNTIME DESTINATION .)
-install(TARGETS keeperfx_hvlog RUNTIME DESTINATION . OPTIONAL)
-install(FILES "${CMAKE_BINARY_DIR}/keeperfx.map" DESTINATION . OPTIONAL)
-install(FILES "${CMAKE_BINARY_DIR}/keeperfx_hvlog.map" DESTINATION . OPTIONAL)
+install(TARGETS keeper-enhanced RUNTIME DESTINATION .)
+install(TARGETS keeper-enhanced-hvlog RUNTIME DESTINATION . OPTIONAL)
+install(FILES "${CMAKE_BINARY_DIR}/keeper-enhanced.map" DESTINATION . OPTIONAL)
+install(FILES "${CMAKE_BINARY_DIR}/keeper-enhanced-hvlog.map" DESTINATION . OPTIONAL)
 
 # vcpkg's applocal deployment (VCPKG_APPLOCAL_DEPS, default ON) already copies
-# runtime DLLs next to the keeperfx binary in the build tree for every
+# runtime DLLs next to the keeper-enhanced binary in the build tree for every
 # toolchain preset. Install them too, so `cmake --install <builddir> --prefix
 # <game-dir>` drops a runnable update into an existing DK install on its own —
 # no pkg/ data assembly required. This is what the VS Code CMake debug tasks
 # and a personal CMakeUserPresets.json deploy preset both use.
 install(CODE "
-    file(GLOB _kfx_runtime_dlls \"$<TARGET_FILE_DIR:keeperfx>/*.dll\")
+    file(GLOB _kfx_runtime_dlls \"$<TARGET_FILE_DIR:keeper-enhanced>/*.dll\")
     foreach(_dll IN LISTS _kfx_runtime_dlls)
         file(INSTALL \"\${_dll}\" DESTINATION \"\${CMAKE_INSTALL_PREFIX}\")
     endforeach()
@@ -86,7 +86,7 @@ install(CODE "
             RELATIVE \"\${_pkg_src}\"
             \"\${_pkg_src}/*\")
         foreach(_f IN LISTS _pkg_files)
-            if(NOT _f MATCHES \"keeperfx.*\\\\.(7z|tar\\\\.gz|tgz)\$\")
+            if(NOT _f MATCHES \"keeper-enhanced.*\\\\.(7z|tar\\\\.gz|tgz)\$\")
                 get_filename_component(_dir \"\${_f}\" DIRECTORY)
                 file(MAKE_DIRECTORY \"\${CMAKE_INSTALL_PREFIX}/\${_dir}\")
                 file(COPY \"\${_pkg_src}/\${_f}\"

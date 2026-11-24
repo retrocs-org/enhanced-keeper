@@ -623,13 +623,13 @@ class Release:
         import plistlib
         info=plistlib.loads((app/'Contents/Info.plist').read_bytes())
         need(info['CFBundleDisplayName']=='Keeper-Enhanced' and info['CFBundleShortVersionString']==self.version and info['CFBundleVersion']==(self.root/'macos/BUILD_NUMBER').read_text().strip(),'App version/name mismatch')
-        executables=['Contents/MacOS/KeeperFXE','Contents/Resources/game/keeperfx','Contents/Resources/connection-check','Contents/Resources/controller-check','Contents/Resources/video-check']
+        executables=['Contents/MacOS/KeeperFXE','Contents/Resources/game/keeper-enhanced','Contents/Resources/connection-check','Contents/Resources/controller-check','Contents/Resources/video-check']
         for name in executables:
             p=app/name;need(p.is_file() and not p.is_symlink(),'Missing packaged executable')
             need(set(run(self.root,['lipo','-archs',str(p)]).split())=={'arm64','x86_64'},'Package is not universal')
             linked=run(self.root,['otool','-L',str(p)])
             need('/opt/homebrew' not in linked and '/usr/local' not in linked,'External runtime library in package')
-        need(executable_code_hashes(app/'Contents/Resources/game/keeperfx')==executable_code_hashes(self.root/'build-mac-universal/keeperfx'),'Packaged executable code differs from built engine')
+        need(executable_code_hashes(app/'Contents/Resources/game/keeper-enhanced')==executable_code_hashes(self.root/'build-mac-universal/keeper-enhanced'),'Packaged executable code differs from built engine')
         game=app/'Contents/Resources/game'
         for folder,names in {'data':['bluepal.dat','bluepall.dat','dogpal.pal','hitpall.dat','lightng.pal','redpal.col','redpall.dat','slab0-0.dat','slab0-1.dat','vampal.pal','whitepal.col'],'sound':['atmos1.sbk','atmos2.sbk','bullfrog.sbk']}.items():
             need(not any((game/folder/n).exists() for n in names),'Original CD data included in package')
@@ -679,7 +679,7 @@ class Release:
                     'commit':head,'dirty':bool(git(self.root,'status','--porcelain','--untracked-files=all')),'source_sha256':fingerprint(before),
                     'inputs':before,'configuration_sha256':self.build_binding(),'target':{'architectures':['arm64','x86_64'],'minimum_macos':'13.0'},
                     'compiler':run(self.root,['clang','--version']).splitlines()[0],
-                    'engine_sha256':sha(self.root/'build-mac-universal/keeperfx'),'app_inventory':self.app_inventory(self.app()),
+                    'engine_sha256':sha(self.root/'build-mac-universal/keeper-enhanced'),'app_inventory':self.app_inventory(self.app()),
                     'artifacts':{n:sha(self.out/n) for n in self.names}}
         atomic_json(self.record,provenance);self.check(verify_native=False)
         print('Build verified. No publication performed. '+str(self.out),flush=True)

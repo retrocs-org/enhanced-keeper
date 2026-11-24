@@ -14,7 +14,7 @@
 #   -B, --bundle DIR    self-contained bundle dir   (default: out/keeperfx-deck)
 #   -b, --binary PATH   single binary instead of a bundle dir
 #   -a, --assets DIR    game data dir to sync alongside the binary
-#   -d, --dest DIR      remote install dir          (default: ~/keeperfx)
+#   -d, --dest DIR      remote install dir          (default: ~/keeper-enhanced)
 #   -r, --run           run it on the Deck after deploying
 #   -g, --gdb           run under gdbserver after deploying (attach from your IDE)
 #   -p, --port PORT     gdbserver port              (default: 2345)
@@ -72,14 +72,14 @@ echo ">> target: $HOST:$DEST   (transfer: $([ $have_rsync -eq 1 ] && echo rsync 
 
 if [ -n "$BUNDLE" ]; then
     [ -d "$BUNDLE" ] || die "bundle dir not found: $BUNDLE (build it: scripts/build-deck-bundle.sh)"
-    [ -x "$BUNDLE/keeperfx" ] || die "no keeperfx binary in $BUNDLE"
+    [ -x "$BUNDLE/keeper-enhanced" ] || die "no keeperfx binary in $BUNDLE"
     echo ">> deploying bundle: $BUNDLE -> $DEST/ (binary + lib/)"
     push_dir "$BUNDLE" "$DEST"
 else
     [ -f "$BINARY" ] || die "binary not found: $BINARY"
-    echo ">> deploying binary: $BINARY -> $DEST/keeperfx"
+    echo ">> deploying binary: $BINARY -> $DEST/keeper-enhanced"
     ssh "$HOST" "mkdir -p \"$DEST\""
-    if [ "$have_rsync" -eq 1 ]; then rsync -a "$BINARY" "$HOST:$DEST/keeperfx";
+    if [ "$have_rsync" -eq 1 ]; then rsync -a "$BINARY" "$HOST:$DEST/keeper-enhanced";
     else tar cf - -C "$(dirname "$BINARY")" "$(basename "$BINARY")" | ssh "$HOST" "tar xf - -C \"$DEST\" && mv \"$DEST/$(basename "$BINARY")\" \"$DEST/keeperfx\""; fi
 fi
 ssh "$HOST" "chmod +x \"$DEST/keeperfx\""
@@ -104,13 +104,13 @@ fi
 if [ "$GDB" -eq 1 ]; then
     echo ">> starting gdbserver on $HOST:$PORT  (attach your IDE to $HOST:$PORT)"
     ssh -t "$HOST" "cd \"$DEST\" && $ENV_PRELUDE
-        if command -v gdbserver >/dev/null; then gdbserver :$PORT ./keeperfx $GAME_ARGS;
-        elif distrobox list 2>/dev/null | grep -q kfx; then distrobox-enter kfx -- gdbserver :$PORT ./keeperfx $GAME_ARGS;
+        if command -v gdbserver >/dev/null; then gdbserver :$PORT ./keeper-enhanced $GAME_ARGS;
+        elif distrobox list 2>/dev/null | grep -q kfx; then distrobox-enter kfx -- gdbserver :$PORT ./keeper-enhanced $GAME_ARGS;
         else echo 'no gdbserver on the Deck (install via distrobox)'; fi"
 elif [ "$RUN" -eq 1 ]; then
     echo ">> launching on $HOST (window should appear on the Deck)"
     ssh -t "$HOST" "cd \"$DEST\" && $ENV_PRELUDE
-        ./keeperfx $GAME_ARGS"
+        ./keeper-enhanced $GAME_ARGS"
 else
     echo ">> deployed. Play:  scripts/deploy-to-deck.sh --run     Debug:  scripts/deploy-to-deck.sh --gdb"
 fi

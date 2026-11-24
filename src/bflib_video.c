@@ -78,12 +78,12 @@ unsigned short units_per_pixel;
   */
 unsigned short display_id = 0;
 
-/** Vertical sync for the software present; set from keeperfx.cfg (VSYNC), on by default.
+/** Vertical sync for the software present; set from keeper-enhanced.cfg (VSYNC), on by default.
  * todo : move to render settings
  */
 TbBool vsync_enabled = 1;
 
-/** Requested renderer backen; set from keeperfx.cfg (RENDERER) */
+/** Requested renderer backen; set from keeper-enhanced.cfg (RENDERER) */
 int requested_renderer_type = RENDERER_SOFTWARE;
 
 static unsigned char fade_started;

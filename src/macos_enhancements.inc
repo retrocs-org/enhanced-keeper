@@ -1,7 +1,7 @@
 // Native in-game libraries, recovery, setup and personal-data tools.
 struct LocalReplay {std::string file,title,campaign,date;int level=0,players=0;unsigned long turns=0;bool favourite=false;};
 std::vector<LocalReplay> replay_library;int replay_index=0,recovery_index=0;std::string replay_title;
-bool reset_confirm=false,setup_pending=false,recovery_noticed=false;Uint64 healthy_after=0,capture_until=0;
+bool reset_confirm=false,recovery_noticed=false;Uint64 healthy_after=0,capture_until=0;
 SDL_Process *personal_process=nullptr;std::string personal_job;
 std::vector<double> frame_samples;std::vector<std::string> capture_rows;Uint64 sample_previous=0;
 std::string profile_file(const char *name){return data_folder()+"/"+name;}
@@ -73,7 +73,6 @@ void enhancement_tick(){
  std::string destination,import;{std::lock_guard<std::mutex> lock(replay_selection_lock);destination.swap(replay_export_destination);import.swap(import_selection);}
  if(!destination.empty())notice=copy_exclusive(replay_export_source,destination)?"Replay exported.":"Export failed; choose a new filename. Existing files were kept.";
  if(!import.empty())run_personal_tool("--import",import.c_str());
- if(!setup_pending&&frontend_menu_state==FeSt_MAIN_MENU&&game.game_kind==GKind_Unset){setup_pending=true;if(access(profile_file("setup-complete.cfg").c_str(),F_OK)!=0&&!kfx_controller_guide_visible)open_panel(32);}
 }
 unsigned long performance_ping(){if(!network_is_active())return 0;if(!network_is_host())return GetPing(SERVER_ID);unsigned long result=0;for(int i=1;i<MAX_NET_USERS;i++)result=std::max(result,GetPing(i));return result;}
 void enhancement_sample(){

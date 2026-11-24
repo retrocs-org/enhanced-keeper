@@ -822,6 +822,7 @@ static TbBool resolve_track_music_path(int track, char *dst, int dst_size) {
 		return false;
 	}
 
+	std::sort(files.begin(), files.end());
 	// Map the track within the winning format's files only, keeping sorted order
 	int index = 0;
 	for (const auto & f : files) {

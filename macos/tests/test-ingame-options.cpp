@@ -104,7 +104,10 @@ static bool fail_display=false;
 TbScreenMode LbScreenActiveMode(void){return active_mode;}
 TbScreenModeInfo *LbScreenGetModeInfo(TbScreenMode){static TbScreenModeInfo info={};info.Width=1280;info.Height=800;info.VideoFlags=Lb_VF_WINDOWED;return &info;}
 TbScreenMode LbRegisterVideoModeString(const char *mode){return !strcmp(mode,"DESKTOP")?3:2;}
-void set_frontend_vidmode(TbScreenMode){}
+static TbScreenMode configured_frontend=3,configured_movies=2;
+TbScreenMode get_frontend_vidmode(void){return configured_frontend;}
+void set_movies_vidmode(TbScreenMode mode){configured_movies=mode;}
+void set_frontend_vidmode(TbScreenMode mode){configured_frontend=mode;}
 void set_game_vidmode(uint,TbScreenMode){}
 TbScreenMode setup_screen_mode_minimal(TbScreenMode mode){if(fail_display)return 0;active_mode=mode;return mode;}
 TbScreenMode setup_screen_mode(TbScreenMode mode,TbBool){return setup_screen_mode_minimal(mode);}
@@ -127,7 +130,8 @@ extern "C" TbControllerButtons controller_raw_buttons(void){return 0;}
 extern "C" float controller_raw_axis(int){return 0;}
 int main(){
  char folder[]="/tmp/kfx-ingame-options-XXXXXX";assert(mkdtemp(folder));test_folder=folder;setenv("KFX_USER_DATA_DIR",test_folder.c_str(),1);snprintf(keeper_runtime_directory,sizeof(keeper_runtime_directory),"%s/GameData",folder);SDL_CreateDirectory(keeper_runtime_directory);art_folder=getenv("KFX_TEST_ART")?getenv("KFX_TEST_ART"):"macos/packaging/controllers";
- kfx_options_initialize();assert(!actions.empty());
+ kfx_options_initialize();assert(!actions.empty());assert(configured_movies==configured_frontend);
+ frontend_menu_state=FeSt_MAIN_MENU;game.game_kind=GKind_Unset;enhancement_tick();assert(!kfx_controller_guide_visible);
  game.game_kind=GKind_LocalGame;frontend_menu_state=FeSt_INITIAL;kfx_options_open(nullptr);assert(kfx_controller_guide_visible);assert(game.operation_flags&GOF_Paused);
  for(int i=0;i<30;i++){page=i;render_file="/tmp/kfx-options-page-"+std::to_string(i)+".png";kfx_options_draw();}
  page=26;kfx_controller_guide_visible=1;pad(SDL_GAMEPAD_BUTTON_EAST);assert(page==26);calibration_owner=42;calibration_peak=.08f;calibration_until=SDL_GetTicks()?SDL_GetTicks():1;SDL_Delay(2);feature_tick();assert(!calibration_until);assert(std::abs(kfx_controller_deadzone()-.11f)<.001f);
@@ -144,11 +148,11 @@ int main(){
  scan_saves();assert(saves.size()==1&&saves[0].backup==1&&saves[0].level==7);open_panel(2);render_file="/tmp/kfx-options-page-2.png";kfx_options_draw();load_selected();assert(page==29&&loaded_slot==-1);render_file="/tmp/kfx-save-requirements.png";kfx_options_draw();activate(1401);assert(loaded_slot==0);assert(access((test_folder+"/fx1g0000.sav").c_str(),F_OK)==0);assert(access((test_folder+"/fx1g0005.sav.backup1").c_str(),F_OK)==0);
  assert(!kfx_allow_cursor_grab(1,0,0));assert(kfx_allow_cursor_grab(1,1,0));assert(!kfx_allow_cursor_grab(1,1,1));
  kfx_window_cursor_lock=1;assert(kfx_allow_cursor_grab(1,0,0));assert(!kfx_allow_cursor_grab(0,0,0));assert(!kfx_allow_cursor_grab(1,0,1));kfx_window_cursor_lock=0;
- assert(!kfx_options_set_display(0,9999,9999));assert(kfx_options_set_display(0,800,600));kfx_options_apply_display();assert(display_confirmation&&!pending_display);assert(saved_display_mode==-1);
- display_deadline=0;kfx_options_apply_display();assert(!display_confirmation&&saved_display_mode==-1);assert(resolution_index==2);
+ assert(!kfx_options_set_display(0,9999,9999));assert(kfx_options_set_display(0,800,600));kfx_options_apply_display();assert(display_confirmation&&!pending_display);assert(saved_display_mode==-1);assert(configured_movies==active_mode);
+ display_deadline=0;kfx_options_apply_display();assert(!display_confirmation&&saved_display_mode==-1);assert(resolution_index==2);assert(configured_movies==active_mode);
  assert(kfx_options_set_display(0,800,600));kfx_options_apply_display();assert(kfx_options_confirm_display(1));assert(saved_display_mode==0&&saved_resolution==0);
  display_mode=1;activate(500);fail_display=true;kfx_options_apply_display();assert(saved_display_mode==0);fail_display=false;
- saved_display_mode=-1;kfx_options_initialize();assert(saved_display_mode==0&&resolution_index==0);
+ saved_display_mode=-1;kfx_options_initialize();assert(saved_display_mode==0&&resolution_index==0);assert(configured_movies==configured_frontend);
  // Search/filter and backup grouping keep one row per save slot.
  scan_saves();assert(saves.size()==2);save_search="does not exist";filter_saves();assert(saves.empty());save_search="Backup";filter_saves();assert(!saves.empty());save_search.clear();save_filter=2;filter_saves();
  save_filter=0;filter_saves();
@@ -226,5 +230,10 @@ int main(){
  open_panel(8);selected=8;direction_control(-1);assert(selected==11);direction_control(1);assert(selected==8);
  open_panel(0);selected=0;pad(SDL_GAMEPAD_BUTTON_DPAD_RIGHT);assert(repeat_button==SDL_GAMEPAD_BUTTON_DPAD_RIGHT);repeat_at=0;kfx_options_draw();assert(repeat_at>SDL_GetTicks());repeat_button=255;
  kfx_options_recover_display();kfx_options_apply_display();assert(!display_confirmation&&saved_display_mode==0&&saved_resolution==0);
+ // Stale windowed movie config must not override saved fullscreen, or vice versa.
+ saved_display_mode=1;saved_resolution=2;persist();configured_frontend=2;configured_movies=2;
+ kfx_options_initialize();assert(configured_movies==3&&configured_frontend==3);
+ saved_display_mode=0;persist();configured_frontend=3;configured_movies=3;
+ kfx_options_initialize();assert(configured_movies==2&&configured_frontend==2);
  puts("PASS: in-game pages, persistent options, pause ownership, multiplayer continues, physical-button chord remapping, legacy-save metadata and nondestructive backup restoration");
 }

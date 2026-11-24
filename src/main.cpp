@@ -355,7 +355,7 @@ short setup_game(void)
   features_enabled |= Ft_BigPointer;
   features_enabled |= Ft_AdvAmbSound;
 
-  // Default feature settings (in case the options are absent from keeperfx.cfg)
+  // Default feature settings (in case the options are absent from keeper-enhanced.cfg)
   features_enabled &= ~Ft_FreezeOnLoseFocus; // don't freeze the game, if the game window loses focus
   features_enabled &= ~Ft_UnlockCursorOnPause; // don't unlock the mouse cursor from the window, if the user pauses the game
   features_enabled |= Ft_LockCursorInPossession; // lock the mouse cursor to the window, when the user enters possession mode (when the cursor is already unlocked)
@@ -1801,7 +1801,7 @@ static short process_command_line(unsigned short argc, char *argv[])
       } else
       if (strcasecmp(parstr, "nocd") == 0) // kept for legacy reasons
       {
-          WARNLOG("The -nocd commandline parameter is no longer functional. Game music from CD is a setting in keeperfx.cfg instead.");
+          WARNLOG("The -nocd commandline parameter is no longer functional. Game music from CD is a setting in keeper-enhanced.cfg instead.");
       } else
       if (strcasecmp(parstr, "columnconvert") == 0) //todo remove once it's no longer in the launcher
       {
