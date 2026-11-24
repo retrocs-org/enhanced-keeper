@@ -355,3 +355,43 @@ The main configuration is `keeper-enhanced.cfg`. The engine still reads legacy
 `keeperfx.cfg` when the new file is absent. Importers write the new name; the
 macOS launcher copies existing legacy user settings to the new file without
 overwriting an existing new configuration.
+
+## Import with Make
+
+```sh
+make import IMAGE="Dungeon Keeper.cue"
+make import-server
+# Optional original-disc overlay when preparing server data on Linux:
+make import-server IMPORT_BASE=/path/to/prepared/runtime IMAGE="/home/frossmant/Dungeon Keeper.cue"
+```
+
+`make import` (also `make import-client`) includes data, movies and lossless CD
+music in `.local/imported-client`. `make import-server` reduces the prepared
+runtime to `.local/linux-server-import/GameData`. It skips CD audio extraction
+when an IMAGE is supplied and excludes standalone music and movies.
+
+`IMPORT_BASE` defaults to `.local/keeperfx`; a matching prepared Enhanced runtime
+is required in addition to an original disc. `IMPORT_DIR` defaults to `import/`;
+absolute IMAGE paths can point to discs elsewhere. Choose a fresh `IMPORT_OUTPUT`
+to change the destination. Existing destinations are never overwritten. Imports
+stay local and do not install services or transfer files to a server. For normal local app builds, `KFX_IMPORT_IMAGE="Dungeon Keeper.cue" make client-macos`
+continues to import automatically.
+
+### Full import, then server-only staging
+
+```sh
+make import IMAGE="Dungeon Keeper.cue"
+make server-linux JOBS=4
+```
+
+The first command writes `.local/imported-client`, including soundtrack and movies.
+The second regenerates minimal data at `out/server-linux-data/GameData`, then
+compiles the dedicated Linux binary. Use `make server-data` to stage the data on
+macOS before transferring it to Linux. `SERVER_DATA_BASE=/path/to/full/import`
+selects another full import. No CD image or audio extraction is needed on rebuild.
+
+The generated staging tree is disposable, not a live server profile. Refresh
+refuses to replace a tree containing saves, recordings or dedicated-server state.
+Installed data under `/var/lib/keeper-enhanced` is never changed by these targets.
+The refresh script and portable binary packaging remain build-only and keep an
+existing installed server's data intact.
