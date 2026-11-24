@@ -173,3 +173,7 @@ small { display: block; font: 14px/1.6 system-ui, sans-serif; color: var(--muted
   html { scroll-behavior: auto; }
   *, *:before, *:after { transition: none !important; animation: none !important; }
 }
+
+.feature-jump { display: inline-block; color: #edce79; font-size: 16px; margin-bottom: 4px; text-underline-offset: 5px; }
+.feature-details { max-width: 850px; color: var(--muted); font-size: 16px; margin: 27px 0 0; }
+.feature-details a { color: #f1d57b; }
