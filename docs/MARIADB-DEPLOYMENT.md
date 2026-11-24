@@ -251,3 +251,40 @@ After reloading, `/servers`, `/services`, `/api-browser`, `/events`, `/replays` 
 as wwwrun with `php /srv/www/vhosts/keeperfx-e.retrocs.org/check-database.php`.
 
 Apache reference: https://httpd.apache.org/docs/2.4/mod/mod_dir.html#fallbackresource
+
+
+### Initialize missing tables from the deployed PHP site
+
+The CLI-only command uses the deployed `config.inc.php` (including an optional
+external database configuration). It executes the bundled idempotent schema,
+creating missing tables without dropping or clearing existing data. It does not
+alter existing table columns or convert an older incompatible schema. MariaDB
+DDL is not atomic; a partial initialization can safely be rerun. Take a database
+backup before administrative schema work.
+
+The runtime account normally has CRUD privileges only. On the database server,
+using the administrator `.my.cnf`, temporarily grant CREATE:
+
+```sh
+mariadb --defaults-extra-file="$HOME/.my.cnf" <<'SQL'
+GRANT CREATE ON keeperfx_e.* TO 'keeperfx_e'@'172.16.1.133';
+SQL
+```
+
+After refreshing the website, run on the webserver:
+
+```sh
+sudo -u wwwrun php /srv/www/vhosts/keeperfx-e.retrocs.org/lib/bin/migrate.php
+sudo -u wwwrun php /srv/www/vhosts/keeperfx-e.retrocs.org/check-database.php
+```
+
+Then on the database server remove the temporary privilege:
+
+```sh
+mariadb --defaults-extra-file="$HOME/.my.cnf" <<'SQL'
+REVOKE CREATE ON keeperfx_e.* FROM 'keeperfx_e'@'172.16.1.133';
+SQL
+```
+
+The command is inside the HTTP-protected `lib` directory and also refuses non-CLI
+execution. Refresh never runs migrations automatically.
