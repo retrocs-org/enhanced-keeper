@@ -219,3 +219,34 @@ Dependencies are git, PHP CLI, getent, flock and standard POSIX file utilities.
 An existing config must be a regular file and is always preserved. On first
 install, or when upgrading an older site without config.inc.php, the credential-free
 sample at public-web/config.inc.php is installed. No database migrations or service restarts run.
+
+## Apache 404s on every page except the homepage
+
+If `/` and `/index.php` work but `/servers`, `/profile` and `/api/session` return
+Apache's own 404, requests are not reaching PHP. This is separate from database
+setup. The Apache site needs front-controller routing; copying .htaccess has no
+effect when AllowOverride disables it.
+
+On **sth-ts-web003**, as root, for the existing document root
+`/srv/www/vhosts/keeperfx-e.retrocs.org`:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/retrocs-org/KeeperFX-E/main/docs/apache-keeperfx-e.conf \
+  -o /etc/apache2/conf.d/keeperfx-e-routing.conf
+APACHECTL=$(command -v apache2ctl || command -v apachectl)
+"$APACHECTL" configtest && systemctl reload apache2
+```
+
+This adds a Directory overlay using FallbackResource, forwards game Authorization
+headers to PHP, disables directory listings, and blocks private config/modules.
+It does not replace the existing VirtualHost or TLS settings. Apache must already
+include `/etc/apache2/conf.d/*.conf`; if it uses another include directory, install
+the overlay there instead. Adjust the Directory paths if the document root differs.
+An existing, more-specific routing configuration may need to be updated instead.
+
+After reloading, `/servers`, `/services`, `/api-browser`, `/events`, `/replays` and
+`/profile` should return pages. `/api/session` should return JSON; a database-related
+503 after routing is fixed means the next step is connection/schema setup. Verify
+as wwwrun with `php /srv/www/vhosts/keeperfx-e.retrocs.org/check-database.php`.
+
+Apache reference: https://httpd.apache.org/docs/2.4/mod/mod_dir.html#fallbackresource

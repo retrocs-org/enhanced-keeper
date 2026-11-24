@@ -1,5 +1,13 @@
 Options -Indexes -MultiViews
 DirectoryIndex index.php
-RewriteEngine On
-RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
-RewriteRule ^ index.php [END]
+CGIPassAuth On
+# Apache must allow this file, or load docs/apache-keeperfx-e.conf instead.
+FallbackResource /index.php
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+    RewriteRule ^ index.php [END]
+</IfModule>
+<FilesMatch "^(?:config\.inc\.php.*|\.|README\.md$)">
+    Require all denied
+</FilesMatch>

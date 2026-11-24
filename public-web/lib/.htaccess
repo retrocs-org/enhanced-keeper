@@ -1,0 +1,2 @@
+# Internal PHP modules and the database schema are never public downloads.
+Require all denied

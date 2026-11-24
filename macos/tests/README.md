@@ -143,3 +143,9 @@ and complete web-config output against an explicitly selected disposable databas
 `python3 macos/tests/run-hub-config-tests.py` checks the public default service,
 custom URL persistence, restoration of an existing custom account, credential
 clearing when switching services, and loopback HTTP for local development.
+
+`python3 macos/tests/test-apache-routing.py` reproduces an Apache 404 without
+front-controller routing, then verifies the server-config overlay and the
+.htaccess fallback (without mod_rewrite), including private-config/schema blocking.
+It uses a disposable loopback Apache instance with inert placeholder files;
+PHP business behavior is checked separately by test-php-web.py.
