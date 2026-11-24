@@ -3,6 +3,10 @@
 ## 1.4.0
 
 ### Features
+- Add Features, Network, Servers, Leaderboard and Downloads navigation, with shared
+  Network subpages and account-only actions hidden until a session is verified.
+- Rank only opt-in public profiles with completed server-verified matches; show
+  available verified release downloads or the GitHub release listing.
 - Keep all website/HTTP API code in the deployable public-web tree and use direct
   PHP routes when Apache does not enable clean-URL routing; retain clean aliases.
 - Retry game service requests through the direct PHP endpoint only after an HTML

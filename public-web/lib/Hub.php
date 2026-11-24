@@ -81,6 +81,11 @@ final class KeeperHub {
         if($route==='/api/servers'){$this->q("UPDATE matches SET ended=?,status=CASE WHEN status='lobby' THEN 'cancelled' ELSE 'abandoned' END WHERE ended=0 AND server IN (SELECT id FROM servers WHERE last_seen<?)",[$this->now,$this->now-90]);return ['servers'=>$this->rows('SELECT id,name,endpoint,engine,map,mods,players,capacity,password,region,kind,status FROM servers WHERE last_seen>? ORDER BY name LIMIT 128',[$this->now-90])];}
         if($route==='/api/friends'){demand($uid,'Sign in first',401);return ['friends'=>$this->rows('SELECT u.id,u.name,f.status,f.a AS requester FROM friends f JOIN users u ON u.id=CASE WHEN f.a=? THEN f.b ELSE f.a END WHERE f.a=? OR f.b=?',[$uid,$uid,$uid])];}
         if($route==='/api/matches'){demand($uid,'Sign in first',401);return ['matches'=>$this->rows("SELECT m.* FROM matches m JOIN participants p ON p.match=m.id WHERE p.user=? AND m.status NOT IN ('lobby','cancelled') ORDER BY started DESC LIMIT 50",[$uid])];}
+        if($route==='/api/leaderboard'){
+            $rows=$this->rows("SELECT u.id,u.name,COUNT(*) AS matches,SUM(CASE WHEN p.result='won' THEN 1 ELSE 0 END) AS wins FROM users u JOIN participants p ON p.user=u.id JOIN matches m ON m.id=p.match WHERE u.public=1 AND m.verification='verified' AND m.ended>0 GROUP BY u.id,u.name ORDER BY wins DESC,matches DESC,u.name ASC LIMIT 100");
+            foreach($rows as &$row){$row['matches']=(int)$row['matches'];$row['wins']=(int)$row['wins'];}unset($row);
+            return ['players'=>$rows];
+        }
         if($route==='/api/events')return ['events'=>$this->rows('SELECT e.*,COUNT(n.user) AS entrants FROM events e LEFT JOIN entrants n ON n.event=e.id GROUP BY e.id ORDER BY starts LIMIT 100')];
         if($route==='/api/challenges')return ['challenges'=>$this->rows('SELECT * FROM challenges ORDER BY title LIMIT 100')];
         if(count($parts)===4&&$parts[1]==='events'&&$parts[3]==='bracket')return $this->bracketRead($parts[2]);

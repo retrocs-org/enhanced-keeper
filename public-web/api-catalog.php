@@ -5,6 +5,7 @@ function api_catalog(): array {
     $routes = [
         ['GET','/api/health','Services','Public','Service health, protocol and relay availability.',true],
         ['GET','/api/servers','Servers','Public','Live server directory, map, engine, content fingerprint and occupancy.',true],
+        ['GET','/api/leaderboard','Statistics','Public','Opt-in public profiles ranked by completed server-verified wins and matches.',true],
         ['GET','/api/events','Community','Public','Upcoming events and registration counts.',true],
         ['GET','/api/challenges','Community','Public','Cooperative challenges.',true],
         ['GET','/api/replays','Replays','Public','Shared replay metadata and checksums.',true],

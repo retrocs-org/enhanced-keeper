@@ -83,7 +83,7 @@ class PHPWebsiteTests(unittest.TestCase):
             headers={'Content-Type':'application/json', **(headers or {})}, method=method), timeout=4)
 
     def test_pages_assets_and_unknown_routes(self):
-        for path in ['/', '/index.php', '/community', '/servers', '/events', '/profile', '/device', '/services', '/api-browser', '/replays', '/challenges', '/keeper/'+'a'*32]:
+        for path in ['/', '/index.php', '/community', '/servers', '/events', '/profile', '/device', '/services', '/api-browser', '/replays', '/challenges', '/features', '/leaderboard', '/downloads', '/network', '/network/servers', '/network/events', '/network/replays', '/network/challenges', '/keeper/'+'a'*32]:
             with self.request(path) as response:
                 page=response.read().decode()
                 self.assertIn('KeeperFX-E',page)
@@ -120,6 +120,38 @@ class PHPWebsiteTests(unittest.TestCase):
         self.assertNotIn('id="login"', page)
         with self.request('/community') as response:
             self.assertIn('id="servers"', response.read().decode())
+
+    def test_network_navigation_and_safe_default_controls(self):
+        import re
+        with self.request('/network/events') as response:page=response.read().decode()
+        main=re.search(r'<nav aria-label="Main navigation">(.*?)</nav>',page,re.S).group(1)
+        self.assertIn('Network',main);self.assertIn('>Servers<',main);self.assertIn('>Features<',main);self.assertIn('>Leaderboard<',main);self.assertIn('>Downloads<',main);self.assertNotIn('>Events<',main);self.assertNotIn('>Replays<',main)
+        self.assertIn('aria-label="Network navigation"',page)
+        self.assertIn('/index.php?route=%2Fnetwork%2Freplays',page)
+        self.assertIn('<form method="post" id="event" hidden>',page)
+        self.assertIn('<section id="pair-panel" hidden>',page)
+        self.assertIn('<form method="post" id="upload-replay" hidden>',page)
+        self.assertIn('data-auth-only hidden',page)
+        with self.request('/network/replays') as response:self.assertIn('Watch it unfold.',response.read().decode())
+
+    def test_leaderboard_excludes_private_casual_and_unfinished_results(self):
+        dsn=('mysql:unix_socket='+os.environ['KFX_TEST_MYSQL_SOCKET']+';dbname='+self.mysql_database+';charset=utf8mb4') if hasattr(self,'mysql_database') else str(Path(self.temp.name)/'test.sqlite3')
+        code="""define('KFX_API_INTERNAL',true);require 'public-web/lib/Hub.php';
+        $hub=new KeeperHub($argv[1],'','','',null,['user'=>'root','password'=>'','migrate'=>false]);
+        foreach([['a','PublicWinner',1],['b','PublicRunner',1],['c','PrivateWinner',0],['d','CasualWinner',1],['e','Unfinished',1]] as [$id,$name,$public])$hub->q('INSERT INTO users(id,name,salt,password,public,created) VALUES(?,?,?,?,?,?)',[str_repeat($id,32),$name,str_repeat('0',32),str_repeat('0',64),$public,1]);
+        foreach([['a','won','verified',1],['b','lost','verified',1],['c','won','verified',1],['d','won','casual',1],['e','won','verified',0]] as $i=>[$id,$result,$verification,$ended]){
+          $match=str_pad((string)$i,32,'0',STR_PAD_LEFT);
+          $hub->q('INSERT INTO matches(id,started,ended,verification) VALUES(?,?,?,?)',[$match,1,$ended,$verification]);
+          $hub->q('INSERT INTO participants VALUES(?,?,?)',[$match,str_repeat($id,32),$result]);
+        }"""
+        seeded=subprocess.run(['php','-r',code,dsn],cwd=ROOT,capture_output=True,text=True)
+        self.assertEqual(seeded.returncode,0,seeded.stderr)
+        board=json.load(self.request('/api/leaderboard'))['players']
+        self.assertEqual([row['name'] for row in board],['PublicWinner','PublicRunner'])
+        self.assertEqual([(row['wins'],row['matches']) for row in board],[(1,1),(0,1)])
+        revoke=code[:code.index('        foreach(')]+"$hub->q('UPDATE users SET public=0 WHERE id=?',[str_repeat('a',32)]);"
+        subprocess.run(['php','-r',revoke,dsn],cwd=ROOT,check=True,capture_output=True)
+        self.assertEqual([row['name'] for row in json.load(self.request('/api/leaderboard'))['players']],['PublicRunner'])
 
     def test_accounts_csrf_logout_and_directory(self):
         with self.request('/api/register', {'name':'PHPKeeper', 'password':'a long password 123'}) as response:

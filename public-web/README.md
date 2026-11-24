@@ -127,3 +127,24 @@ The API browser is intentionally absent from public menus, homepage links and
 network-page links. It remains available directly at
 `/index.php?route=%2Fapi-browser` for development; this is a navigation choice,
 not an authentication boundary. Public game/account API endpoints remain active.
+
+## Network navigation and guest access
+
+The main navigation is Overview, Features, Network, Servers, Leaderboard and
+Downloads, with Sign in / My Keeper separately on the right. Servers is a shortcut
+into Network; its subnavigation groups the other multiplayer pages. Subpages are
+`/network/servers`, `/network/events`, `/network/replays` and
+`/network/challenges`, with `/network` as the overview. Links use the same direct
+PHP route transport, and the previous `/servers`, `/services`, `/events`,
+`/replays` and `/challenges` bookmarks remain supported.
+
+Guests can browse the public directory, events, challenges and shared replays.
+Event registration/creation, replay uploads, game pairing, friends and personal
+match history are shown only after session verification. They start hidden, and
+remain hidden if the session request fails. Backend authentication and CSRF checks
+remain authoritative; hiding a control does not grant or replace API permissions.
+
+The leaderboard lists only opt-in public profiles with completed server-verified
+matches; casual results and private profiles never enter it. Downloads use the
+validated release manifest when available, otherwise link to the GitHub releases
+page without inventing a current version or asset URL.

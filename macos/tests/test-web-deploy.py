@@ -111,7 +111,7 @@ class WebDeployTests(unittest.TestCase):
             for path in ['/servers','/services','/api-browser','/events','/replays','/profile','/device']:
                 with urllib.request.urlopen(direct(path),timeout=2) as response:
                     self.assertEqual(response.status,200);self.assertIn('routes.js',response.read().decode())
-            with urllib.request.urlopen(origin,timeout=2) as response:self.assertIn('/index.php?route=%2Fservers',response.read().decode())
+            with urllib.request.urlopen(origin,timeout=2) as response:self.assertIn('/index.php?route=%2Fnetwork%2Fservers',response.read().decode())
             request=urllib.request.Request(direct('/api/register'),data=json.dumps({'name':'ConfigKeeper','password':'a long config password'}).encode(),headers={'Content-Type':'application/json'})
             with urllib.request.urlopen(request,timeout=4) as response:
                 account=json.load(response);self.assertIn('csrf',account);self.assertNotIn('token',account)

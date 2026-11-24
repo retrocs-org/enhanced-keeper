@@ -154,3 +154,6 @@ Direct-route checks cover all deployed pages, cookie/CSRF security, invalid rout
 and a copied public-web with no router script. run-hub-config-tests.py additionally
 checks game GET/POST fallback after a web-server HTML 404, preserving Authorization
 and JSON bodies, and confirms JSON API 404s are not retried.
+
+`node macos/tests/test-network-ui.js` checks guest and signed-in Network event
+controls, public replay listing, logout cleanup and session-error defaults.
