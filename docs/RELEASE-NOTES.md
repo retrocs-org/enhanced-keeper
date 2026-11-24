@@ -1,4 +1,10 @@
 ## Features
+- Serve the complete HTTP account/directory/community API natively in PHP under
+  public-web, with MariaDB production support and SQLite interoperability.
+- Integrate server browsing, service status, accounts/statistics, game pairing,
+  events, challenges, replays and a searchable safe-read API browser into one site.
+- Add MariaDB provisioning using an existing administrative option file, a
+  web-server-scoped CRUD account and private generated PHP connection settings.
 - Recover safe windowed settings after interrupted display startup or monitor removal,
   retaining the previous configuration.
 - Browse rotating, preserved and trashed save copies in a recovery screen; restore

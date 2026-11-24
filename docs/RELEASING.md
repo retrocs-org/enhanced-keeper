@@ -1,7 +1,7 @@
 # Releasing KeeperFX-E
 
 This macOS workflow adapts the supplied Beam68 release system. Python 3.9+,
-Xcode command-line tools, CMake, Ninja and PHP 8.1+ CLI are required. The runtime requires
+Xcode command-line tools, CMake, Ninja and PHP 8.1+ CLI (mbstring and pdo_sqlite for local checks) are required. The runtime requires
 macOS 13+. Public releases use a clean committed checkout; local review builds
 can use `--allow-dirty` and are deliberately ineligible for publication.
 

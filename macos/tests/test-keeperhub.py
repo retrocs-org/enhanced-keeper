@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import importlib.util, unittest, tempfile, sys, socket, time, threading, json, urllib.request, urllib.error, http.cookiejar
 from pathlib import Path
-p=Path(__file__).resolve().parents[2]/'services/keeperhub/hub.py';s=importlib.util.spec_from_file_location('keeperhub',p);h=importlib.util.module_from_spec(s);s.loader.exec_module(h)
+p=Path(__file__).resolve().parents[2]/'macos/tests/legacy_keeperhub.py';s=importlib.util.spec_from_file_location('keeperhub',p);h=importlib.util.module_from_spec(s);s.loader.exec_module(h)
 class HubTests(unittest.TestCase):
  def setUp(self):
   self.tmp=tempfile.TemporaryDirectory();self.clock=[time.time()];self.relay=h.Relay();self.hub=h.Hub(Path(self.tmp.name)/'test.sqlite3',self.relay,'admin-'+'x'*30,lambda:self.clock[0]);self.a=self.post('/api/register',{'name':'KeeperOne','password':'a long password 123'});self.b=self.post('/api/register',{'name':'KeeperTwo','password':'a long password 456'});self.me=self.get('/api/me',self.a['token']);self.other=self.get('/api/me',self.b['token'])

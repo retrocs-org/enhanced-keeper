@@ -13,7 +13,7 @@ ROOT=Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(ROOT/'scripts'))
 def load(name,path):
     spec=importlib.util.spec_from_file_location(name,ROOT/path);module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module);return module
-hub=load('hub','services/keeperhub/hub.py')
+hub=load('hub','macos/tests/legacy_keeperhub.py')
 ops=load('maintenance','services/keeperhub/maintenance.py')
 web=load('web_releases','scripts/update-web-releases.py')
 class ServiceOperations(unittest.TestCase):

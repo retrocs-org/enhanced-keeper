@@ -16,9 +16,13 @@ import urllib.error
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[2]
-spec = importlib.util.spec_from_file_location('keeperhub', ROOT/'services/keeperhub/hub.py')
+spec = importlib.util.spec_from_file_location('keeperhub', ROOT/'macos/tests/legacy_keeperhub.py')
 hub = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(hub)
+import sys
+sys.path.insert(0,str(ROOT/'services/keeperhub'))
+from relay_worker import serve_control
+from relay import Relay
 
 
 class PHPWebsiteTests(unittest.TestCase):
@@ -27,19 +31,27 @@ class PHPWebsiteTests(unittest.TestCase):
         self.assertIsNotNone(php, 'PHP 8.1+ is required for website acceptance tests')
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.relay = hub.Relay()
+        self.relay = Relay()
         self.addCleanup(self.relay.close)
         with socket.socket() as sock:
             sock.bind(('127.0.0.1', 0))
             port = sock.getsockname()[1]
         self.origin = 'http://127.0.0.1:'+str(port)
         service = hub.Hub(Path(self.temp.name)/'test.sqlite3', self.relay, 'test-admin-'+'x'*30)
-        self.backend = hub.serve(service, port=0, origin=self.origin)
+        self.backend = serve_control(self.relay,'test-relay-control-'+'r'*32)
         self.thread = threading.Thread(target=self.backend.serve_forever, daemon=True)
         self.thread.start()
         self.addCleanup(self.stop_backend)
-        environment = dict(os.environ, KFX_PUBLIC_ORIGIN=self.origin,
-                           KFX_HUB_UPSTREAM='http://127.0.0.1:'+str(self.backend.server_port))
+        environment = dict(os.environ, KFX_DB_CONFIG='', KFX_DB_DSN='', KFX_DB_USER='', KFX_DB_PASSWORD='', KFX_PUBLIC_ORIGIN=self.origin,
+                           KFX_HUB_DB=str(Path(self.temp.name)/'test.sqlite3'), KFX_HUB_ADMIN_KEY='test-admin-'+'x'*30, KFX_RELAY_CONTROL='http://127.0.0.1:'+str(self.backend.server_port), KFX_RELAY_CONTROL_KEY='test-relay-control-'+'r'*32)
+        mysql_socket=os.environ.get('KFX_TEST_MYSQL_SOCKET')
+        if mysql_socket:
+            self.mysql_database='kfx_web_'+__import__('secrets').token_hex(8)
+            command=['mariadb','--no-defaults','--socket='+mysql_socket,'-uroot']
+            subprocess.run([*command,'-e','CREATE DATABASE `'+self.mysql_database+'` CHARACTER SET utf8mb4'],check=True,capture_output=True)
+            with (ROOT/'public-web/lib/mariadb.sql').open() as schema:subprocess.run([*command,self.mysql_database],stdin=schema,check=True,capture_output=True)
+            self.addCleanup(lambda:subprocess.run([*command,'-e','DROP DATABASE `'+self.mysql_database+'`'],check=True,capture_output=True))
+            environment.update(KFX_DB_DSN='mysql:unix_socket='+mysql_socket+';dbname='+self.mysql_database+';charset=utf8mb4',KFX_DB_USER='root',KFX_DB_PASSWORD='')
         web = ROOT/'public-web'
         self.php = subprocess.Popen([php, '-S', '127.0.0.1:'+str(port), '-t', str(web), str(web/'router.php')],
                                     env=environment, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -71,17 +83,27 @@ class PHPWebsiteTests(unittest.TestCase):
             headers={'Content-Type':'application/json', **(headers or {})}, method=method), timeout=4)
 
     def test_pages_assets_and_unknown_routes(self):
-        for path in ['/', '/index.php', '/community', '/servers', '/events', '/profile', '/device', '/keeper/'+'a'*32]:
+        for path in ['/', '/index.php', '/community', '/servers', '/events', '/profile', '/device', '/services', '/api-browser', '/replays', '/challenges', '/keeper/'+'a'*32]:
             with self.request(path) as response:
                 self.assertIn('KeeperFX-E', response.read().decode())
                 self.assertIn("frame-ancestors 'none'", response.headers['Content-Security-Policy'])
-        for path, content_type in [('/app.js', 'text/javascript'), ('/style.css', 'text/css'), ('/site.css', 'text/css')]:
+        for path, content_type in [('/app.js', 'text/javascript'), ('/portal.js', 'text/javascript'), ('/api-browser.js', 'text/javascript'), ('/style.css', 'text/css'), ('/site.css', 'text/css')]:
             with self.request(path) as response:
                 self.assertTrue(response.headers['Content-Type'].startswith(content_type))
-        for path in ['/community.php', '/router.php', '/hub.py', '/.git/config', '/api/../hub.py', '/missing']:
+        for path in ['/community.php', '/router.php', '/lib/Hub.php', '/layout.php', '/api-catalog.php', '/hub.py', '/.git/config', '/api/../hub.py', '/missing']:
             with self.assertRaises(urllib.error.HTTPError) as error:
                 self.request(path)
             self.assertEqual(error.exception.code, 404)
+
+    def test_api_catalog_and_service_pages_use_native_php(self):
+        health=json.load(self.request('/api/health'));self.assertEqual(health['http_backend'],'php')
+        catalog=json.load(self.request('/api-catalog.json'));self.assertGreater(len(catalog),30)
+        for entry in catalog:
+            if entry['interactive']:self.assertEqual(entry['method'],'GET');self.assertNotIn('{',entry['path'])
+        with self.request('/api-browser') as response:
+            page=response.read().decode();self.assertIn('api-explorer',page);self.assertIn('Endpoint reference',page)
+        with self.request('/services') as response:self.assertIn('relay-status',response.read().decode())
+        with self.request('/profile') as response:self.assertIn('<form method="post" id="login"',response.read().decode())
 
     def test_original_landing_is_separate_from_community(self):
         with self.request('/') as response:
@@ -125,15 +147,18 @@ class PHPWebsiteTests(unittest.TestCase):
             data=json.dumps({'device_code':device['device_code']}).encode(), headers={'Content-Type':'application/json'}), timeout=4))
         self.assertIn('token', game)
         self.assertTrue(json.load(self.request('/api/me', headers={'Authorization':'Bearer '+game['token']}))['id'])
+        host=json.load(self.request('/api/servers/register',{'name':'PHP Game Host','endpoint':'127.0.0.1:5556','engine':'1.4.0.0','password':False},{'Authorization':'Bearer '+game['token']}))
+        self.assertIn('secret',host)
 
-    def test_service_failure_is_bounded_and_generic(self):
+    def test_relay_failure_is_bounded_and_accounts_remain_available(self):
         self.backend.shutdown()
         self.backend.server_close()
         with self.assertRaises(urllib.error.HTTPError) as error:
-            self.request('/api/session')
-        self.assertEqual(error.exception.code, 502)
+            self.request('/api/health')
+        self.assertEqual(error.exception.code, 503)
         body = json.load(error.exception)
         self.assertNotIn('127.0.0.1', body['error'])
+        self.assertFalse(json.load(self.request('/api/session'))['signed_in'])
 
 
 if __name__ == '__main__':

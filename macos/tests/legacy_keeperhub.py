@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""KeeperFX community directory and relay. Standard library, Python 3.9+. GPL-2.0-or-later."""
+"""Legacy SQLite/API contract fixture. Production HTTP is native PHP under public-web/."""
 import argparse, base64, hashlib, hmac, http.cookies, ipaddress, json, os, re, secrets, selectors, socket, sqlite3, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -370,4 +370,4 @@ def main():
     try:server.serve_forever()
     except KeyboardInterrupt:pass
     finally:server.server_close();relay.close()
-if __name__=='__main__':main()
+if __name__=='__main__':raise SystemExit('Compatibility fixture only; use the PHP website and relay_worker.py.')

@@ -6,7 +6,9 @@ from pathlib import Path
 import secrets
 import shutil
 import subprocess
-import hub
+from relay import Relay
+from relay_worker import serve_control
+import threading
 
 
 def main():
@@ -33,12 +35,14 @@ def main():
         keyfile.write_text(secrets.token_urlsafe(32))
         keyfile.chmod(0o600)
     origin = 'http://127.0.0.1:'+str(args.port)
-    relay = hub.Relay()
-    service = hub.Hub(args.state/'community.sqlite3', relay, keyfile.read_text().strip())
-    server = hub.serve(service, port=0, origin=origin, trust_loopback_proxy=True)
+    relay = Relay()
+    relay_key = args.state/'relay-control.key'
+    if not relay_key.exists():
+        relay_key.write_text(secrets.token_urlsafe(32));relay_key.chmod(0o600)
+    server = serve_control(relay, relay_key.read_text().strip())
     web = Path(__file__).resolve().parents[2]/'public-web'
-    environment = dict(os.environ, KFX_PUBLIC_ORIGIN=origin,
-                       KFX_HUB_UPSTREAM='http://127.0.0.1:'+str(server.server_port))
+    environment = dict(os.environ, KFX_PUBLIC_ORIGIN=origin, KFX_HUB_STATE=str(args.state.resolve()), KFX_HUB_DB=str((args.state/'community.sqlite3').resolve()), KFX_DB_CONFIG='', KFX_DB_DSN='', KFX_DB_USER='', KFX_DB_PASSWORD='', KFX_HUB_ADMIN_KEY='', KFX_HUB_ADMIN_KEY_FILE=str(keyfile.resolve()), KFX_RELAY_CONTROL_KEY='', KFX_RELAY_CONTROL_KEY_FILE=str(relay_key.resolve()),
+                       KFX_RELAY_CONTROL='http://127.0.0.1:'+str(server.server_port))
     process = None
     try:
         # Do not log account/device URLs or credentials through PHP's access log.

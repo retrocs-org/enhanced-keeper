@@ -8,9 +8,10 @@ independent. No account or community service is required for LAN/direct play.
 
 ## Local development
 
-The website is PHP 8.1+ under `public-web/`. KeeperHub remains the Python 3.9+
-SQLite account/directory API and UDP relay, with no third-party Python packages.
-Install PHP CLI as well as Python to run the local website and API together.
+The website and complete HTTP API are native PHP 8.1+ under `public-web/`, with
+MariaDB for production and SQLite for local development. Python 3.9+ is needed only
+for the optional UDP relay and the existing dedicated-host supervisor. Install PHP
+CLI with PDO SQLite and mbstring to run the local integrated website:
 From the repository root:
 
 ```sh
@@ -139,7 +140,7 @@ infrastructure, accounts or ranking data are created by the build.
 ## Verification
 
 ```sh
-python3 macos/tests/test-keeperhub.py
+python3 macos/tests/test-native-php-api.py
 python3 macos/tests/test-php-web.py
 python3 macos/tests/run-ingame-options-tests.py
 python3 macos/tests/run-readiness-tests.py
@@ -155,54 +156,16 @@ and must not be published.
 
 ## PHP website deployment
 
-Set the web server document root to `public-web/`, never the repository root.
-The site requires PHP 8.1+ with HTTP stream support (`allow_url_fopen=On`); it
-uses no Composer dependencies. PHP serves a new project landing page, a separate `/community` section, assets
-and a bounded same-origin `/api/` gateway. JavaScript remains responsible for
-interactive forms and listings. The API, SQLite database and UDP relay remain
-in KeeperHub; PHP hosting alone does not replace the game service.
+The website, accounts, HTTP API and API browser are all under `public-web/`. The
+front controller handles `/api/` directly in PHP rather than proxying a Python API.
+Use this directory as the document root. See [MariaDB deployment](MARIADB-DEPLOYMENT.md)
+for the database server sth-ts-dbs001 (172.16.1.121), web server sth-ts-web003
+(172.16.1.133), restricted application account and private PHP-FPM configuration.
 
-The public origin defaults to `https://keeperfx-e.retrocs.org` and the private
-API address to `http://127.0.0.1:8766`. Override with `KFX_PUBLIC_ORIGIN` (no trailing
-slash) and `KFX_HUB_UPSTREAM` in PHP-FPM's environment or Apache's `SetEnv`.
-The upstream must be loopback HTTP. It is never selected from visitor input.
-The Python service's `--origin` must match the PHP public origin exactly:
+The optional UDP relay has a key-protected loopback control listener in
+`services/keeperhub/relay_worker.py`. It does not serve public account/API routes.
+The old Python API implementation is a compatibility fixture under macos/tests only.
 
-```sh
-# Supply KFX_HUB_ADMIN_KEY from the service manager/secret store.
-python3 services/keeperhub/hub.py --bind 127.0.0.1 --port 8766 \
-  --origin https://keeperfx-e.retrocs.org --trust-loopback-proxy \
-  --db /var/lib/keeperfx-e/community.sqlite3
-```
-
-Keep the database, administrator key and private configuration outside the
-web document root. `--trust-loopback-proxy` preserves per-client rate limits
-using the address set by PHP; only enable it for a private API behind this local
-gateway. Configure relay public host/UDP ports separately as described above.
-Do not expose the private HTTP API directly to the Internet.
-
-Apache needs `mod_rewrite` and permission to use the supplied `.htaccess`.
-For Nginx with PHP-FPM, adapt the following inside the site's HTTPS server block:
-
-```nginx
-root /srv/keeperfx-e/public-web;
-index index.php;
-location / { rewrite ^ /index.php last; }
-location = /index.php {
-    include fastcgi_params;
-    fastcgi_param SCRIPT_FILENAME $document_root/index.php;
-    fastcgi_param HTTP_AUTHORIZATION $http_authorization;
-    fastcgi_pass unix:/run/php/php-fpm.sock;
-}
-location ~ \.php$ { return 404; }
-```
-
-Use your server's actual FPM socket path. All routes, including CSS/JavaScript,
-pass through the front controller. It rejects unknown routes, cross-origin
-requests and unexpected hosts; forwards account cookies/CSRF and game bearer
-authentication; refuses redirects from the upstream; and returns generic errors
-when the service is offline. Both the browser and game can use the same HTTPS
-origin. PHP's built-in server is used only for local development.
 
 ## Account recovery and operations
 

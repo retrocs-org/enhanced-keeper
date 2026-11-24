@@ -1,12 +1,37 @@
 #!/usr/bin/env python3
 """Real loopback hub + headless host + game browser join + read-only spectator."""
 from pathlib import Path
-import importlib.util,json,os,re,signal,socket,subprocess,tempfile,threading,time,traceback,plistlib
+import importlib.util,json,os,re,signal,socket,subprocess,tempfile,threading,time,traceback,plistlib,shutil,urllib.request,urllib.error,sys
+from http.cookies import SimpleCookie
 root=Path(__file__).resolve().parents[2]
 def module(name,file):
  s=importlib.util.spec_from_file_location(name,file);m=importlib.util.module_from_spec(s);s.loader.exec_module(m);return m
-hubmod=module('keeperhub',root/'services/keeperhub/hub.py');ded=module('dedicated',root/'services/keeperhub/dedicated.py')
-work=Path(tempfile.mkdtemp(prefix='kfx-community-e2e-'));Path('/tmp/kfx-community-e2e-profile').write_text(str(work));relay=hubmod.Relay();hub=hubmod.Hub(work/'hub.sqlite3',relay,'test-'+os.urandom(24).hex());http=hubmod.serve(hub,port=0);threading.Thread(target=http.serve_forever,daemon=True).start();base=http.origin;processes=[];supervisor=None;hostthread=None
+sys.path.insert(0,str(root/'services/keeperhub'))
+from relay import Relay
+from relay_worker import serve_control
+ded=module('dedicated',root/'services/keeperhub/dedicated.py')
+work=Path(tempfile.mkdtemp(prefix='kfx-community-e2e-'));Path('/tmp/kfx-community-e2e-profile').write_text(str(work));relay=Relay();admin_key='test-'+os.urandom(24).hex();control_key='control-'+os.urandom(24).hex();http=serve_control(relay,control_key);threading.Thread(target=http.serve_forever,daemon=True).start()
+with socket.socket() as sock:sock.bind(('127.0.0.1',0));web_port=sock.getsockname()[1]
+base='http://127.0.0.1:'+str(web_port);web=root/'public-web';web_process=subprocess.Popen([shutil.which('php'),'-S','127.0.0.1:'+str(web_port),'-t',str(web),str(web/'router.php')],env=dict(os.environ,KFX_DB_CONFIG='',KFX_DB_DSN='',KFX_DB_USER='',KFX_DB_PASSWORD='',KFX_HUB_DB='',KFX_PUBLIC_ORIGIN=base,KFX_HUB_STATE=str(work/'service'),KFX_HUB_ADMIN_KEY=admin_key,KFX_RELAY_CONTROL='http://127.0.0.1:'+str(http.server_port),KFX_RELAY_CONTROL_KEY=control_key),stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+class PublicPHP:
+ admin_key=admin_key
+ def handle(self,method,path,data,token=''):
+  headers={'Content-Type':'application/json'}
+  if token:headers['Authorization']='Bearer '+token
+  request=urllib.request.Request(base+path,data=json.dumps(data).encode() if method=='POST' else None,headers=headers,method=method)
+  with urllib.request.urlopen(request,timeout=6) as response:
+   value=json.load(response)
+   if path in ('/api/register','/api/login'):
+    jar=SimpleCookie();jar.load(response.headers.get('Set-Cookie',''));value['token']=jar['kfx_session'].value
+   return value
+hub=PublicPHP()
+for attempt in range(100):
+ try:
+  assert hub.handle('GET','/api/health',{})['http_backend']=='php';break
+ except (OSError,AssertionError):time.sleep(.05)
+else:raise RuntimeError('Native PHP API did not start')
+processes=[];supervisor=None;hostthread=None
+
 app=Path(os.environ.get('KFX_TEST_APP','/Applications/KeeperFX-E.app'));launcher=app/'Contents/MacOS'/plistlib.loads((app/'Contents/Info.plist').read_bytes())['CFBundleExecutable'];engine=root/'build-mac-universal/keeperfx'
 def port(udp=False):
  with socket.socket(socket.AF_INET,socket.SOCK_DGRAM if udp else socket.SOCK_STREAM) as s:s.bind(('127.0.0.1',0));return s.getsockname()[1]
@@ -74,6 +99,7 @@ finally:
  if __import__('sys').exc_info()[0]:
   try:print('Client status:',rpc(clientport,'community_status') if 'clientport' in globals() else {},flush=True)
   except OSError:pass
+  print('Host errors:',hosterrors if 'hosterrors' in globals() else [],flush=True)
   print('Relay diagnostic:',[(bool(c['host']),bool(c['client']),c['bytes']) for c in relay.channels.values()],flush=True)
  for c in connections.values():c.close()
  if supervisor:supervisor.stop=True
@@ -85,4 +111,4 @@ finally:
   log.close()
  if supervisor:supervisor.finish_child()
  if hostthread:hostthread.join(10)
- http.shutdown();http.server_close();relay.close()
+ http.shutdown();http.server_close();relay.close();web_process.terminate();web_process.wait(timeout=5)

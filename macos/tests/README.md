@@ -90,7 +90,7 @@ Camera-guide tests use the real default binding table and game key matcher to
 check all four A/Cross + D-pad combinations, missing-modifier rejection and a
 custom zoom remap, plus the complete three-page guide navigation cycle.
 
-Community service checks: `python3 macos/tests/test-keeperhub.py` exercises account
+Community service checks: `python3 macos/tests/test-native-php-api.py` exercises the native PHP account
 pairing/privacy, directory ownership/expiry, authenticated UDP relay, verified
 results, tournament advancement, stream offsets, cookies and CSRF.
 `python3 macos/tests/test-community-integration.py` starts a real headless engine,
@@ -127,3 +127,9 @@ Manual enhancement checks (no CI/runner):
   recovery and reversible profile reset using an isolated fixture directory.
 - Native options checks cover all six new pages, replay labels/favourites,
   caption preferences, capture output, repeat navigation and monitor recovery.
+
+Native PHP website/API checks use isolated private databases. test-native-php-api.py
+runs the full account/directory/statistics/pairing/replay/tournament contract against
+PHP; test-php-web.py exercises real public routes, cookies, CSRF and the API browser.
+The MariaDB variants use only a disposable instance selected by KFX_TEST_MYSQL_SOCKET.
+The legacy Python API remains a test fixture for database interoperability only.
