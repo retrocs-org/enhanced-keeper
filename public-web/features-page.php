@@ -30,6 +30,6 @@ if (!defined('KFX_WEB_PAGE')) { http_response_code(404); exit; }
 <section class="feature-foundations wrap" id="original-game" aria-labelledby="original-title">
   <h2 id="original-title">The original Dungeon Keeper</h2>
   <p>Carve out a dungeon, manage gold, feed and train your creatures, then prepare for the heroes at your door. Pick up minions, set traps and possess a creature to see your domain from inside. The original graphics, sounds and game data come from your own copy.</p>
-  <a href="https://www.gog.com/en/game/dungeon_keeper">About Dungeon Keeper Gold ↗</a>
+  <a href="https://store.steampowered.com/app/1996630/Dungeon_Keeper_Gold/">Dungeon Keeper Gold on Steam ↗</a>
   <details><summary>Sources &amp; project notes</summary><p>Dates and project history: <a href="https://keeperfx.net/history">KeeperFX history</a>. KeeperFX’s Unofficial branch returned to the main project in 2020; this overview groups that history under KeeperFX. <a href="https://github.com/Loobinex/keeperfx-unofficial">Read the branch announcement</a>.</p><p>KeeperFX continues independently. Controllers, multiplayer and modding also exist upstream; this page describes our fork’s particular workflows. KeeperFX Enhanced is an independent fork of KeeperFX, not an official Bullfrog or EA release.</p><p>See our <a href="https://github.com/retrocs-org/KeeperFX-E/blob/main/docs/RELEASE-NOTES.md">release notes</a> for implementation details and current limitations.</p></details>
 </section>
