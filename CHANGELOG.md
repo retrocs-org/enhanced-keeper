@@ -3,8 +3,8 @@
 ## 1.4.0
 
 ### Features
-- Add a sourced visual project timeline, original-game overview and detailed
-  Keeper Enhanced feature chapters to the website Features page.
+- Present Dungeon Keeper, KeeperFX and KeeperFX Enhanced in a compact website
+  timeline, with four concise feature sections and expandable project sources.
 - Rename the project to keeper-enhanced while preserving existing service URLs,
   repository addresses, save paths and database settings.
 - Add private/public dedicated-host modes, optional passwords, native Linux server
