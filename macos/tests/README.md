@@ -139,3 +139,7 @@ config.inc.php bytes, mtime and permissions, refuse unrelated destinations, reje
 credentials in the tracked template, and run the copied PHP payload using only
 its deployed config. `test-mariadb-provision.py` tests both private connection-only
 and complete web-config output against an explicitly selected disposable database.
+
+`python3 macos/tests/run-hub-config-tests.py` checks the public default service,
+custom URL persistence, restoration of an existing custom account, credential
+clearing when switching services, and loopback HTTP for local development.

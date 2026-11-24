@@ -21,7 +21,7 @@ namespace {
 std::string identity_ticket;std::array<std::string,4> identities;
 bool initializing=false;
 bool host_started=false;
-std::string base="http://127.0.0.1:8765",folder,account,name,account_id,server_id,server_secret,match_id,last_tag,last_body;
+std::string base="https://keeperfx-e.retrocs.org",folder,account,name,account_id,server_id,server_secret,match_id,last_tag,last_body;
 struct Registration{std::string host,token,role;int port;};std::vector<Registration> registrations;
 struct Reply{std::string tag,body;long status=0;};std::future<Reply> job;Uint64 heartbeat_at=0;
 struct Request{std::string tag,route,body,token;};std::deque<Request> queue;

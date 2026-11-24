@@ -18,8 +18,16 @@ From the repository root:
 python3 services/keeperhub/dev.py
 ```
 
-If that port is already in use, pass `--port 8766` and set the same address in
-the game’s Community Service settings and dedicated host configuration.
+The game defaults to `https://keeperfx-e.retrocs.org`. To use your own service,
+open More Options → Network → Server Browser → Account → Community Service,
+enter your HTTPS URL and choose Save Service Address. The choice persists in your
+player profile; existing custom service addresses are preserved. Changing services
+clears the current service's account credentials before connecting to the new one.
+LAN and direct play remain independent.
+
+For local development, enter `http://127.0.0.1:8765` in that same setting. If the
+port is already in use, pass `--port 8766` and use that port in the game and
+in the dedicated host configuration.
 Open the printed localhost address and create an account if wanted. The service stores its
 SQLite database and private administrator key in `.local/keeperhub/`. Neither
 belongs in a release or source control. Stop the service with Ctrl-C, or use

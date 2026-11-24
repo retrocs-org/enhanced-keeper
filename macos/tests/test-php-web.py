@@ -104,7 +104,8 @@ class PHPWebsiteTests(unittest.TestCase):
             if entry['interactive']:self.assertEqual(entry['method'],'GET');self.assertNotIn('{',entry['path'])
         with self.request('/api-browser') as response:
             page=response.read().decode();self.assertIn('api-explorer',page);self.assertIn('Endpoint reference',page)
-        with self.request('/services') as response:self.assertIn('relay-status',response.read().decode())
+        with self.request('/services') as response:
+            page=response.read().decode();self.assertIn('relay-status',page);self.assertNotIn('The same network in-game and on the web.',page);self.assertIn('service-refresh',page)
         with self.request('/profile') as response:self.assertIn('<form method="post" id="login"',response.read().decode())
 
     def test_original_landing_is_separate_from_community(self):
