@@ -1,32 +1,83 @@
-# KeeperFX-E public website and native PHP API
+# KeeperFX-E website and native PHP API
 
-Set the web server document root to **this public-web directory**. It contains the
-project site, live server browser, service status, accounts/statistics, game pairing,
-events, challenges, replay sharing and a searchable, read-only interactive API browser.
-Every public HTTP endpoint under `/api/` is implemented in PHP. There is no Python
-HTTP/account API behind a proxy. The optional Python process handles UDP relay only,
-with a key-protected control listener bound to loopback.
+KeeperFX-E is an independent fork of [KeeperFX](https://github.com/dkfans/keeperfx).
 
-Requirements: PHP 8.1+, JSON, mbstring, PDO and pdo_mysql for MariaDB. Local development
-can use pdo_sqlite. There are no Composer or Node build dependencies. Requests use
-HttpOnly/SameSite cookies plus CSRF for browser changes, or Bearer tokens for game/host
-clients. Passwords use the existing salted PBKDF2 format, preserving SQLite account
-compatibility. Database/key/configuration files belong outside this directory.
+This directory is the **complete deployable PHP website**: homepage, original
+dungeon-themed artwork, server browser, network service status, accounts and
+statistics, pairing, events, challenges, replays and the interactive API browser.
+Every public `/api/` HTTP endpoint is implemented here in PHP. No build step,
+Composer install, Node server or Python HTTP backend is needed on the web server.
+The optional real-time UDP relay remains a separate worker.
 
-Pages: `/`, `/servers`, `/services`, `/api-browser`, `/profile`, `/device`, `/events`,
-`/challenges`, `/replays` and public profiles under `/keeper/{id}`. The endpoint catalog
-is available at `/api-catalog.json`. The API browser executes only listed GET routes
-and redacts sensitive response fields; mutations use the normal account/game flows.
+Requirements: PHP 8.1+, JSON, mbstring, PDO and pdo_mysql for MariaDB. PDO SQLite
+is supported for local development. Serve this directory as the vhost document
+root with the supplied Apache `.htaccess`, or the Nginx routing in the deployment
+guide. Only `index.php` should be exposed as an HTTP PHP entry point.
 
-Run locally from the repository root:
+## Configuration
+
+Edit **the deployed `config.inc.php`**. It contains the public origin, database
+DSN/user/password, private runtime directory, optional relay URL/control credentials,
+administrator key and verified release manifest path. Defaults select:
+
+- `https://keeperfx-e.retrocs.org`
+- MariaDB `172.16.1.121:3306`, database/user `keeperfx_e`
+- Runtime state `/var/lib/keeperfx-e`, outside the vhost
+
+The template contains no passwords or service keys. Enable the optional relay by
+setting `relay_control_url` and its key/key file. A private database file can still
+be selected with `database_config_file`; environment overrides remain supported
+for local tests and existing installations. The precedence is environment override,
+then this config; an explicitly selected external database file supplies its own
+connection credentials.
+
+The deployed config must be readable by PHP-FPM but not publicly downloadable.
+Use mode 0640 with the appropriate PHP-FPM group. Direct requests are rejected;
+Nginx must also deny config backups and `/lib/` as shown in the deployment guide.
+Keep databases, keys and runtime state outside the vhost. Never put production
+passwords into the source checkout or Git; source-release checks reject nonempty
+credential settings in the tracked config template.
+
+## Refresh the vhost
+
+Run on the web server from an updated checkout:
+
+```sh
+# First installation into a NEW/EMPTY dedicated document root:
+python3 scripts/deploy-web.py /var/www/keeperfx-e/public-web --initialize --apply
+
+# Later refreshes (no build or migration):
+python3 scripts/deploy-web.py /var/www/keeperfx-e/public-web --apply
+```
+
+Omit `--apply` to preview. The script copies this directory only, updates changed
+files and removes obsolete payload files. **An existing `config.inc.php` is never
+overwritten, merged, deleted or chmodded.** It installs defaults only when config
+is absent. A marker identifies the dedicated vhost, and unowned nonempty directories
+and symlinks are refused. Do not store uploads, logs or application data in this
+managed directory. Database migrations and UDP worker deployment are separate.
+
+Check the deployed database configuration as the PHP service user:
+
+```sh
+php /var/www/keeperfx-e/public-web/check-database.php
+```
+
+## Local development
+
+From the repository root:
 
 ```sh
 python3 services/keeperhub/dev.py
 ```
 
-This starts PHP on loopback, a private relay control listener and UDP relay, with
-private SQLite state under `.local/keeperhub/`. `--state` and `--port` select isolated
-state and a different port. The Python account/API code is retained only under
-`macos/tests/legacy_keeperhub.py` for migration and contract tests.
+This starts PHP on loopback with an isolated SQLite configuration and an optional
+private relay, using `.local/keeperhub/` state. Use `--state` and `--port` for an
+isolated test instance. The source config does not need editing for this workflow.
 
-For the production MariaDB/web-server setup, see [MARIADB-DEPLOYMENT.md](../docs/MARIADB-DEPLOYMENT.md).
+Routes: `/`, `/servers`, `/services`, `/api-browser`, `/profile`, `/device`, `/events`,
+`/challenges`, `/replays`, `/keeper/{id}` and `/api-catalog.json`. Browser changes use
+HttpOnly/SameSite cookies plus CSRF; game/host clients use Bearer credentials. The
+API explorer runs listed GET requests and redacts credentials from its output.
+
+See [MariaDB deployment](../docs/MARIADB-DEPLOYMENT.md) for the two-server setup.

@@ -9,10 +9,10 @@ function serve_php_api(string $origin,string $uri,string $method): never {
         $object=json_decode($raw?:'{}',false,64,JSON_THROW_ON_ERROR);demand(is_object($object),'Expected an object');$data=json_decode($raw?:'{}',true,64,JSON_THROW_ON_ERROR);
         foreach(['name','code','user_code','device_code','user','ticket','map','mods','engine','region','title','description','kind','status','match','result','data','endpoint','content','admin_key','action'] as $key)if(array_key_exists($key,$data))demand(is_string($data[$key]),'Invalid '.$key);
         $authorization=$_SERVER['HTTP_AUTHORIZATION']??'';$cookie=$_COOKIE['kfx_session']??'';demand(is_string($cookie),'Invalid session');$bearer='';if($authorization!==''){demand(preg_match('/^Bearer ([A-Za-z0-9_-]{1,150})$/D',$authorization,$m),'Invalid authorization',401);$bearer=$m[1];}
-        $state=getenv('KFX_HUB_STATE')?:dirname(__DIR__,2).'/.local/keeperhub';[$db,$connection]=database_config();
-        $key=getenv('KFX_HUB_ADMIN_KEY')?:'';$keyFile=getenv('KFX_HUB_ADMIN_KEY_FILE')?:$state.'/admin.key';if($key===''&&is_file($keyFile)&&!is_link($keyFile))$key=trim((string)file_get_contents($keyFile));
-        $relayKey=getenv('KFX_RELAY_CONTROL_KEY')?:'';$relayFile=getenv('KFX_RELAY_CONTROL_KEY_FILE')?:$state.'/relay-control.key';if($relayKey===''&&is_file($relayFile)&&!is_link($relayFile))$relayKey=trim((string)file_get_contents($relayFile));
-        $hub=new KeeperHub($db,$key,getenv('KFX_RELAY_CONTROL')?:'',$relayKey,null,$connection);
+        $state=web_setting('state_dir','KFX_HUB_STATE');[$db,$connection]=database_config();
+        $key=web_setting('admin_key','KFX_HUB_ADMIN_KEY');$keyFile=web_setting('admin_key_file','KFX_HUB_ADMIN_KEY_FILE',$state.'/admin.key');if($key===''&&is_file($keyFile)&&!is_link($keyFile))$key=trim((string)file_get_contents($keyFile));
+        $relayKey=web_setting('relay_control_key','KFX_RELAY_CONTROL_KEY');$relayFile=web_setting('relay_control_key_file','KFX_RELAY_CONTROL_KEY_FILE',$state.'/relay-control.key');if($relayKey===''&&is_file($relayFile)&&!is_link($relayFile))$relayKey=trim((string)file_get_contents($relayFile));
+        $hub=new KeeperHub($db,$key,web_setting('relay_control_url','KFX_RELAY_CONTROL'),$relayKey,null,$connection);
         $value=$hub->handle($method,$uri,$data,$bearer?:$cookie,$_SERVER['REMOTE_ADDR']??'local',$_SERVER['HTTP_X_CSRF_TOKEN']??'',$cookie!==''&&$bearer==='');
         $route=parse_url($uri,PHP_URL_PATH);
         if(in_array($route,['/api/login','/api/register'],true)&&isset($value['token'])){setcookie('kfx_session',$value['token'],['expires'=>time()+2592000,'path'=>'/','secure'=>str_starts_with($origin,'https://'),'httponly'=>true,'samesite'=>'Strict']);unset($value['token']);}

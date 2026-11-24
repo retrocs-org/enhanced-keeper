@@ -1,6 +1,6 @@
 # KeeperFX-E
 
-[In-game tools](docs/POLISH-TOOLS.md) · [Website](https://keeperfx-e.retrocs.org) · [GitHub](https://github.com/retrocs-org/KeeperFX-E) · [GitLab](https://gitlab.kladhest.se/retrocs-org/keeperfx-e)
+[In-game tools](docs/POLISH-TOOLS.md) · [Website](https://keeperfx-e.retrocs.org) · [GitHub](https://github.com/retrocs-org/KeeperFX-E)
 
 > **This repository is the native macOS fork of KeeperFX.**
 > It carries the Apple Silicon + Intel macOS port, Universal build work,
@@ -17,7 +17,9 @@
 
 ## Community website
 
-The PHP website is in `public-web/`. Run `python3 services/keeperhub/dev.py`
+The complete PHP website and HTTP API are in `public-web/`; configure the deployed
+`config.inc.php` and use `scripts/deploy-web.py` to refresh the vhost without
+changing that config. See [MariaDB/vhost deployment](docs/MARIADB-DEPLOYMENT.md). Run `python3 services/keeperhub/dev.py`
 to start it locally with KeeperHub. See [community setup and PHP hosting](docs/COMMUNITY.md)
 for requirements and deployment configuration.
 

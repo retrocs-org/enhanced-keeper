@@ -1,8 +1,6 @@
 {
   "github": "https://github.com/retrocs-org/KeeperFX-E",
   "github_git": "https://github.com/retrocs-org/KeeperFX-E.git",
-  "gitlab": "https://gitlab.kladhest.se/retrocs-org/keeperfx-e",
-  "gitlab_git": "https://gitlab.kladhest.se/retrocs-org/keeperfx-e.git",
   "author": "KeeperFX-E contributors",
   "source_branch": "",
   "env": {
@@ -13,10 +11,6 @@
     "github": {
       "provider": "env",
       "variable": "GITHUB_TOKEN"
-    },
-    "gitlab": {
-      "provider": "env",
-      "variable": "GITLAB_TOKEN"
     }
   }
 }

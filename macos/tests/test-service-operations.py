@@ -49,7 +49,7 @@ class ServiceOperations(unittest.TestCase):
         self.assertEqual(error.exception.status,429)
     def test_website_release_cache_rejects_corruption(self):
         cache=self.root/'releases.json'
-        script="require 'public-web/releases.php'; echo json_encode(current_release());"
+        script="define('KFX_SETTINGS_INTERNAL',true); require 'public-web/lib/settings.php'; require 'public-web/releases.php'; echo json_encode(current_release());"
         for broken in [{'version':'1.4.0','assets':'broken'}, {'version':[], 'assets':[]}]:
             cache.write_text(json.dumps(broken))
             value=subprocess.check_output(['php','-r',script],cwd=ROOT,env=dict(os.environ,KFX_RELEASE_MANIFEST=str(cache)),text=True)

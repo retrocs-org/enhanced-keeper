@@ -1,5 +1,5 @@
 <?php
-/** KeeperFX-E public website and same-origin KeeperHub API gateway. PHP 8.1+. */
+/** KeeperFX-E public website and native KeeperHub HTTP API. PHP 8.1+. */
 declare(strict_types=1);
 ini_set('display_errors','0');
 umask(0077);
@@ -16,7 +16,10 @@ function problem(int $status, string $message): never {
     exit;
 }
 
-$origin = getenv('KFX_PUBLIC_ORIGIN') ?: 'https://keeperfx-e.retrocs.org';
+define('KFX_SETTINGS_INTERNAL', true);
+require_once __DIR__.'/lib/settings.php';
+try { $origin = web_setting('public_origin','KFX_PUBLIC_ORIGIN'); }
+catch (Throwable $e) { problem(503,'Website configuration unavailable.'); }
 $public = parse_url($origin);
 if (!$public || !isset($public['scheme'], $public['host']) || (isset($public['user']) || isset($public['pass']))
     || isset($public['query']) || isset($public['fragment']) || !empty($public['path'])
@@ -54,6 +57,11 @@ if (is_string($path) && str_starts_with($path, '/api/')) {
 if ($method !== 'GET') {
     header('Allow: GET');
     problem(405, 'Method not allowed.');
+}
+if (in_array($path, ['/assets/keeper-sigil.svg','/assets/dungeon-heart.svg'], true)) {
+    header('Content-Type: image/svg+xml; charset=utf-8');
+    readfile(__DIR__.$path);
+    exit;
 }
 if (in_array($path, ['/app.js', '/portal.js', '/api-browser.js', '/style.css', '/site.css'], true)) {
     header('Content-Type: ' . (str_ends_with($path,'.js') ? 'text/javascript' : 'text/css') . '; charset=utf-8');

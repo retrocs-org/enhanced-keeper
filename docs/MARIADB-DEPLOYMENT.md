@@ -1,92 +1,105 @@
-# KeeperFX-E: MariaDB and PHP deployment
-
-## Target servers
+# KeeperFX-E: MariaDB and PHP vhost deployment
 
 | Role | Host | Private address |
 | --- | --- | --- |
 | MariaDB | sth-ts-dbs001.kladhest.se | 172.16.1.121 |
 | PHP web server | sth-ts-web003.kladhest.se | 172.16.1.133 |
-| Public site | keeperfx-e.retrocs.org | Existing public HTTPS endpoint |
+| Public site | keeperfx-e.retrocs.org | Your existing HTTPS endpoint |
 
-Use the updated checkout containing `scripts/provision-mariadb.sh` and
-`public-web/lib/mariadb.sql`. No remote server was changed during implementation;
-all provisioning/API checks were run against an isolated local MariaDB instance.
+The website and HTTP API are entirely inside `public-web/`. Deployment refreshes
+that directory into your vhost, with no build step. All database and website service
+settings live in its `config.inc.php`, which refreshes always preserve. Remote
+servers have not been changed during development.
 
-## Create the database and restricted application account
+## 1. Create the database on sth-ts-dbs001
 
-Run on **sth-ts-dbs001**, as the OS user who owns the administrative `.my.cnf`:
-
-```sh
-cd /path/to/KeeperFX-E
-bash scripts/provision-mariadb.sh
-```
-
-The script reads `$HOME/.my.cnf` using MariaDB's `--defaults-extra-file` option as
-its first option. It does not request, print or place the root password in argv.
-It creates:
-
-- Database `keeperfx_e`, using utf8mb4.
-- Account `'keeperfx_e'@'172.16.1.133'` with a fresh generated application password.
-- The PHP API tables from `public-web/lib/mariadb.sql`.
-- Only SELECT, INSERT, UPDATE and DELETE permissions on `keeperfx_e.*`.
-- `$HOME/keeperfx-e.database.php`, a mode-0600 private PHP connection file.
-
-The generated password is written only to the private file. The script refuses an
-existing account or credential output instead of silently rotating a working login.
-On failure it removes only the newly created account, leaving database contents
-intact. Existing tables are never dropped. There is no global or grant-option access.
-
-Optional arguments include `--defaults-file`, `--database`, `--user`, `--web-host`,
-`--database-host`, `--schema` and `--output`. Defaults already select the servers above.
-If the client is named mysql, use `MARIADB_CLIENT=mysql bash scripts/provision-mariadb.sh`.
-
-## Configure the web server
-
-Transfer `keeperfx-e.database.php` securely to **sth-ts-web003**. Install it outside
-the website, for example `/etc/keeperfx-e/database.php`. Give the PHP-FPM service
-account read access, normally with a root-owned mode-0640 file and an appropriate
-PHP-FPM group. Do not copy the database administrator's `.my.cnf` onto the web server.
-
-Set these values in the PHP-FPM pool environment (or the equivalent web-server PHP
-environment):
-
-```ini
-env[KFX_PUBLIC_ORIGIN] = https://keeperfx-e.retrocs.org
-env[KFX_DB_CONFIG] = /etc/keeperfx-e/database.php
-env[KFX_HUB_STATE] = /var/lib/keeperfx-e
-```
-
-The generated DSN connects to 172.16.1.121:3306 with charset=utf8mb4. The SQL account
-accepts connections from 172.16.1.133. MariaDB must listen on its private interface
-and accept TCP 3306 from that web-server address. The public website never connects
-as the database root account. PHP's pdo_mysql and mbstring extensions must be enabled.
-The application does not require CREATE, ALTER or DROP permissions at runtime.
-
-If MariaDB TLS is configured, add `ssl_ca` with the trusted CA file path to the
-private PHP array; PDO verifies the server certificate. Use a DSN hostname that
-matches that certificate. Require SSL on the application account when enabling TLS.
-
-Check the connection from the web server:
+Use the updated checkout as the OS user who owns the administrative `.my.cnf`:
 
 ```sh
 cd /path/to/KeeperFX-E
-KFX_DB_CONFIG=/etc/keeperfx-e/database.php php scripts/check-database.php
+bash scripts/provision-mariadb.sh --web-config
 ```
 
-This prints only a connection/schema result. It does not print passwords or data.
-Run it as the PHP service user as well when checking file permissions.
+The script uses `$HOME/.my.cnf` via MariaDB's `--defaults-extra-file` as its first
+option. No root database password is requested, printed or passed in argv. It creates:
 
-## Serve only public-web
+- Database `keeperfx_e` with utf8mb4 and the PHP API tables.
+- Account `'keeperfx_e'@'172.16.1.133'` with a randomly generated application password.
+- Only SELECT, INSERT, UPDATE and DELETE on `keeperfx_e.*` (no DDL or grant option).
+- `$HOME/keeperfx-e.config.inc.php`, mode 0600, containing the complete website settings.
 
-The site's document root is `/path/to/KeeperFX-E/public-web`, never the repository
-root. Apache can use the supplied `.htaccess` with mod_rewrite. With Nginx/PHP-FPM,
-use the existing site's HTTPS/TLS setup and route pages through index.php. For example,
-adapt the source path and PHP-FPM socket in these locations:
+The generated password is written only into that private config. The account is
+restricted to the web server's source IP. MariaDB must listen on its private
+interface and TCP 3306 must be permitted from **172.16.1.133**.
+
+The script refuses an existing account or output file; it never silently rotates
+an existing login. On failure it removes only the account it just created and its
+own incomplete output, leaving database contents intact. Existing tables are not
+dropped. If you already provisioned the account using the previous script, retain
+that account and use its private connection file as described below.
+
+Options: `--defaults-file`, `--database`, `--user`, `--web-host`, `--database-host`,
+`--schema`, `--output`. The defaults already match your two servers. If the installed
+client is named mysql, prefix the command with `MARIADB_CLIENT=mysql`.
+Without `--web-config`, the older private database-only output remains supported.
+
+## 2. Install the public-web payload on sth-ts-web003
+
+Choose a dedicated document root. The example uses `/var/www/keeperfx-e/public-web`;
+replace it with your actual vhost path. Run the first deployment from your checkout:
+
+```sh
+cd /path/to/KeeperFX-E
+python3 scripts/deploy-web.py /var/www/keeperfx-e/public-web --initialize --apply
+```
+
+First initialization requires a new or empty directory. It installs the public-web
+payload and a credential-free default config. The script refuses unrelated nonempty
+directories and symlinks. No SQL migration or service restart happens during refresh.
+
+Securely transfer `~/keeperfx-e.config.inc.php` from the database server to the web
+server using your normal SSH/SCP account, **not** the administrator's `.my.cnf`.
+Install the transferred file as `/var/www/keeperfx-e/public-web/config.inc.php`.
+Give it owner/group and mode 0640 so the deployment owner and PHP-FPM can read it,
+while unrelated users cannot. For example, after selecting your actual PHP group:
+
+```sh
+PHP_FPM_GROUP=www-data   # replace if your PHP-FPM pool uses a different group
+sudo install -o root -g "$PHP_FPM_GROUP" -m 0640 \
+  "$HOME/keeperfx-e.config.inc.php" /var/www/keeperfx-e/public-web/config.inc.php
+```
+
+The file already selects `https://keeperfx-e.retrocs.org` and MariaDB
+`172.16.1.121:3306`. Review `state_dir`, `admin_key_file`, `relay_control_url`,
+`relay_control_key_file` and `release_manifest` for your service layout. There is
+no need to configure PHP-FPM environment variables. Existing `KFX_*` environment
+overrides remain supported; remove stale overrides if you want config.inc.php to
+be the sole source of settings.
+
+Prepare `/var/lib/keeperfx-e` outside the document root with access for the actual
+PHP-FPM service user/group. PHP needs pdo_mysql, mbstring and JSON. The runtime SQL
+account has no CREATE, ALTER or DROP privileges, so initial schema setup stays on
+the database server. Never edit the source template with production credentials.
+
+If you have an existing `/etc/keeperfx-e/database.php` from the previous deployment,
+set `database_config_file` to that path in config.inc.php instead of copying its
+password. This compatibility mode also preserves your existing application user.
+
+For MariaDB TLS, set `database.ssl_ca` to the trusted CA path and use a DSN hostname
+matching the server certificate. Require SSL on that application account. Certificate
+verification remains enabled.
+
+## 3. Route requests through PHP
+
+Set the document root to the **deployed** public-web directory, never the repository.
+Apache can use the supplied `.htaccess` with mod_rewrite and AllowOverride enabled.
+For Nginx/PHP-FPM, use your existing HTTPS configuration and adapt these locations:
 
 ```nginx
-root /srv/keeperfx-e/public-web;
+root /var/www/keeperfx-e/public-web;
 index index.php;
-location ^~ /lib/ { return 404; }
+# Protect config, editor backups, internal modules and hidden deployment metadata.
+location ~* ^/(?:config\.inc\.php|lib(?:/|$)|\.) { return 404; }
 location = /index.php {
     include fastcgi_params;
     fastcgi_param SCRIPT_FILENAME $document_root/index.php;
@@ -103,67 +116,72 @@ location @keeperfx {
 }
 ```
 
-When an existing HTTPS proxy fronts the web server, preserve the public Host
-header. Configure real client IP handling only for that trusted proxy; request
-rate limits and incoming UDP checks use PHP’s REMOTE_ADDR.
+Only the front controller is a public PHP entry point. Both the front controller
+and private config reject direct config requests. The Nginx rule also blocks editor
+backups such as config.inc.php.bak, which must never be served as static files.
+The endpoint catalog, server listings and API browser are same-origin pages.
 
-The front controller allowlists public assets/pages. Private PHP modules reject
-standalone requests, and the Nginx rule also denies schema/module downloads.
-Configure the PHP pool's request timeout and existing HTTPS settings as usual.
+If an HTTPS proxy fronts Nginx, preserve the public Host header. Configure real
+client IP handling only for that trusted proxy; rate limits and UDP reachability
+checks use PHP's REMOTE_ADDR.
 
-## Enable the UDP relay when needed
-
-Accounts, the directory and direct joining work without a relay worker. To enable
-relay connections, create a random private control key on the web server and make
-it readable by PHP-FPM and the relay service user. A separate private administrator
-key enables trusted dedicated-host registration. Keep both files outside public-web.
-For example, with a private directory already prepared:
+Verify configuration from the web server, preferably as the PHP-FPM user:
 
 ```sh
-umask 077
-openssl rand -hex 32 > /etc/keeperfx-e/relay-control.key
-openssl rand -hex 32 > /etc/keeperfx-e/admin.key
+php /var/www/keeperfx-e/public-web/check-database.php
 ```
 
-Adjust ownership/group read access for the selected service accounts. Add:
+This reads the deployed config, checks the connection and required tables, and
+prints only the result. It never prints passwords or user data.
+Check `/services` and use `/api-browser` to run `GET /api/health`.
 
-```ini
-env[KFX_RELAY_CONTROL] = http://127.0.0.1:8766
-env[KFX_RELAY_CONTROL_KEY_FILE] = /etc/keeperfx-e/relay-control.key
-env[KFX_HUB_ADMIN_KEY_FILE] = /etc/keeperfx-e/admin.key
+## 4. Refresh later versions
+
+From an updated checkout on the web server:
+
+```sh
+python3 scripts/deploy-web.py /var/www/keeperfx-e/public-web
+python3 scripts/deploy-web.py /var/www/keeperfx-e/public-web --apply
 ```
 
-Run the optional worker on sth-ts-web003 using the process manager you already use:
+The first command is a preview. The second updates changed payload files and removes
+obsolete ones. **Existing config.inc.php contents, mtime and permissions are left
+untouched.** New template options must be added manually to your server config as
+needed; defaults in code remain compatible. Store runtime data outside the vhost.
+Database migrations are a separate administrative step; refresh never resets data.
+
+## Optional UDP relay
+
+The PHP accounts, directory and direct joining work without a relay. Real-time UDP
+forwarding needs the separate persistent worker; it is not part of an HTTP vhost
+refresh. Generate a private random control key outside the document root, readable
+by PHP-FPM and the worker, and set these config.inc.php values:
+
+```php
+'relay_control_url' => 'http://127.0.0.1:8766',
+'relay_control_key_file' => '/var/lib/keeperfx-e/relay-control.key',
+```
+
+A private `admin_key` or `admin_key_file` enables trusted dedicated-host registration.
+Do not reuse the database password as either service key. Run the worker from its
+separately deployed service code, under your normal process supervisor:
 
 ```sh
 python3 services/keeperhub/relay_worker.py \
-  --key-file /etc/keeperfx-e/relay-control.key \
-  --control-port 8766 --udp-bind 0.0.0.0 \
-  --public-host keeperfx-e.retrocs.org --relay-first 27700 --relay-last 27731
+  --key-file /var/lib/keeperfx-e/relay-control.key --control-port 8766 \
+  --public-host keeperfx-e.retrocs.org --udp-bind 0.0.0.0 \
+  --relay-first 27700 --relay-last 27731
 ```
 
-Its control HTTP listener is always bound to 127.0.0.1. Only UDP 27700–27731 needs the
-public route for games. If the web server is behind NAT, route those UDP ports to
-172.16.1.133. The HTTPS proxy alone does not forward UDP. The website's Services page
-checks worker readiness; the in-game connection test checks an actual game route.
-Set the game's Community Service URL to `https://keeperfx-e.retrocs.org`.
+Keep the control listener on loopback. Route UDP 27700–27731 through the public
+firewall/NAT to the worker (172.16.1.133 if hosted on this web server). The advertised
+public hostname must actually reach it, not an unrelated CDN/proxy.
 
-## Data and checks
+## Existing data and backups
 
-SQLite remains available for local development. PHP reads existing SQLite passwords,
-sessions and community records without a destructive migration. MariaDB uses its own
-initialized schema; moving existing SQLite data into MariaDB requires a deliberate
-backup/import rather than pointing MariaDB at an SQLite file.
-
-Source-only tests:
-
-```sh
-python3 macos/tests/test-native-php-api.py
-python3 macos/tests/test-php-web.py
-python3 macos/tests/test-community-integration.py
-```
-
-To run the native API/HTTP contracts against a separate disposable MariaDB instance,
-set KFX_TEST_MYSQL_SOCKET to that test instance's local Unix socket. Those tests create
-and drop their own randomly named kfx_contract_/kfx_web_ databases. Never point that
-variable at production. CI and hosted runners remain deferred.
+Moving an existing SQLite service to MariaDB requires a deliberate data import,
+including password salts, hashes, user IDs and sessions. Simply changing the DSN
+creates a separate service; it does not migrate accounts. Keep a verified backup
+before importing. Use MariaDB-native backup/restore procedures for production;
+the old SQLite maintenance tool does not back up MariaDB. No imported game graphics,
+sound or data are needed by this website, and none are bundled with it.

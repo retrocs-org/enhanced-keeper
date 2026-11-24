@@ -85,12 +85,14 @@ class PHPWebsiteTests(unittest.TestCase):
     def test_pages_assets_and_unknown_routes(self):
         for path in ['/', '/index.php', '/community', '/servers', '/events', '/profile', '/device', '/services', '/api-browser', '/replays', '/challenges', '/keeper/'+'a'*32]:
             with self.request(path) as response:
-                self.assertIn('KeeperFX-E', response.read().decode())
+                page=response.read().decode()
+                self.assertIn('KeeperFX-E',page)
+                self.assertNotIn('gitlab',page.lower())
                 self.assertIn("frame-ancestors 'none'", response.headers['Content-Security-Policy'])
-        for path, content_type in [('/app.js', 'text/javascript'), ('/portal.js', 'text/javascript'), ('/api-browser.js', 'text/javascript'), ('/style.css', 'text/css'), ('/site.css', 'text/css')]:
+        for path, content_type in [('/app.js', 'text/javascript'), ('/portal.js', 'text/javascript'), ('/api-browser.js', 'text/javascript'), ('/style.css', 'text/css'), ('/site.css', 'text/css'), ('/assets/keeper-sigil.svg', 'image/svg+xml'), ('/assets/dungeon-heart.svg', 'image/svg+xml')]:
             with self.request(path) as response:
                 self.assertTrue(response.headers['Content-Type'].startswith(content_type))
-        for path in ['/community.php', '/router.php', '/lib/Hub.php', '/layout.php', '/api-catalog.php', '/hub.py', '/.git/config', '/api/../hub.py', '/missing']:
+        for path in ['/community.php', '/router.php', '/lib/Hub.php', '/config.inc.php', '/config.inc.php.bak', '/lib/settings.php', '/check-database.php', '/layout.php', '/api-catalog.php', '/hub.py', '/.git/config', '/api/../hub.py', '/missing']:
             with self.assertRaises(urllib.error.HTTPError) as error:
                 self.request(path)
             self.assertEqual(error.exception.code, 404)
@@ -109,6 +111,8 @@ class PHPWebsiteTests(unittest.TestCase):
         with self.request('/') as response:
             page = response.read().decode()
         self.assertIn('Your dungeon.', page)
+        self.assertIn('KeeperFX-E is a fork of',page)
+        self.assertIn('https://github.com/dkfans/keeperfx',page)
         self.assertIn('Browse downloads', page)
         self.assertNotIn('id="login"', page)
         with self.request('/community') as response:

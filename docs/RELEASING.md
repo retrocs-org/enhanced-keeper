@@ -22,7 +22,7 @@ selector, never a password. `KFX_GAME_DIR` optionally selects the assembled
 KeeperFX runtime asset directory (default `.local/keeperfx`). Original CD files,
 movies and personal saves are stripped from distributable packages.
 
-Set GitHub/GitLab web and matching SSH/HTTPS Git URLs explicitly before publishing.
+Set the GitHub web URL and matching SSH/HTTPS Git URL explicitly before publishing.
 No upstream destination is assumed. Tokens come from the environment or exact
 1Password selectors (`provider: 1password`, `reference: op://Vault/Item/Field`),
 resolved only for selected publication targets. Do not place secrets in JSON.
@@ -69,22 +69,21 @@ packaging, but public uploads always use the checked release workflow.
 Source branch pushing is separate and never forced:
 
 ```sh
-python3 scripts/release.py source --to github,gitlab --dry-run
-python3 scripts/release.py source --to github,gitlab --confirm-push
+python3 scripts/release.py source --to github --dry-run
+python3 scripts/release.py source --to github --confirm-push
 python3 scripts/release.py publish --output outputs/release-1.4.0-new \
-  --tag 1.4.0 --to github,gitlab --confirm-publish
+  --tag 1.4.0 --to github --confirm-publish
 ```
 
-Choose only configured services. No repositories are created, remote repositories
+Choose the configured public repository. No repositories are created, remote repositories
 renamed, website deployed or source pushed by build/check/prepare. Publishing
 requires explicit confirmation and a clean committed checkout. All selected
 services are preflighted before mutations. The same annotated tag object must
 point to the prepared commit everywhere; tags are never moved or forced.
 
 GitHub receives a draft, verifies size and server SHA-256 for every asset, then
-publishes it as a normal latest release. GitLab receives versioned generic
-packages, downloads/hashes them, then creates matching release links. Redirected
-package downloads never forward credentials across origins. Existing matching
+publishes it as a normal latest release. Redirected downloads never forward
+credentials across origins. Existing matching
 assets may be reused; unknown digests, different notes, unexpected assets or
 conflicting tags stop publication. The hosts supply tagged source archives.
 
@@ -105,21 +104,21 @@ change the engine/save format. Original Dungeon Keeper data is still required.
 
 See `scripts/BEAM68-LICENSE.txt` for the reused release infrastructure licence.
 
-Canonical project destinations: https://keeperfx-e.retrocs.org, https://github.com/retrocs-org/KeeperFX-E and https://gitlab.kladhest.se/retrocs-org/keeperfx-e. The website domain is reserved for deployment; existing local community-service preferences are retained.
+Canonical project destinations: https://keeperfx-e.retrocs.org, https://github.com/retrocs-org/KeeperFX-E. The website domain is reserved for deployment; existing local community-service preferences are retained.
 
 ### Source initialization and release notes
 
 The release CLI supports the NovaDock workflow while keeping macOS packaging.
 For an existing checkout, commit the public source before running the source
-preflight and confirmed push commands above. Both destinations receive the same
+preflight and confirmed push commands above. The public repository receives the
 reviewed commit, without force pushes or automatic tag uploads. Tracked private
 configuration and generated local files are refused.
 
 For a new source folder with a reviewed `.gitignore` and empty remote repositories:
 
 ```sh
-python3 scripts/release.py source --init --to github,gitlab --dry-run
-python3 scripts/release.py source --init --to github,gitlab --confirm-push --commit-message "Initial KeeperFX-E source"
+python3 scripts/release.py source --init --to github --dry-run
+python3 scripts/release.py source --init --to github --confirm-push --commit-message "Initial KeeperFX-E source"
 ```
 
 The initialization dry run leaves the folder and Git metadata unchanged. A
@@ -153,8 +152,8 @@ Create a fresh source-only copy before the first repository push:
 ```sh
 python3 scripts/export_source.py --output /tmp/KeeperFX-E-source
 cd /tmp/KeeperFX-E-source
-python3 scripts/release.py source --init --to github,gitlab --dry-run
-python3 scripts/release.py source --init --to github,gitlab --confirm-push
+python3 scripts/release.py source --init --to github --dry-run
+python3 scripts/release.py source --init --to github --confirm-push
 ```
 
 The export has no `.git` history and excludes runtime content and vendor trees.
@@ -187,7 +186,6 @@ unlock keychains with stored passwords or disable signing verification.
 
 ## Local checks only
 
-GitHub Actions workflows have been removed. No GitLab CI configuration or hosted
-runner configuration is supplied. Build, test and release commands remain manual;
+Hosted CI workflows and runner configuration are not supplied. Build, test and release commands remain manual;
 CI and runner provisioning are deferred. The local release command invokes the
 native and service checks directly, without registering or contacting a runner.

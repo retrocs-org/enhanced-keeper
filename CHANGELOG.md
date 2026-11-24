@@ -3,6 +3,12 @@
 ## 1.4.0
 
 ### Features
+- Restyle the PHP portal with original isometric dungeon artwork, brass frames,
+  ember-red controls and parchment typography across all integrated services.
+- Configure the standalone public-web payload through config.inc.php and refresh
+  a dedicated vhost while preserving existing config contents and permissions.
+- Generate a complete private web config during MariaDB provisioning, and reject
+  production credentials in the source config during release checks.
 - Serve the complete HTTP account/directory/community API natively in PHP under
   public-web, with MariaDB production support and SQLite interoperability.
 - Integrate server browsing, service status, accounts/statistics, game pairing,
@@ -60,7 +66,7 @@
 - Add a new KeeperFX-E landing page and PHP-hosted community website, with a
   same-origin API gateway and documented Apache/Nginx deployment.
 - Rename the application, website branding and release packages to KeeperFX-E.
-- Configure the retrocs-org GitHub/GitLab repositories and project website.
+- Configure the retrocs-org GitHub repository and project website.
 - Select and remember an active controller, with automatic Xbox/DualSense labels.
 - Rename saves, protect favourites, preview backups and move save groups to Trash.
 - Check selected multiplayer map, engine and mod content before a host starts.
@@ -77,7 +83,7 @@
 - Restore original menu artwork, large gold buttons and readable native text.
 - Keep the existing KeeperFX save/settings location when upgrading to Enhanced.
 - Add Beam68-style build/check/prepare/publish stages, source provenance,
-  checksum-verified DMG/ZIP packages and GitHub/GitLab publication receipts.
+  checksum-verified DMG/ZIP packages and GitHub publication receipts.
 - Sign, notarize and staple the universal application and DMG.
 
 ### Bugs

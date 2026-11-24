@@ -133,3 +133,9 @@ runs the full account/directory/statistics/pairing/replay/tournament contract ag
 PHP; test-php-web.py exercises real public routes, cookies, CSRF and the API browser.
 The MariaDB variants use only a disposable instance selected by KFX_TEST_MYSQL_SOCKET.
 The legacy Python API remains a test fixture for database interoperability only.
+
+`python3 macos/tests/test-web-deploy.py` verifies that vhost refreshes preserve
+config.inc.php bytes, mtime and permissions, refuse unrelated destinations, reject
+credentials in the tracked template, and run the copied PHP payload using only
+its deployed config. `test-mariadb-provision.py` tests both private connection-only
+and complete web-config output against an explicitly selected disposable database.

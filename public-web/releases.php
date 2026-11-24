@@ -1,7 +1,7 @@
 <?php
 /** Read only updater-verified release metadata, stored outside the document root. */
 function current_release(): ?array {
-    $path = getenv('KFX_RELEASE_MANIFEST') ?: dirname(__DIR__).'/.local/web/releases.json';
+    $path = web_setting('release_manifest','KFX_RELEASE_MANIFEST');
     if (!is_file($path) || is_link($path) || filesize($path) > 32768) return null;
     $release = json_decode((string)file_get_contents($path), true);
     if (!is_array($release) || !is_string($release['version'] ?? null) || !preg_match('/^[0-9]+\.[0-9]+\.[0-9]+$/D', $release['version'] ?? '')) return null;
