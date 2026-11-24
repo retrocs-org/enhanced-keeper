@@ -204,3 +204,17 @@ creates a separate service; it does not migrate accounts. Keep a verified backup
 before importing. Use MariaDB-native backup/restore procedures for production;
 the old SQLite maintenance tool does not back up MariaDB. No imported game graphics,
 sound or data are needed by this website, and none are bundled with it.
+
+## Standalone refresh from GitHub main
+
+`scripts/refresh-from-github.sh` is the standalone root-run Linux alternative: no
+local checkout or Python is needed. Keep a copy outside the vhost and run it with
+`sudo sh /path/to/refresh-from-github.sh`. It clones GitHub main into a temporary
+directory, stages only public-web, preserves the live config.inc.php, lints the
+final PHP tree, and applies wwwrun:wwwrun ownership, directories 0750 and files
+0640. It swaps the directory after staging and restores the previous site if the
+final rename fails. A flock lock prevents overlapping refreshes. The default vhost
+is `/srv/www/vhosts/keeperfx-e.retrocs.org`; edit PARENT in the script if needed.
+Dependencies are git, PHP CLI, getent, flock and standard POSIX file utilities.
+An existing config must be a regular file. On first install, the credential-free
+config template is installed. No database migrations or service restarts run.
