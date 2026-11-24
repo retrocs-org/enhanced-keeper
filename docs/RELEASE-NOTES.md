@@ -1,8 +1,8 @@
 ## Features
 - Default the in-game Internet community service to keeperfx-e.retrocs.org while
   retaining saved custom HTTPS services and local development overrides.
-- Restyle the PHP portal with original isometric dungeon artwork, brass frames,
-  ember-red controls and parchment typography across all integrated services.
+- Restyle the PHP portal with original guardian artwork, olive dungeon stone,
+  beveled gold menu frames and vivid red-orange lettering across all services.
 - Configure the standalone public-web payload through config.inc.php and refresh
   a dedicated vhost while preserving existing config contents and permissions.
 - Generate a complete private web config during MariaDB provisioning, and reject

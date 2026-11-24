@@ -89,7 +89,7 @@ class PHPWebsiteTests(unittest.TestCase):
                 self.assertIn('KeeperFX-E',page)
                 self.assertNotIn('gitlab',page.lower())
                 self.assertIn("frame-ancestors 'none'", response.headers['Content-Security-Policy'])
-        for path, content_type in [('/app.js', 'text/javascript'), ('/portal.js', 'text/javascript'), ('/api-browser.js', 'text/javascript'), ('/style.css', 'text/css'), ('/site.css', 'text/css'), ('/assets/keeper-sigil.svg', 'image/svg+xml'), ('/assets/dungeon-heart.svg', 'image/svg+xml')]:
+        for path, content_type in [('/app.js', 'text/javascript'), ('/portal.js', 'text/javascript'), ('/api-browser.js', 'text/javascript'), ('/style.css', 'text/css'), ('/site.css', 'text/css'), ('/assets/keeper-sigil.svg', 'image/svg+xml'), ('/assets/dungeon-heart.svg', 'image/svg+xml'), ('/assets/keeper-mask.svg', 'image/svg+xml'), ('/assets/dungeon-stone.svg', 'image/svg+xml')]:
             with self.request(path) as response:
                 self.assertTrue(response.headers['Content-Type'].startswith(content_type))
         for path in ['/community.php', '/router.php', '/lib/Hub.php', '/config.inc.php', '/config.inc.php.bak', '/lib/settings.php', '/check-database.php', '/layout.php', '/api-catalog.php', '/hub.py', '/.git/config', '/api/../hub.py', '/missing']:

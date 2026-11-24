@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 660" role="img" aria-labelledby="title desc"><title id="title">Keeper of the depths</title><desc id="desc">Original red horned guardian with ivory fangs, against a carved mossy stone medallion.</desc><defs>
+<linearGradient id="rim" x2=".7" y2="1"><stop stop-color="#d0b65b"/><stop offset=".25" stop-color="#72602b"/><stop offset=".6" stop-color="#342d13"/><stop offset="1" stop-color="#a48b42"/></linearGradient>
+<radialGradient id="red" cx=".3" cy=".25" r=".8"><stop stop-color="#f57035"/><stop offset=".3" stop-color="#c83918"/><stop offset=".7" stop-color="#8b2110"/><stop offset="1" stop-color="#350a06"/></radialGradient>
+<linearGradient id="bone" x2=".25" y2="1"><stop stop-color="#fff7bf"/><stop offset=".35" stop-color="#d5bb73"/><stop offset="1" stop-color="#625224"/></linearGradient>
+<radialGradient id="magic"><stop stop-color="#a99ee7" stop-opacity=".65"/><stop offset=".45" stop-color="#6d609e" stop-opacity=".22"/><stop offset="1" stop-color="#393160" stop-opacity="0"/></radialGradient>
+<filter id="rough"><feTurbulence type="fractalNoise" baseFrequency=".1" numOctaves="3" seed="6" result="grain"/><feColorMatrix in="grain" type="saturate" values="0" result="gray"/><feComponentTransfer in="gray" result="faint"><feFuncA type="linear" slope=".12"/></feComponentTransfer><feComposite in="faint" in2="SourceAlpha" operator="in" result="texture"/><feBlend in="SourceGraphic" in2="texture" mode="soft-light"/></filter>
+</defs>
+<ellipse cx="300" cy="370" rx="280" ry="275" fill="url(#magic)"/>
+<path d="m300 52 188 102 66 177-66 178-188 102-188-102-66-178 66-177Z" fill="#0d1308" stroke="#171c0b" stroke-width="18"/>
+<path d="m300 63 180 100 62 168-62 170-180 99-180-99-62-170 62-168Z" fill="none" stroke="url(#rim)" stroke-width="9"/>
+<path d="m300 81 166 91 58 159-58 159-166 91-166-91-58-159 58-159Z" fill="none" stroke="#55512c" stroke-width="2"/>
+<g fill="#a38c43" stroke="#30290f" stroke-width="2"><path d="m300 49 13 14-13 14-13-14Zm235 268 13 14-13 14-13-14Zm-470 0 13 14-13 14-13-14Zm235 269 13 14-13 14-13-14Z"/></g>
+<g filter="url(#rough)">
+<path d="M185 260C104 229 56 125 59 70c37 69 76 87 151 110m205 80c81-31 129-135 126-190-37 69-76 87-151 110" fill="url(#bone)" stroke="#38230e" stroke-width="5"/>
+<path d="M164 213c17-76 64-101 136-106 72 5 119 30 136 106l-24 73 14 101-23 112-57 45-46 32-46-32-57-45-23-112 14-101Z" fill="url(#red)" stroke="#44170b" stroke-width="5"/>
+<path d="m175 232 65 7 43 52-63-13-26-21Zm250 0-65 7-43 52 63-13 26-21Z" fill="#4c140a"/>
+<path d="m194 249 70 24-27 29-31-13Zm212 0-70 24 27 29 31-13Z" fill="#fff9c7" stroke="#f39b50" stroke-width="2"/>
+<path d="m300 188-32 160 32 27 32-27Z" fill="#e24d20" stroke="#7d230e" stroke-width="3"/>
+<path d="m270 343 12 12-15 10-8-10Zm60 0-12 12 15 10 8-10Z" fill="#320c05"/>
+<path d="M221 366q79 34 158 0l-16 123-63 42-63-42Z" fill="#140c05" stroke="#5c160b" stroke-width="6"/>
+<path d="m225 371 16 112 14-103 15 124 16-122 14 135 14-135 16 122 15-124 14 103 16-112" fill="url(#bone)" stroke="#504020" stroke-width="1.5"/>
+<path d="m225 435 16 52 59 36 59-36 16-52-11 67-64 49-64-49Z" fill="#bb3215"/>
+<path d="m188 333-46 53 51-13m219-40 46 53-51-13" fill="url(#bone)" stroke="#53401b" stroke-width="2"/>
+<path d="m208 187 47-33 25 8m-65 34 39-15 21 7m117-1-47-33-25 8m65 34-39-15-21 7" fill="none" stroke="#f37938" stroke-width="4" opacity=".5"/>
+<path d="m201 315 34 11-17 24m181-35-34 11 17 24M261 125l39 12 39-12m-85 22 46 16 46-16" fill="none" stroke="#73200d" stroke-width="4"/>
+</g>
+<path d="M123 557h102m150 0h102" stroke="#665d2c"/><path d="m300 589 10 10-10 10-10-10Z" fill="#b0a050"/>
+</svg>

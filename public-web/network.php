@@ -2,7 +2,7 @@
 if (!defined('KFX_WEB_PAGE')) { http_response_code(404); exit; }
 $isApi=$path==='/api-browser';
 ?>
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title><?= $isApi?'API browser':'Network services' ?> · KeeperFX-E</title><link rel="icon" type="image/svg+xml" href="/assets/keeper-sigil.svg"><link rel="stylesheet" href="/site.css"><link rel="stylesheet" href="/style.css"><script src="<?= $isApi?'/api-browser.js':'/portal.js' ?>" defer></script></head><body>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title><?= $isApi?'API browser':'Network services' ?> · KeeperFX-E</title><link rel="icon" type="image/svg+xml" href="/assets/keeper-mask.svg"><link rel="stylesheet" href="/site.css"><link rel="stylesheet" href="/style.css"><script src="<?= $isApi?'/api-browser.js':'/portal.js' ?>" defer></script></head><body>
 <?php site_header($path); ?>
 <main class="wrap portal-main" id="main">
 <p class="eyebrow">KeeperFX-E network</p><h1><?= $isApi?'Explore the API.':'A place to play together.' ?></h1>

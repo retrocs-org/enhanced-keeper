@@ -3,7 +3,7 @@ if (!defined('KFX_WEB_PAGE')) { http_response_code(404); exit; }
 function web_escape(string $text): string { return htmlspecialchars($text, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'); }
 function site_header(string $current = '/'): void {
     $links = ['/'=>'Overview','/servers'=>'Servers','/services'=>'Services','/api-browser'=>'API browser','/events'=>'Events','/replays'=>'Replays','/profile'=>'My Keeper'];
-    echo '<a class="skip-link" href="#main">Skip to content</a><header class="site-header wrap"><a class="brand" href="/"><img class="brand-mark" src="/assets/keeper-sigil.svg" width="42" height="46" alt="">KeeperFX-E</a><nav aria-label="Main navigation">';
+    echo '<a class="skip-link" href="#main">Skip to content</a><header class="site-header wrap"><a class="brand" href="/"><img class="brand-mark" src="/assets/keeper-mask.svg" width="52" height="58" alt=""><span>KeeperFX-E<small>A fork of KeeperFX</small></span></a><nav aria-label="Main navigation">';
     foreach ($links as $url=>$label) echo '<a href="'.$url.'"'.($current===$url?' aria-current="page"':'').'>'.$label.'</a>';
     echo '</nav></header>';
 }
