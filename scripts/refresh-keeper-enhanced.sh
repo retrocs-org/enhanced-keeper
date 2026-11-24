@@ -3,13 +3,14 @@
 set -Eeuo pipefail
 umask 077
 SOURCE=${KFX_SERVER_SOURCE:-/root/keeper-enhanced}
-BUILD="$SOURCE/build-server"
+# Separate directory avoids conflicts with earlier Ninja-generated caches.
+BUILD="$SOURCE/build-server-make"
 DEST=/opt/keeper-enhanced-server
 CONFIG=/etc/keeper-enhanced/server.json
 STATE=/var/lib/keeper-enhanced
 SERVICE=keeper-enhanced-server.service
 [[ $(id -u) == 0 && $(uname -s) == Linux ]] || { echo 'Run as root on Linux.' >&2; exit 1; }
-for tool in git cmake ninja pkg-config systemctl install flock nproc mktemp python3 runuser ldd; do
+for tool in git cmake make pkg-config systemctl install flock nproc mktemp python3 runuser ldd; do
     command -v "$tool" >/dev/null || { echo "Missing command: $tool" >&2; exit 1; }
 done
 python3 -c 'import sys; assert sys.version_info >= (3,9), "Python 3.9+ required"'
@@ -73,7 +74,7 @@ trap 'exit 143' TERM
 
 echo 'Updating and building; the current server stays running.'
 git -C "$SOURCE" pull --ff-only origin main
-cmake -S "$SOURCE" -B "$BUILD" -G Ninja -DCMAKE_BUILD_TYPE=Release \
+cmake -S "$SOURCE" -B "$BUILD" -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release \
     -DKFX_DECK_BUNDLE=ON -DKFX_INSTALL_GAME_DATA=OFF
 cmake --build "$BUILD" --target keeperfx --parallel "${KFX_JOBS:-$(nproc)}"
 cmake --install "$BUILD" --prefix "$STAGED/new/engine"

@@ -11,7 +11,7 @@ Source: https://github.com/retrocs-org/KeeperFX-E (existing repository URL).
 ## Build and import
 
 On Linux install the dependencies documented in `build/docker/deck.Dockerfile`
-(and the SDL3 dependencies resolved by CMake), plus Python 3, Ninja and patchelf.
+(and the SDL3 dependencies resolved by CMake), plus Python 3, GNU Make and patchelf. Ninja is not required.
 Build natively for the target distribution/architecture:
 
 ```sh
@@ -87,7 +87,9 @@ UDP reachability or test a multiplayer match.
 
 Run `scripts/refresh-keeper-enhanced.sh` as root on the Linux host. It defaults to
 `/root/keeper-enhanced` on branch `main`; override with `KFX_SERVER_SOURCE` if your
-checkout has another location. Build dependencies must already be installed.
+checkout has another location. Build dependencies must already be installed, including `make`. The scripts use
+CMake’s Unix Makefiles generator and separate `*-make*` build directories so old
+Ninja caches can remain untouched.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/retrocs-org/KeeperFX-E/main/scripts/refresh-keeper-enhanced.sh \

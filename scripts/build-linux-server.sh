@@ -2,11 +2,13 @@
 # Native Linux package, using the existing portable-library CMake installation.
 set -eu
 [ "$(uname -s)" = Linux ] || { echo 'Run this build on Linux.' >&2; exit 1; }
+command -v make >/dev/null 2>&1 || { echo 'Missing command: make' >&2; exit 1; }
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-BUILD="$ROOT/out/linux-server-build"
+# Keep earlier Ninja build directories intact.
+BUILD="$ROOT/out/linux-server-make-build"
 PACKAGE="$ROOT/out/keeper-enhanced-server"
 [ ! -e "$PACKAGE" ] || { echo 'Output exists; move out/keeper-enhanced-server aside first.' >&2; exit 1; }
-cmake -S "$ROOT" -B "$BUILD" -G Ninja -DCMAKE_BUILD_TYPE=Release -DKFX_DECK_BUNDLE=ON -DKFX_INSTALL_GAME_DATA=OFF
+cmake -S "$ROOT" -B "$BUILD" -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release -DKFX_DECK_BUNDLE=ON -DKFX_INSTALL_GAME_DATA=OFF
 cmake --build "$BUILD" --target keeperfx --parallel "${KFX_JOBS:-2}"
 cmake --install "$BUILD" --prefix "$PACKAGE/engine"
 cp "$ROOT/services/keeperhub/dedicated.py" "$PACKAGE/dedicated.py"

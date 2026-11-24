@@ -1,4 +1,6 @@
 ## Features
+- Use GNU Make for Linux server builds and refreshes, with separate build
+  directories that avoid conflicts with existing Ninja caches.
 - Add an existing-install Linux server refresh script with staged engine/library
   replacement, configuration preservation, engine readiness checks and rollback.
 - Present Dungeon Keeper, KeeperFX and KeeperFX Enhanced in a compact website
