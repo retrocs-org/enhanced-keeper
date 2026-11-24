@@ -1,4 +1,6 @@
 ## Features
+- Add an existing-install Linux server refresh script with staged engine/library
+  replacement, configuration preservation, engine readiness checks and rollback.
 - Present Dungeon Keeper, KeeperFX and KeeperFX Enhanced in a compact website
   timeline, with four concise feature sections and expandable project sources.
 - Rename the project to keeper-enhanced while preserving existing service URLs,

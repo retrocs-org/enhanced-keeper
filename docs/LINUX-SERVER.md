@@ -29,7 +29,7 @@ folders), rather than an unprepared original CD:
 useradd --system --home-dir /var/lib/keeper-enhanced --create-home --shell /usr/sbin/nologin keeper-enhanced
 install -d -m 750 -o keeper-enhanced -g keeper-enhanced /var/lib/keeper-enhanced
 sudo -u keeper-enhanced python3 /opt/keeper-enhanced-server/import-data.py /path/to/prepared/GameData /var/lib/keeper-enhanced
-install -d -m 750 /etc/keeper-enhanced
+install -d -m 750 -o root -g keeper-enhanced /etc/keeper-enhanced
 install -m 640 /opt/keeper-enhanced-server/server.json /etc/keeper-enhanced/server.json
 chown root:keeper-enhanced /etc/keeper-enhanced/server.json
 ```
@@ -81,3 +81,32 @@ private servers always keep recordings local. One process
 per writable profile/UDP port. Check status in the profile's dedicated/status.json.
 The --check command validates configuration only; it does not establish external
 UDP reachability or test a multiplayer match.
+
+
+## Refresh an existing installation
+
+Run `scripts/refresh-keeper-enhanced.sh` as root on the Linux host. It defaults to
+`/root/keeper-enhanced` on branch `main`; override with `KFX_SERVER_SOURCE` if your
+checkout has another location. Build dependencies must already be installed.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/retrocs-org/KeeperFX-E/main/scripts/refresh-keeper-enhanced.sh \
+  -o /root/refresh-keeper-enhanced.sh
+chmod 700 /root/refresh-keeper-enhanced.sh
+/root/refresh-keeper-enhanced.sh
+```
+
+The current service runs while the updated source builds. The script stages the
+engine and its bundled libraries together, validates the supervisor/configuration,
+backs up the installed bundle, configuration, environment file and unit under
+`/var/backups/keeper-enhanced-server`, then stops the service and swaps bundles.
+A fresh engine RPC status and stable supervisor PID are required before success.
+Startup failure restores the previous bundle and prior running/stopped state.
+
+The live `server.json`, `server.env`, imported GameData, saves and existing systemd
+unit/drop-ins stay in place. No database changes, asset download or data import
+run during refresh. The standard `/opt/keeper-enhanced-server` and
+`/var/lib/keeper-enhanced` layout is required; custom paths are rejected rather
+than overwritten. An active match is interrupted during the final restart.
+Linux/Leap runtime validation is still pending; swap/rollback behavior is covered
+by isolated tests with simulated builds and systemd.
