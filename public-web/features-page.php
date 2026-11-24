@@ -10,7 +10,7 @@ if (!defined('KFX_WEB_PAGE')) { http_response_code(404); exit; }
   <p class="eyebrow">A shared history</p>
   <h2 id="lineage-title">Three chapters. One dungeon.</h2>
   <ol class="simple-timeline">
-    <li><time datetime="1997">1997</time><span class="timeline-node" aria-hidden="true"></span><p class="timeline-label">Original game</p><h3>Dungeon Keeper</h3><p>Build rooms, attract creatures, cast spells and defend your Dungeon Heart. Bullfrog’s original game sets the foundation.</p><a href="#original-game">About the original ↓</a></li>
+    <li><time datetime="1997">1997</time><span class="timeline-node" aria-hidden="true"></span><p class="timeline-label">Original game</p><h3>Dungeon Keeper</h3><p>Build rooms, attract creatures, cast spells and defend your Dungeon Heart. Bullfrog’s original game sets the foundation.</p><a href="https://store.steampowered.com/app/1996630/Dungeon_Keeper_Gold/">Dungeon Keeper Gold on Steam ↗</a></li>
     <li><time datetime="2008">2008</time><span class="timeline-node" aria-hidden="true"></span><p class="timeline-label">Open-source remake</p><h3>KeeperFX</h3><p>A community remake with engine fixes, higher resolutions, new campaigns, scripting, mods and multiplayer.</p><a href="https://keeperfx.net/">Explore KeeperFX ↗</a></li>
     <li class="timeline-enhanced"><time datetime="2026">2026</time><span class="timeline-node" aria-hidden="true"></span><p class="timeline-label">Our community fork</p><h3>KeeperFX Enhanced</h3><p>Native Mac play, integrated settings, save recovery and connected multiplayer with private and public dedicated hosts.</p><a href="#enhanced">See our features ↓</a></li>
   </ol>
