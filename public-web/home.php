@@ -18,12 +18,12 @@ function escape(string $value): string { return htmlspecialchars($value,ENT_QUOT
 <section class="hero wrap" aria-labelledby="hero-title">
   <div class="hero-content"><p class="eyebrow">Evil has a new home on macOS</p>
   <h1 id="hero-title">Your dungeon.<br><span>Your dominion.</span></h1>
-  <p class="hero-copy">Carve out your kingdom beneath the surface. KeeperFX-E is a fork of <a href="https://github.com/dkfans/keeperfx">KeeperFX</a>, bringing classic dungeon strategy to your Mac with modern controls and more ways to play together.</p>
+  <p class="hero-copy">Build your realm beneath the surface. KeeperFX-E is a fork of <a href="https://github.com/dkfans/keeperfx">KeeperFX</a>, bringing classic dungeon strategy to your Mac with modern controls and more ways to play together.</p>
   <div class="actions"><a class="button primary" href="https://github.com/retrocs-org/KeeperFX-E/releases">Browse downloads</a><a class="button secondary" href="<?= web_escape(web_url('/servers')) ?>">Find a game</a></div>
   <a class="feature-jump" href="#features">Explore the features</a>
   <p class="compatibility">macOS 13+ <span>·</span> Apple Silicon &amp; Intel</p>
   <p class="ownership-note">Bring your own Dungeon Keeper game files.<br>The included import tools take care of the rest.</p></div>
-  <div class="hero-art"><div class="hero-chamber" aria-hidden="true"></div><img src="/assets/keeper-mask.svg" width="600" height="660" alt="A red horned guardian with ivory fangs, framed in mossy dungeon stone."><p class="art-caption">Welcome back, Keeper.</p></div>
+
 </section>
 <div class="realm-strip wrap" aria-label="Ways to play"><span>Build your realm</span><span>Command your creatures</span><span>Challenge other keepers</span></div>
 <?php if ($release): ?>

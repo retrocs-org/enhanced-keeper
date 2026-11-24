@@ -5,8 +5,8 @@
   404, retaining same-origin authorization, request bodies and API error handling.
 - Default the in-game Internet community service to keeperfx-e.retrocs.org while
   retaining saved custom HTTPS services and local development overrides.
-- Restyle the PHP portal with original guardian artwork, olive dungeon stone,
-  beveled gold menu frames and vivid red-orange lettering across all services.
+- Present the PHP portal with a clean slate palette, centered typography,
+  restrained red/gold accents and open layouts across all community services.
 - Configure the standalone public-web payload through config.inc.php and refresh
   a dedicated vhost while preserving existing config contents and permissions.
 - Generate a complete private web config during MariaDB provisioning, and reject
