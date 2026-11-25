@@ -134,9 +134,23 @@ trait HubAccounts {
             return ['token'=>$session,'csrf'=>$csrf,'name'=>$row['name'],'id'=>$uid,'avatar'=>(int)$row['avatar']];
         }
         if(in_array($route,['/api/register','/api/login','/api/cloud/login'],true)){
-            $name=api_text($data['name']??null,24);$password=api_text($data['password']??null,128);demand(preg_match('/^[A-Za-z0-9_-]{3,24}$/D',$name),'Name must be 3–24 letters, numbers, _ or -');demand(mb_strlen($password)>=12,'Use at least 12 password characters');
+            $cloudLogin=$route==='/api/cloud/login';
+            $name=api_text($data['name']??null,$cloudLogin?254:24);
+            $byEmail=$cloudLogin&&str_contains($name,'@');
+            $password=api_text($data['password']??null,128);
+            if($byEmail)demand(filter_var($name,FILTER_VALIDATE_EMAIL),'Enter a valid email address');
+            else demand(preg_match('/^[A-Za-z0-9_-]{3,24}$/D',$name),'Name must be 3–24 letters, numbers, _ or -');
+            demand(mb_strlen($password)>=12,'Use at least 12 password characters');
             if($route==='/api/register'){demand(!function_exists('web_settings')||!kfx_smtp_ready(),'Create your account with email verification',410);demand(!$this->one('SELECT 1 FROM users WHERE name=?',[$name]),'Name is already registered',409);$uid=bin2hex(random_bytes(16));$salt=bin2hex(random_bytes(16));$this->q('INSERT INTO users(id,name,salt,password,created) VALUES(?,?,?,?,?)',[$uid,$name,$salt,$this->passwordHash($password,$salt),$this->now]);}
-            else{$row=$this->one('SELECT * FROM users WHERE name=?',[$name]);$hash=$this->passwordHash($password,$row['salt']??str_repeat('00',16));demand($row&&hash_equals($row['password'],$hash),'Name or password is incorrect',401);$uid=$row['id'];$name=$row['name'];}
+            else{
+                $row=$byEmail
+                    ?$this->one('SELECT u.* FROM users u JOIN cloud_profiles p ON p.user=u.id WHERE p.email=?',[strtolower($name)])
+                    :$this->one('SELECT * FROM users WHERE name=?',[$name]);
+                $hash=$this->passwordHash($password,$row['salt']??str_repeat('00',16));
+                demand($row&&hash_equals($row['password'],$hash),$cloudLogin?'Username, email address or password is incorrect':'Name or password is incorrect',401);
+                $uid=$row['id'];
+                $name=$row['name'];
+            }
             [$value,$csrf]=$this->newSession($uid);
             if($route==='/api/cloud/login'){
                 $profile=$this->one('SELECT avatar FROM cloud_profiles WHERE user=?',[$uid]);

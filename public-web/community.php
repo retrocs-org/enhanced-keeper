@@ -70,6 +70,25 @@ if($path==='/lair')$pageTitles['/lair']=['The Lair','Find a public game or see w
     <p id="statistics"></p><p>Casual and player-confirmed results are separate from server-verified results. Disconnects do not count as verified wins.</p><div id="history"></div>
 </div>
 <div<?= $profileSection==='security'?'':' hidden' ?>>
+    <div class="profile-settings">
+    <details>
+        <summary>Change password</summary>
+        <form method="post" id="profile-password-form">
+            <label>Current password<input name="current_password" type="password" required maxlength="128" autocomplete="current-password"></label>
+            <label>New password<input name="password" type="password" required minlength="12" maxlength="128" autocomplete="new-password"></label>
+            <button>Change password</button>
+        </form>
+    </details>
+    <details class="profile-delete">
+        <summary>Permanently delete account</summary>
+        <p>This removes your cloud profile, friendships, and uploaded replays. Local game saves stay on your device.</p>
+        <form method="post" id="profile-delete-form">
+            <label>Current password<input name="current_password" type="password" required maxlength="128" autocomplete="current-password"></label>
+            <label>Type DELETE to confirm<input name="confirmation" required pattern="DELETE" autocomplete="off"></label>
+            <button>Delete my account permanently</button>
+        </form>
+    </details>
+</div>
     <h3>Profile visibility</h3><label><input id="public" type="checkbox"> Make my profile and verified statistics public</label><h3>Account recovery</h3><p>Generate recovery codes and store them offline. New codes replace all previous codes.</p><form method="post" id="recovery-codes-form"><label>Current password<input name="password" type="password" required autocomplete="current-password"></label><button id="recovery-codes">Generate recovery codes</button></form><pre id="recovery-output" hidden></pre>
 </div>
 </section>

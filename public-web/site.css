@@ -188,7 +188,7 @@ small { display: block; font: 14px/1.65 var(--heading); color: var(--muted); mar
     margin: 22px auto 26px;
     filter: drop-shadow(0 10px 30px #b74f2e45);
 }
-.account-menu { position: relative; flex-shrink: 0; }
+.site-header .account-menu { position: relative; flex-shrink: 0; margin-block: 0; }
 .account-menu summary {
     display: grid;
     place-items: center;

@@ -39,9 +39,10 @@ void load_network_profile(){
     FILE *file=fopen(path("network-address.cfg").c_str(),"r");if(!file)return;char line[80];std::string endpoint;
     if(fgets(line,sizeof(line),file)){std::string input=line;while(!input.empty()&&(input.back()=='\r'||input.back()=='\n'))input.pop_back();if(valid_endpoint(input,endpoint))join_ip=endpoint;}fclose(file);
 }
+void launch_local_profile(const std::string &profile);
 void finish_edit(){
     if(editing==12){library_rename();return;}
-    if(editing==11){if(!create_profile())return;editing=0;SDL_StopTextInput(SDL_GetKeyboardFocus());return;}
+    if(editing==11){if(!create_profile())return;editing=0;SDL_StopTextInput(SDL_GetKeyboardFocus());if(choosing_local_profile)launch_local_profile(new_profile);return;}
     if(editing>=6){editing=0;browser_filter();SDL_StopTextInput(SDL_GetKeyboardFocus());return;}
     if(editing==5){if(saves.empty()||save_alias.empty()){notice="Enter a name for the saved game.";return;}std::string base=save_base(selected_save());if(!write_small_file(base+".label",save_alias)){notice="Could not rename this saved game.";return;}refresh_save(base);}
     if(editing==3){std::string endpoint;if(!valid_endpoint(join_ip,endpoint)){notice="Use an IPv4 address and a port between 1 and 65535.";return;}join_ip=endpoint;if(!persist_endpoint(endpoint)){notice="Host address could not be remembered. Check save-folder permissions.";return;}}

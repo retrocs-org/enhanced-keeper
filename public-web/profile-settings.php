@@ -26,21 +26,4 @@
             <button>Verify new email</button>
         </form>
     </details>
-    <details>
-        <summary>Change password</summary>
-        <form method="post" id="profile-password-form">
-            <label>Current password<input name="current_password" type="password" required maxlength="128" autocomplete="current-password"></label>
-            <label>New password<input name="password" type="password" required minlength="12" maxlength="128" autocomplete="new-password"></label>
-            <button>Change password</button>
-        </form>
-    </details>
-    <details class="profile-delete">
-        <summary>Permanently delete account</summary>
-        <p>This removes your cloud profile, friendships, and uploaded replays. Local game saves stay on your device.</p>
-        <form method="post" id="profile-delete-form">
-            <label>Current password<input name="current_password" type="password" required maxlength="128" autocomplete="current-password"></label>
-            <label>Type DELETE to confirm<input name="confirmation" required pattern="DELETE" autocomplete="off"></label>
-            <button>Delete my account permanently</button>
-        </form>
-    </details>
 </div>

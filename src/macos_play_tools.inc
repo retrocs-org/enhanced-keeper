@@ -6,6 +6,41 @@ bool profile_name_valid(const std::string &name){return !name.empty()&&name.size
 void scan_profiles(){
  content_profiles={"default"};std::string folder=profiles_base()+"/ContentProfiles";DIR *directory=opendir(folder.c_str());if(directory){for(dirent *entry;(entry=readdir(directory));){std::string name=entry->d_name;if(name=="default"||!profile_name_valid(name))continue;struct stat info;if(lstat((folder+"/"+name).c_str(),&info)==0&&S_ISDIR(info.st_mode))content_profiles.push_back(name);}closedir(directory);}std::sort(content_profiles.begin()+1,content_profiles.end());profile_index=std::clamp(profile_index,0,(int)content_profiles.size()-1);
 }
+std::string active_content_profile(){
+ const char *profile=getenv("KFX_CONTENT_PROFILE");
+ return profile&&*profile?profile:"default";
+}
+std::string local_profile_marker(){return profiles_base()+"/local-profile-next.cfg";}
+int local_profile_count(){
+ return std::max(0,std::min(3,(int)content_profiles.size()-(profile_index/3)*3));
+}
+void start_local_profile_picker(){
+ choosing_local_profile=true;
+ open_panel(27);
+ scan_profiles();
+ const std::string active=active_content_profile();
+ if(active=="default"&&content_profiles.size()==1&&access((profiles_base()+"/content-profile.cfg").c_str(),F_OK)!=0){
+  content_profiles.clear();
+  profile_index=0;
+  return;
+ }
+ profile_index=0;
+}
+void launch_local_profile(const std::string &profile){
+ if(profile==active_content_profile()){
+  kfx_hub_use_local_profile();
+  startup_login=choosing_local_profile=false;
+  close_panel();
+  return;
+ }
+ if(!write_small_file(local_profile_marker(),profile+"\n")||
+    !write_small_file(profiles_base()+"/content-profile.cfg",profile+"\n")){
+  unlink(local_profile_marker().c_str());
+  notice="Could not select the local profile.";
+  return;
+ }
+ notice="Selected "+profile+". Quit and reopen the game to use it.";
+}
 bool profile_storage_safe(){struct stat info;std::string root=profiles_base()+"/ContentProfiles";return lstat(root.c_str(),&info)!=0?errno==ENOENT:S_ISDIR(info.st_mode);}
 bool create_profile(){
  if(!profile_storage_safe()){notice="ContentProfiles must be a regular directory.";return false;}
@@ -27,6 +62,18 @@ void play_tools_tick(){
  close_panel();kfx_replay_request_explicit();snprintf(game.packet_fname,sizeof(game.packet_fname),"%s",file.c_str());game.packet_load_enable=true;game.packet_load_initialized=false;frontend_set_state(FeSt_PACKET_DEMO);
 }
 bool play_tools_action(int action){
+ if(page==27&&choosing_local_profile){
+  if(action==1201||action==1202){
+   const int pages=((int)content_profiles.size()+2)/3;
+   if(pages>1){profile_index=((profile_index/3+pages+(action==1201?-1:1))%pages)*3;selected=0;}
+   return true;
+  }
+  if(action>=1210&&action<=1212){
+   const int index=(profile_index/3)*3+action-1210;
+   if(index<(int)content_profiles.size())launch_local_profile(content_profiles[index]);
+   return true;
+  }
+ }
  if(action==1200){page=27;selected=0;focus_action=-1;scan_profiles();notice.clear();return true;}
  if(action==1201||action==1202){if(!content_profiles.empty())profile_index=(profile_index+(action==1201?-1:1)+(int)content_profiles.size())%content_profiles.size();return true;}
  if(action>=1210&&action<=1212){int choice=(profile_index/3)*3+action-1210;if(choice<(int)content_profiles.size())profile_index=choice;return true;}
@@ -44,7 +91,17 @@ bool play_tools_action(int action){
 }
 void wrapped_tools_text(int x,int y,const std::string &value,int max_lines){std::istringstream input(value);std::string word,line;int lines=0;while(input>>word){if(line.size()+word.size()>44){text(x,y+lines++*29,line,20,556);line.clear();if(lines>=max_lines)return;}if(!line.empty())line+=' ';line+=word;}if(!line.empty()&&lines<max_lines)text(x,y+lines*29,line,20,556);}
 void play_tools_draw(){
- if(page==27){const char *active=getenv("KFX_CONTENT_PROFILE");small_line(24,83,std::string("Current: ")+(active?active:"default"),592);int offset=profile_index/3*3;for(int i=0;i<3&&offset+i<(int)content_profiles.size();i++)button(24,114+i*46,592,content_profiles[offset+i],1210+i,profile_index==offset+i,38);
+ if(page==27&&choosing_local_profile){
+  const int count=local_profile_count();
+  const int offset=(profile_index/3)*3;
+  for(int i=0;i<count;++i)button(24,104+i*50,592,content_profiles[offset+i],1210+i,selected==i,40);
+  if(count==0)centered(138,"Create a local profile to play offline.",22);
+  button(24,264,592,editing==11?"New: "+new_profile+"|":"Create Local Profile",1203,selected==count||editing==11,40);
+  if(count){
+   button(24,317,284,"Previous Profiles",1201,selected==count+1,36);
+   button(332,317,284,"Next Profiles",1202,selected==count+2,36);
+  }
+ }else if(page==27){const char *active=getenv("KFX_CONTENT_PROFILE");small_line(24,83,std::string("Current: ")+(active?active:"default"),592);int offset=profile_index/3*3;for(int i=0;i<3&&offset+i<(int)content_profiles.size();i++)button(24,114+i*46,592,content_profiles[offset+i],1210+i,profile_index==offset+i,38);
   button(24,257,184,"Previous",1201,selected==0,34);button(228,257,184,"Next",1202,selected==1,34);button(432,257,184,"Default",1206,selected==5,34);
   button(24,305,592,editing==11?"New: "+new_profile+"|":"Create Separate Profile",1203,selected==2||editing==11,38);
   button(24,354,284,"Use Next Launch",1204,selected==3,36);button(332,354,284,"Open Mod Folder",1205,selected==4,36);

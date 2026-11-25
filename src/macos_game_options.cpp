@@ -398,7 +398,11 @@ bool polish_action(int action);
 void save_feedback_draw();
 std::string cloud_name,cloud_email,cloud_password,cloud_code,cloud_ticket;
 int cloud_avatar=1;
-bool cloud_create=false, choosing_local_profile=false;
+bool cloud_create=false, choosing_local_profile=false, remember_cloud=false;
+bool startup_login=false;
+int local_profile_count();
+void choose_startup_profile();
+
 std::string *cloud_input(int field){
     switch(field){
     case 14:return &cloud_name;
@@ -446,9 +450,14 @@ void activate(int action){
     if(action>=0)do_sound_menu_click();
     if(enhancement_action(action)||play_tools_action(action)||browser_action(action)||feature_action(action)||polish_action(action))return;
     focus_action=action;
-    if(action==901&&page==36){cloud_password.clear();cloud_ticket.clear();cloud_code.clear();open_panel(37);return;}
+    if(action==901&&page==36){
+        cloud_password.clear();cloud_ticket.clear();cloud_code.clear();
+        if(cloud_create){cloud_create=false;open_panel(36);}
+        else if(!startup_login)open_panel(22);
+        return;
+    }
     if(action==901&&page==37)return;
-    if(action==901&&page==27&&choosing_local_profile){choosing_local_profile=false;open_panel(37);return;}
+    if(action==901&&page==27&&choosing_local_profile){choosing_local_profile=false;open_panel(36);return;}
     if(action==901&&(page==11||page==20)&&frontend_menu_state==FeSt_NET_SERVICE){close_panel();return;}
     if(action==901){if(page==8)close_panel();else{int previous=page;if(previous==19)kfx_readiness_cancel();page=previous==30?28:previous==31||previous==32?13:previous==33?7:previous==34?1:previous==35?2:previous==29?12:previous>=27?8:previous==26?15:previous>=21&&previous<=24?20:previous==25?22:previous==20?6:previous==15?0:previous==16?7:previous==17?12:previous==18?17:previous==19?6:previous==14?help_parent:previous==12?2:(previous>=9&&previous<=11?6:8);selected=0;
         if(page==8){const int order[]={5,0,1,2,3,4,6,7,13};for(int i=0;i<9;i++)if(order[i]==previous)selected=i;
@@ -512,13 +521,16 @@ void backup_step(int direction);
 void navigate(int direction){
     mouse_navigation=false;focus_action=-1;
     if(page==8){selected=(selected+direction+12)%12;return;}
-    if(page>=36){int count=page==36?(cloud_ticket.empty()?(cloud_create?5:3):2):4;selected=(selected+direction+count)%count;return;}
+    if(page==36){int count=cloud_ticket.empty()?(cloud_create?5:6):2;selected=(selected+direction+count)%count;return;}
     if(page>=30){int count=enhancement_count();selected=(selected+direction+count)%count;return;}
+    if(page==27&&choosing_local_profile){
+        int count=local_profile_count()+(local_profile_count()?3:1);selected=(selected+direction+count)%count;return;
+    }
     if(page>=27&&page<=29){int count=page==27?6:page==28?7:requirements_state>=0?2:1;selected=(selected+direction+count)%count;return;}
     if(page==9){report_offset=std::max(0,report_offset+direction);return;}
     if(page==10)return;
     if(page==26){selected=(selected+direction+2)%2;return;}
-    if(page>=20){int count=page==20?13:page==21?5:page==22?4:page==23?5:page==24?5:2;selected=(selected+direction+count)%count;return;}
+    if(page>=20){int count=page==20?13:page==21?5:page==22?5:page==23?5:page==24?5:2;selected=(selected+direction+count)%count;return;}
     if(page>=15){int count=page==15?8:page==16?6:page==17?4:page==18?2:3;selected=(selected+direction+count)%count;return;}
     if(page==13){selected=(selected+direction+6)%6;return;}
     if(page==14){selected=(selected+direction+2)%2;return;}
@@ -538,16 +550,18 @@ void confirm_control(){
     mouse_navigation=false;
     if(page==8){const int sections[]={5,0,1,2,3,4,6,7};const int extra[]={1200,1300,800,901};activate(selected<8?100+sections[selected]:extra[selected-8]);return;}
     if(page>=30&&page<=35){enhancement_confirm();return;}
+    if(page==27&&choosing_local_profile){const int count=local_profile_count();
+        const int actions[]={1203,1201,1202};
+        activate(selected<count?1210+selected:actions[selected-count]);return;}
     if(page==27){const int choices[]={1201,1202,1203,1204,1205,1206};activate(choices[selected]);return;}
     if(page==28){activate(selected==6?1500:selected==5?1306:1301+selected);return;}
     if(page==29){activate(selected?1401:1402);return;}
     if(page==36){
         const int signup[]={2101,2102,2103,2104,2105};
-        const int signin[]={2101,2103,2105};
+        const int signin[]={2101,2103,2106,2105,2112,2111};
         activate(cloud_ticket.empty()?(cloud_create?signup[selected]:signin[selected]):selected?2105:2107);
         return;
     }
-    if(page==37){const int profile[]={2110,2111,2112,2113};activate(profile[selected]);return;}
     if(page==1&&selected==4){activate(1540);return;}
     if(page==7&&selected==6){activate(1530);return;}
     if((page==0||page==7)&&selected==5)activate(page==0?840:841);
@@ -571,7 +585,7 @@ void confirm_control(){
     else if(page==19){const int actions[]={1100,1102,1101};activate(actions[selected]);}
     else if(page==20){const int actions[]={2010,2011,2012,2030,2031,2020,2022,2023,2024,2025,2021,2027,2026};activate(actions[selected]);}
     else if(page==21){const int actions[]={2044,2040,2042,2043,2045};activate(actions[selected]);}
-    else if(page==22)activate(2050+selected);
+    else if(page==22)activate(selected==4?2113:2050+selected);
     else if(page==23){const int actions[]={2060,2061,2063,2064,2062};activate(actions[selected]);}
     else if(page==24){const int actions[]={2080,2081,2083,2082,2084};activate(actions[selected]);}
     else if(page==25)activate(2070+selected);
@@ -593,7 +607,7 @@ void direction_control(int direction){
 void append_input(std::string value){
     if(auto *input=cloud_input(editing)){
         if(edit_selected){input->clear();edit_selected=false;}
-        const size_t limit=editing==14?24:editing==15?254:editing==16?128:6;
+        const size_t limit=editing==14?(cloud_create?24:254):editing==15?254:editing==16?128:6;
         for(unsigned char c:value)if(c>=32&&c<127&&input->size()<limit)input->push_back(c);
         return;
     }
@@ -697,7 +711,9 @@ void process_network(){
         close_panel();
         LbNetwork_Stop();
         if(!setup_network_service(FrontendNetSvc_LAN)){open_panel(6);notice="The local network service could not start. Check the log and UDP port.";return;}
-        frontnet_service_setup();frontnet_session_setup();snprintf(netstate.password,sizeof(netstate.password),"%s",server_password.c_str());
+        frontnet_service_setup();frontnet_session_setup();
+        if(kfx_hub_account_name()[0])snprintf(net_player_name,sizeof(net_player_name),"%s",kfx_hub_account_name());
+        snprintf(netstate.password,sizeof(netstate.password),"%s",server_password.c_str());
         static TbNetworkSessionNameEntry direct={};memset(&direct,0,sizeof(direct));direct.in_use=1;direct.joinable=1;
         snprintf(direct.text,sizeof(direct.text),"%s",endpoint.c_str());snprintf(direct.join_address,sizeof(direct.join_address),"LAN:%s",endpoint.c_str());net_session[0]=&direct;net_number_of_sessions=1;net_session_index_active=0;
         kfx_hub_set_login_ticket(login_ticket.c_str());
@@ -756,7 +772,7 @@ void kfx_options_display(struct GuiButton *button){(void)button;open_panel(5);}
 void kfx_options_hide(void){if(kfx_controller_guide_visible)close_panel();}
 void kfx_options_open(struct GuiButton *button){(void)button;open_panel(8);}
 void kfx_options_preview(int number){capture_preview=true;kfx_options_show_page(number);}
-void kfx_options_show_page(int number){open_panel(std::clamp(number,0,37));if(page==2||page==12||page==17||page==18)scan_saves();if(page==20){browser_filter();browser_refresh();}if(page==25)hub_edit=kfx_hub_url();if(page==24)community_request();}
+void kfx_options_show_page(int number){if(number==37){choose_startup_profile();return;}open_panel(std::clamp(number,0,36));if(page==2||page==12||page==17||page==18)scan_saves();if(page==20){browser_filter();browser_refresh();}if(page==25)hub_edit=kfx_hub_url();if(page==24)community_request();}
 void kfx_options_button(struct GuiButton *button){
     if(frontend_menu_state==FeSt_FEOPTIONS)frontend_draw_button(button,1,"More Options",Lb_TEXT_HALIGN_CENTER);
     else{
@@ -844,7 +860,7 @@ void kfx_options_draw(void){
     if(label_model<0){int model=controller_device_model();if(model>=0)kfx_controller_guide_ps5=model;}else kfx_controller_guide_ps5=label_model;
     update_hover();hits.clear();background();
     const char *names[]={"Controller Options","Performance","Saved Games","Remap Controller","Controller Guide","Display Options","Network Options","Accessibility","More Options","Connection Test","Game Versions","Join by IP","Saved Game","About & Diagnostics","Saving Help","Connected Controllers","Accessibility Presets","Manage Saved Game","Delete Saved Game","Multiplayer Readiness","Server Browser","Server Details","Community Account","Host Public Game","Community","Community Service","Controller Test","Content Profiles","Replay Controls","Save Requirements","Replay Library","Personal Data Tools","Setup Guide","Comfort and Readability","Performance Capture","Save Recovery","Cloud Profile","Choose Profile"};
-    title(names[std::clamp(page,0,37)]);
+    title(page==36?(cloud_create?"Create Cloud Account":"Sign In"):page==27&&choosing_local_profile?"Local Profiles":names[std::clamp(page,0,37)]);
     if(page==8){
         const char *sections[]={"Display","Controller","Performance","Saved Games","Remap","Controller Guide","Network","Accessibility"};const int pages[]={5,0,1,2,3,4,6,7};
         for(int i=0;i<8;i++)button(i<4?50:338,104+(i%4)*72,252,sections[i],100+pages[i],selected==i,46);
@@ -914,7 +930,7 @@ void kfx_options_draw(void){
         centered(106,"Hostname / IP address and UDP port",24);button(64,163,512,join_ip+(editing==3?"|":""),602,selected==0||editing==3,46);button(134,250,372,"Join Game",603,selected==1,46);centered(330,"Example: 192.168.1.20:5556",22);centered(368,"Enter the address supplied by the host.",20);
     }
     polish_draw_page();feature_draw();browser_draw();play_tools_draw();enhancement_draw();
-    if(page!=8&&page!=12&&page!=37)button(134,426,372,page==36||(page==27&&choosing_local_profile)?"Return to Profiles":page==29?"Return to Saved Game":page==26?"Return to Devices":page==25?"Return to Account":page>=21&&page<=24?"Return to Browser":page==20?(frontend_menu_state==FeSt_NET_SERVICE?"Return to Multiplayer":"Return to Network"):page==15?"Return to Controller":page==16?"Return to Accessibility":page==17?"Return to Save":page==18?"Return to Management":page==19?"Return to Network":page==14?(help_parent==13?"Return to About":"Return to Saves"):page>=9&&page<=11?"Return to Network":"Return to Sections",901,false,42);
+    if(page!=8&&page!=12&&(page!=36||cloud_create||!startup_login))button(134,426,372,page==36?(cloud_create?"Return to Sign In":"Return to Account"):(page==27&&choosing_local_profile)?"Return to Sign In":page==29?"Return to Saved Game":page==26?"Return to Devices":page==25?"Return to Account":page>=21&&page<=24?"Return to Browser":page==20?(frontend_menu_state==FeSt_NET_SERVICE?"Return to Multiplayer":"Return to Network"):page==15?"Return to Controller":page==16?"Return to Accessibility":page==17?"Return to Save":page==18?"Return to Management":page==19?"Return to Network":page==14?(help_parent==13?"Return to About":"Return to Saves"):page>=9&&page<=11?"Return to Network":"Return to Sections",901,false,42);
     if(!notice.empty()&&page<20&&page!=8&&page!=12&&page!=4&&page!=16&&page!=19)status_line(notice);
     if(preview_large&&page==12&&!saves.empty()){
         hits.clear();background();frame(18,82,604,328);if(preview){double scale=std::min(592.0/preview->w,316.0/preview->h);SDL_Rect to={24+(592-(int)(preview->w*scale))/2,88+(316-(int)(preview->h*scale))/2,(int)(preview->w*scale),(int)(preview->h*scale)};SDL_BlitSurfaceScaled(preview,nullptr,canvas,&to,SDL_SCALEMODE_LINEAR);}else centered(225,"No preview available",26);button(134,426,372,"Return to Saved Game",308,false,42);

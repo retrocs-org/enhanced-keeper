@@ -213,6 +213,26 @@ class PHPWebsiteTests(unittest.TestCase):
         host=json.load(self.request('/api/servers/register',{'name':'PHP Game Host','endpoint':'127.0.0.1:5556','engine':'1.4.0.0','password':False},{'Authorization':'Bearer '+game['token']}))
         self.assertIn('secret',host)
 
+    def test_game_cloud_login_accepts_username_and_verified_email(self):
+        password = 'a long password for game login'
+        self.request('/api/register', {'name': 'EmailKeeper', 'password': password}).close()
+        email = 'keeper.with.a.long.address@example.test'
+        dsn = ('mysql:unix_socket='+os.environ['KFX_TEST_MYSQL_SOCKET']+';dbname='+self.mysql_database
+               if hasattr(self, 'mysql_database') else str(Path(self.temp.name)/'test.sqlite3'))
+        code = """define('KFX_API_INTERNAL',true);require 'public-web/lib/Hub.php';
+        $hub=new KeeperHub($argv[1],'','','',null,['user'=>'root','password'=>'','migrate'=>false]);
+        $hub->q('INSERT INTO cloud_profiles SELECT id,?,7 FROM users WHERE name=?',[$argv[2],'EmailKeeper']);"""
+        subprocess.run(['php', '-r', code, dsn, email], cwd=ROOT, check=True, capture_output=True)
+        self.jar.clear()
+        username = json.load(self.request('/api/cloud/login', {'name': 'EmailKeeper', 'password': password}))
+        address = json.load(self.request('/api/cloud/login', {'name': email.upper(), 'password': password}))
+        self.assertEqual(address['id'], username['id'])
+        self.assertEqual(address['name'], 'EmailKeeper')
+        self.assertEqual(address['avatar'], 7)
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            self.request('/api/cloud/login', {'name': email, 'password': 'an incorrect password'})
+        self.assertEqual(error.exception.code, 401)
+
     def test_public_dedicated_admission_requires_one_use_account_ticket(self):
         host = json.load(self.request('/api/servers/register', {
             'name': 'Public Keeper', 'endpoint': '127.0.0.1:5556',

@@ -20,6 +20,9 @@
 namespace {
 std::string identity_ticket, login_ticket;std::array<std::string,4> identities;
 bool initializing=false;
+bool remember_session=false;
+bool remember_next_login=false;
+bool local_profile=false;
 bool host_started=false;
 std::string base="https://keeper-enhanced.retrocs.org",folder,account,name,account_id,server_id,server_secret,match_id,last_tag,last_body;
 struct Registration{std::string host,token,role;int port;};std::vector<Registration> registrations;
@@ -50,20 +53,22 @@ Reply http(std::string url,std::string tag,std::string route,std::string body,st
  if(code!=CURLE_OK)reply.body="{\"error\":\"Community service unavailable. LAN and direct play remain available.\"}";
  curl_slist_free_all(headers);curl_easy_cleanup(c);return reply;
 }
-void save_token(){if(folder.empty())return;std::string p=folder+"/community-session.cfg",temp=p+".pending";FILE *f=fopen(temp.c_str(),"w");if(!f)return;fchmod(fileno(f),0600);bool ok=fprintf(f,"%s\n%s\n%s\n%s\n",base.c_str(),account.c_str(),name.c_str(),account_id.c_str())>0;ok=fflush(f)==0&&fsync(fileno(f))==0&&ok;if(fclose(f))ok=false;if(!ok||rename(temp.c_str(),p.c_str()))unlink(temp.c_str());}
+void save_token(){if(folder.empty())return;std::string p=folder+"/community-session.cfg",temp=p+".pending";if(!remember_session||name.empty()){unlink(p.c_str());return;}FILE *f=fopen(temp.c_str(),"w");if(!f)return;fchmod(fileno(f),0600);bool ok=fprintf(f,"%s\n%s\n%s\n%s\n",base.c_str(),account.c_str(),name.c_str(),account_id.c_str())>0;ok=fflush(f)==0&&fsync(fileno(f))==0&&ok;if(fclose(f))ok=false;if(!ok||rename(temp.c_str(),p.c_str()))unlink(temp.c_str());}
 void apply_channels(const VALUE *){registrations.clear();}
 }
-extern "C" void kfx_hub_initialize(const char *save){initializing=true;folder=save?save:"";if(getenv("KFX_PRIVATE_SERVER")){initializing=false;return;}const char *env_url=getenv("KFX_HUB_URL"),*env_id=getenv("KFX_HUB_SERVER_ID"),*env_secret=getenv("KFX_HUB_SERVER_SECRET");if(env_url&&env_id&&env_secret){kfx_hub_set_url(env_url);server_id=env_id;server_secret=env_secret;initializing=false;return;}FILE *f=fopen((folder+"/community-session.cfg").c_str(),"r");if(!f){initializing=false;return;}char lines[4][512]={};for(auto &line:lines)if(fgets(line,sizeof(line),f))line[strcspn(line,"\r\n")]=0;fclose(f);if(kfx_hub_set_url(lines[0])){account=lines[1];name=lines[2];account_id=lines[3];}initializing=false;}
+extern "C" void kfx_hub_initialize(const char *save){initializing=true;folder=save?save:"";if(getenv("KFX_PRIVATE_SERVER")){initializing=false;return;}const char *env_url=getenv("KFX_HUB_URL"),*env_id=getenv("KFX_HUB_SERVER_ID"),*env_secret=getenv("KFX_HUB_SERVER_SECRET");if(env_url&&env_id&&env_secret){kfx_hub_set_url(env_url);server_id=env_id;server_secret=env_secret;initializing=false;return;}FILE *f=fopen((folder+"/community-session.cfg").c_str(),"r");if(!f){initializing=false;return;}char lines[4][512]={};for(auto &line:lines)if(fgets(line,sizeof(line),f))line[strcspn(line,"\r\n")]=0;fclose(f);if(kfx_hub_set_url(lines[0])){account=lines[1];name=lines[2];account_id=lines[3];remember_session=!name.empty();}initializing=false;}
 extern "C" const char *kfx_hub_url(){return base.c_str();}
 extern "C" int kfx_hub_set_url(const char *url){if(job.valid()||!queue.empty()||!url||strlen(url)>240)return 0;std::string s=url;while(!s.empty()&&s.back()=='/')s.pop_back();if(s.find_first_of("\r\n?#@")!=std::string::npos)return 0;bool secure=s.rfind("https://",0)==0;bool local=s.rfind("http://127.0.0.1:",0)==0||s.rfind("http://localhost:",0)==0;if(!secure&&!local)return 0;if(base!=s){account.clear();name.clear();account_id.clear();server_id.clear();server_secret.clear();registrations.clear();}base=s;if(!initializing)save_token();return 1;}
-extern "C" int kfx_hub_request(const char *tag,const char *route,const char *body,int credentials){if(getenv("KFX_PRIVATE_SERVER"))return 0;if(queue.size()>=8||!tag||!route||strncmp(route,"/api/",5)||strlen(route)>200||strchr(route,'\r')||strchr(route,'\n'))return 0;std::string token=credentials==2?server_secret:credentials==1?account:"";queue.push_back({tag,route,body?body:"",token});return 1;}
+extern "C" int kfx_hub_request(const char *tag,const char *route,const char *body,int credentials){if(getenv("KFX_PRIVATE_SERVER"))return 0;if(queue.size()>=8||!tag||!route||strncmp(route,"/api/",5)||strlen(route)>200||strchr(route,'\r')||strchr(route,'\n'))return 0;std::string token=credentials==2?server_secret:credentials==1&&!local_profile?account:"";queue.push_back({tag,route,body?body:"",token});return 1;}
 namespace {std::string advertised_content;}
 extern "C" void kfx_hub_content(const char *value){advertised_content=value?value:"";}
 extern "C" int kfx_hub_tick(int hosting,int players,int playing,const char *map){
  int ready=0;if(job.valid()&&job.wait_for(std::chrono::seconds(0))==std::future_status::ready){Reply r=job.get();last_tag=r.tag;last_body=r.body;Document d(r.body);std::string token=field(&d.root,"token");if((r.tag=="pair-poll"||r.tag=="cloud-verify"||r.tag=="cloud-login")&&!token.empty()){
+     local_profile=false;remember_session=r.tag=="pair-poll"||remember_next_login;
      account=token;name=field(&d.root,"name");account_id=field(&d.root,"id");save_token();
  }
- if(r.tag=="me"&&!field(&d.root,"id").empty()){account_id=field(&d.root,"id");name=field(&d.root,"name");save_token();}
+ if(r.tag=="me"&&r.status==401&&!local_profile){account.clear();save_token();}
+ if(r.tag=="me"&&!local_profile&&!field(&d.root,"id").empty()){account_id=field(&d.root,"id");name=field(&d.root,"name");save_token();}
  if((r.tag=="publish"||r.tag=="join")&&!field(&d.root,"match_id").empty())match_id=field(&d.root,"match_id");
  if(r.tag=="publish"&&!field(&d.root,"secret").empty()){server_id=field(&d.root,"id");server_secret=field(&d.root,"secret");heartbeat_at=0;}
  if(r.tag=="join"){
@@ -82,12 +87,15 @@ extern "C" int kfx_hub_tick(int hosting,int players,int playing,const char *map)
 extern "C" const char *kfx_hub_result_tag(){return last_tag.c_str();}
 extern "C" const char *kfx_hub_result(){return last_body.c_str();}
 extern "C" int kfx_hub_busy(){return job.valid()||!queue.empty();}
-extern "C" const char *kfx_hub_account_name(){return name.c_str();}
-extern "C" const char *kfx_hub_account_id(){return account_id.c_str();}
-extern "C" void kfx_hub_sign_out(){kfx_hub_request("logout","/api/logout","{}",1);account.clear();name.clear();account_id.clear();save_token();}
+extern "C" const char *kfx_hub_account_name(){return local_profile?"":name.c_str();}
+extern "C" void kfx_hub_remember_session(int remember){remember_next_login=remember!=0;}
+extern "C" int kfx_hub_session_remembered(){return remember_session&&!local_profile&&!name.empty();}
+extern "C" void kfx_hub_use_local_profile(){local_profile=true;identity_ticket.clear();match_id.clear();}
+extern "C" const char *kfx_hub_account_id(){return local_profile?"":account_id.c_str();}
+extern "C" void kfx_hub_sign_out(){kfx_hub_request("logout","/api/logout","{}",1);account.clear();name.clear();account_id.clear();identity_ticket.clear();save_token();}
 extern "C" void kfx_hub_client_relay(const char *,int,const char *){registrations.clear();}
 extern "C" int kfx_hub_relay_registration(int,char *,int,int *,char *,int){return 0;}
-extern "C" void kfx_hub_outcome(const char *result){if(account.empty()||match_id.empty())return;std::string body="{\"result\":"+quote(result?result:"disconnected")+"}";kfx_hub_request("result",("/api/matches/"+match_id+"/result").c_str(),body.c_str(),1);match_id.clear();}
+extern "C" void kfx_hub_outcome(const char *result){if(local_profile||account.empty()||match_id.empty())return;std::string body="{\"result\":"+quote(result?result:"disconnected")+"}";kfx_hub_request("result",("/api/matches/"+match_id+"/result").c_str(),body.c_str(),1);match_id.clear();}
 
 extern "C" void kfx_hub_set_login_ticket(const char *ticket){login_ticket=ticket?ticket:"";}
 extern "C" const char *kfx_hub_login_ticket(){return login_ticket.c_str();}

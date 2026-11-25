@@ -19,6 +19,23 @@ void browser_filter(){
 }
 void browser_refresh(){if(browser_tab==0||browser_tab==2||browser_tab==3){if(!kfx_hub_request("servers","/api/servers",nullptr,0))hub_message="A community request is still running.";else hub_message="Refreshing directory...";}else{browser_filter();hub_message=browser_servers.empty()?"No servers found in this tab.":"Server list updated.";}}
 void browser_initialize(){kfx_hub_initialize(path("").c_str());browser_load("servers-favourites.cfg",favourite_servers);browser_load("servers-recent.cfg",recent_servers);size_t length=0;char *url=(char*)SDL_LoadFile(path("community-url.cfg").c_str(),&length);if(url){std::string value(url,length);SDL_free(url);kfx_hub_set_url(value.c_str());}}
+void choose_startup_profile(){
+ size_t length=0;
+ const std::string marker=local_profile_marker();
+ char *saved=static_cast<char *>(SDL_LoadFile(marker.c_str(),&length));
+ if(saved){
+  const bool use_local=std::string(saved,length)==active_content_profile()+"\n";
+  SDL_free(saved);
+  unlink(marker.c_str());
+  if(use_local){kfx_hub_use_local_profile();return;}
+ }
+ if(kfx_hub_session_remembered()){
+  kfx_hub_request("me","/api/me",nullptr,1);
+  return;
+ }
+ startup_login=true;
+ open_panel(36);
+}
 void community_request(){const char *routes[]={"/api/events","/api/friends","/api/matches","/api/challenges","/api/replays"};kfx_hub_request("community",routes[community_tab],nullptr,community_tab==1||community_tab==2?1:0);community_text="Loading...";community_offset=0;}
 std::future<std::pair<bool,std::string>> content_scan;std::string content_key,content_value,content_error,content_join_id;bool content_host=false;int content_join_action=0;bool publish_after_scan=false;
 void start_content_scan(const std::string &map,bool hosting){std::string key=std::string(keeper_runtime_directory)+"|"+map;if(content_scan.valid()||content_key==key)return;content_key=key;content_value.clear();content_error.clear();content_host=hosting;if(hosting)kfx_hub_content("");std::string root=keeper_runtime_directory;content_scan=std::async(std::launch::async,[root,map](){char out[256];bool ok=kfx_content_fingerprint(root.c_str(),map.c_str(),out,sizeof(out));return std::make_pair(ok,std::string(out));});}
@@ -40,7 +57,7 @@ void browser_tick(){
    if(!hub_field(&d.root,"token").empty()){
     cloud_ticket.clear();cloud_code.clear();cloud_password.clear();cloud_email.clear();
     hub_message="Signed in as "+std::string(kfx_hub_account_name())+".";
-    if(page==36)close_panel();
+    if(page==36){startup_login=false;close_panel();}
    }
   }
   else if(tag=="join"){
@@ -60,10 +77,12 @@ void browser_tick(){
  if(!device_code.empty()&&SDL_GetTicks()>=pair_at&&!kfx_hub_busy()){pair_at=SDL_GetTicks()+3000;std::string body="{\"device_code\":"+hub_quote(device_code)+"}";kfx_hub_request("pair-poll","/api/device/poll",body.c_str(),0);}
 }
 bool browser_action(int action){
- if(action==2110){close_panel();return true;}
- if(action==2111){choosing_local_profile=true;return play_tools_action(1200);}
+ if(action==2111){start_local_profile_picker();return true;}
+ if(action==2106){remember_cloud=!remember_cloud;return true;}
  if(action==2112||action==2113){
-  cloud_create=action==2112;cloud_password.clear();cloud_code.clear();cloud_ticket.clear();
+  cloud_create=action==2112;
+  if(cloud_create&&(cloud_name.size()>24||cloud_name.find('@')!=std::string::npos))cloud_name.clear();
+  cloud_password.clear();cloud_code.clear();cloud_ticket.clear();
   hub_message.clear();open_panel(36);return true;
  }
  if(action>=2101&&action<=2103){start_edit(13+action-2100);return true;}
@@ -87,6 +106,7 @@ bool browser_action(int action){
    body+="}";
   }
   if(kfx_hub_request(tag.c_str(),route.c_str(),body.c_str(),0)){
+   kfx_hub_remember_session(remember_cloud);
    cloud_password.clear();hub_message="Contacting the account service...";
   }
   return true;
@@ -130,23 +150,16 @@ bool browser_action(int action){
  return false;
 }
 void browser_draw(){
- if(page==37){
-  const char *active=getenv("KFX_CONTENT_PROFILE");
-  const std::string current=active?active:"default";
-  button(40,108,560,"Play as "+std::string(kfx_hub_account_name()[0]?kfx_hub_account_name():current.c_str()),2110,selected==0,45);
-  button(40,177,560,"Create or Change Local Profile",2111,selected==1,45);
-  button(40,246,560,"Create Cloud Profile",2112,selected==2,45);
-  button(40,315,560,"Sign In to Cloud Profile",2113,selected==3,45);
-  return;
- }
  if(page==36){
   if(!cloud_ticket.empty()){
    button(24,135,592,"Code: "+cloud_code+(editing==17?"|":""),2107,selected==0,42);
    button(24,230,592,"Verify Email",2105,selected==1,42);
   }else{
-   button(24,96,592,"Name: "+cloud_name+(editing==14?"|":""),2101,selected==0,40);
+   const std::string label=cloud_create?"Username":"Username or email address";
+   const std::string visible_name=cloud_name.size()>42?"..."+cloud_name.substr(cloud_name.size()-39):cloud_name;
+   button(24,96,592,label+(visible_name.empty()?"":": "+visible_name)+(editing==14?"|":""),2101,selected==0,40);
    if(cloud_create)button(24,148,592,"Email: "+cloud_email+(editing==15?"|":""),2102,selected==1,40);
-   button(24,200,592,"Password: "+std::string(cloud_password.size(),'*')+(editing==16?"|":""),2103,selected==(cloud_create?2:1),40);
+   button(24,cloud_create?200:152,592,"Password: "+std::string(cloud_password.size(),'*')+(editing==16?"|":""),2103,selected==(cloud_create?2:1),40);
    if(cloud_create){
     static SDL_Surface *atlas=nullptr;
     if(!atlas){const char *resources=getenv("KFX_APP_RESOURCES");if(resources)atlas=IMG_Load((std::string(resources)+"/avatar-presets.png").c_str());}
@@ -158,9 +171,15 @@ void browser_draw(){
     }
     button(106,259,510,"Change Avatar  "+std::to_string(cloud_avatar)+"/15",2104,selected==3,48);
    }
-   button(24,335,592,cloud_create?"Send Verification Code":"Sign In",2105,selected==(cloud_create?4:2),42);
+   if(cloud_create)button(24,335,592,"Send Verification Code",2105,selected==4,42);
+   else{
+    button(24,207,592,remember_cloud?"Remember Me: On":"Remember Me: Off",2106,selected==2,38);
+    button(24,258,592,"Sign In",2105,selected==3,42);
+    button(24,316,592,"Create Cloud Account",2112,selected==4,38);
+    button(24,startup_login?426:367,592,"Sign In with a Local Profile",2111,selected==5,38);
+   }
   }
-  small_line(24,397,hub_message,592);return;
+  small_line(24,!cloud_create&&!startup_login?405:397,hub_message,592);return;
  }
  if(page==20){
   button(24,91,322,"Search: "+browser_search+(editing==6?"|":""),2021,editing==6||selected==10,34);
@@ -184,7 +203,7 @@ void browser_draw(){
   button(504,341,112,"Account",2023,selected==7,34);
   button(24,382,284,"Community",2024,selected==8,32);button(332,382,284,"Direct Connect",2025,selected==9,32);
  }else if(page==21&&!browser_servers.empty()){const auto &s=browser_servers[browser_index];centered(88,s.name,24);small_line(24,126,s.address+" / "+s.engine,592);small_line(24,151,s.map+" / "+s.region+(s.password?" / Password required":""),592);button(64,180,512,"Password: "+std::string(server_password.size(),'*'),2044,selected==0,32);button(64,219,512,"Join Server",2040,selected==1,38);button(64,271,512,"Toggle Favourite",2042,selected==2,38);button(64,321,248,"Copy Address",2043,selected==3,38);button(328,321,248,"Spectate",2045,selected==4,38);
- }else if(page==22){centered(94,kfx_hub_account_name()[0]?std::string("Signed in: ")+kfx_hub_account_name():"Optional community account",24);if(!pair_code.empty()){centered(137,"Pairing code: "+pair_code,28);small_line(24,180,"Approve this code on your own browser only.",592);}else small_line(24,148,"LAN and direct play do not require an account.",592);button(64,211,512,"Sign In with Browser",2050,selected==0,40);button(64,261,512,"Open Website / Profile",2051,selected==1,40);button(64,311,512,"Sign Out",2052,selected==2,40);button(64,361,512,"Community Service",2053,selected==3,40);
+ }else if(page==22){centered(94,kfx_hub_account_name()[0]?std::string("Signed in: ")+kfx_hub_account_name():"Optional community account",24);if(!pair_code.empty()){centered(137,"Pairing code: "+pair_code,28);small_line(24,180,"Approve this code on your own browser only.",592);}else small_line(24,148,"LAN and direct play do not require an account.",592);button(64,190,512,"Sign In",2113,selected==4,36);button(64,234,512,"Sign In with Browser",2050,selected==0,36);button(64,278,512,"Open Website / Profile",2051,selected==1,36);button(64,322,512,"Sign Out",2052,selected==2,36);button(64,366,512,"Community Service",2053,selected==3,36);
  }else if(page==23){button(24,98,592,"Name: "+host_title+(editing==7?"|":""),2060,selected==0,38);button(24,151,592,"Address: "+host_address+(editing==8?"|":""),2061,selected==1,38);button(24,204,592,"Password: "+std::string(server_password.size(),'*'),2063,selected==2,38);button(24,257,592,"Preview map: "+(host_map.empty()?"Unselected":host_map)+(editing==13?"|":""),2064,selected==3,38);small_line(24,308,"Example map: classic:52. Final map is checked in the lobby.",592);button(64,350,512,"Create / Publish Lobby",2062,selected==4,42);
  }else if(page==24){const char *names[]={"Events","Friends","Match History","Co-op Challenges","Replays"};button(24,90,108,"Prev",2080,selected==0,36);centered(99,names[community_tab],24);button(508,90,108,"Next",2081,selected==1,36);std::vector<std::string> lines;std::istringstream stream(community_text);std::string line;while(std::getline(stream,line))lines.push_back(line);int limit=5;community_offset=std::min(community_offset,std::max(0,(int)lines.size()-limit));for(int i=0;i<limit&&community_offset+i<(int)lines.size();i++)text(24,150+i*37,lines[community_offset+i],20,592);button(24,351,160,"Up",2083,selected==2,36);button(216,351,208,"Open Website",2082,selected==3,36);button(456,351,160,"Down",2084,selected==4,36);
  }else if(page==25){small_line(24,103,"Internet service URL (custom servers supported)",592);button(24,157,592,hub_edit+(editing==9?"|":""),2070,selected==0,48);small_line(24,231,"Remote services require HTTPS. Account tokens are",592);small_line(24,268,"cleared when you change the service address.",592);button(64,325,512,"Save Service Address",2071,selected==1,44);}
