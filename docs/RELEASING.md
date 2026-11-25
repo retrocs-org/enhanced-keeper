@@ -198,3 +198,15 @@ policy. Their original GPLv3 files and notices are retained; `credits.md` record
 attribution and revisions. Source push validates every file against the original
 Git blob hashes in `assets/upstream/asset-sources.json`. Original CD images,
 disc-derived content, generated runtimes and tool installations remain excluded.
+
+## Repository-local Git authentication
+
+The canonical repositories are named `retrocs-org/keeper-enhanced` on GitHub and
+the private GitLab service. The private release profile is `keeper-enhanced.json`;
+the old profile name remains a local compatibility alias.
+
+After provisioning repository-scoped tokens with the git-release token helper,
+run `python3 scripts/git-credential-project.py --install` in a checkout to use
+its concealed 1Password fields for HTTPS Git operations. This configures only
+that checkout, scopes credential lookup to its exact two repository URLs, and
+stores no token in Git configuration. Tokens must be renewed when they expire.
