@@ -33,11 +33,11 @@ for attempt in range(100):
 else:raise RuntimeError('Native PHP API did not start')
 processes=[];supervisor=None;hostthread=None
 
-app=Path(os.environ.get('KFX_TEST_APP','/Applications/Keeper-Enhanced.app'));launcher=app/'Contents/MacOS'/plistlib.loads((app/'Contents/Info.plist').read_bytes())['CFBundleExecutable'];engine=root/'build-mac-universal/keeperfx'
+app=Path(os.environ.get('KFX_TEST_APP','/Applications/Keeper-Enhanced.app'));launcher=app/'Contents/MacOS'/plistlib.loads((app/'Contents/Info.plist').read_bytes())['CFBundleExecutable'];engine=app/'Contents/Resources/game/keeper-enhanced'
 def port(udp=False):
  with socket.socket(socket.AF_INET,socket.SOCK_DGRAM if udp else socket.SOCK_STREAM) as s:s.bind(('127.0.0.1',0));return s.getsockname()[1]
 def profile(name):
- p=work/name;env=dict(os.environ,KFX_USER_DATA_DIR=str(p));subprocess.run([str(launcher),'--import',str(root/'.local/keeperfx')],env=env,check=True,stdout=subprocess.DEVNULL);subprocess.run([str(launcher),'--prepare-only'],env=env,check=True,stdout=subprocess.DEVNULL);return p
+ p=work/name;env=dict(os.environ,KFX_USER_DATA_DIR=str(p));subprocess.run([str(launcher),'--import',os.environ.get('KFX_TEST_IMPORT',str(root/'.local/keeperfx'))],env=env,check=True,stdout=subprocess.DEVNULL);subprocess.run([str(launcher),'--prepare-only'],env=env,check=True,stdout=subprocess.DEVNULL);return p
 def config_api(p,apiport):
  f=p/'GameData/keeper-enhanced.cfg';s=f.read_text();s=re.sub(r'(?m)^API_ENABLED=.*$','API_ENABLED=TRUE',s);s=re.sub(r'(?m)^API_PORT=.*$',f'API_PORT={apiport}',s);f.write_text(s)
 connections={};buffers={};serial=0
@@ -64,15 +64,16 @@ def until(fn,seconds=40):
   except (OSError,ValueError,AssertionError) as e:last=str(e)
   time.sleep(.3)
  raise AssertionError('Timed out: '+str(last))
-def launch(p,apiport,token=None):
+def launch(p,apiport,token=None,endpoint=None):
  config_api(p,apiport)
  if token:
   me=hub.handle('GET','/api/me',{},token);(p/'save/community-session.cfg').write_text(base+'\n'+token+'\n'+me['name']+'\n'+me['id']+'\n');(p/'save/community-session.cfg').chmod(0o600)
- else:(p/'save/community-url.cfg').write_text(base)
+ elif not (p/'save/community-session.cfg').exists():(p/'save/community-url.cfg').write_text(base)
  env=dict(os.environ,KFX_USER_DATA_DIR=str(p),KFX_HEADLESS='1',KFX_LOCAL_NETWORK_ONLY='1',SDL_VIDEODRIVER='dummy',SDL_RENDER_DRIVER='software',SDL_AUDIODRIVER='dummy',ALSOFT_DRIVERS='null',KFX_APP_RESOURCES=str(app/'Contents/Resources'))
- log=open(p/'stdout.log','w');proc=subprocess.Popen([str(p/'GameData/keeperfx'),'-nointro','-nosound','-nick','LocalTester','-log','community.log'],executable=str(engine),env=env,cwd=p/'GameData',stdout=log,stderr=subprocess.STDOUT,start_new_session=True);processes.append((proc,log));until(lambda:rpc(apiport,'community_status'));return proc
+ log=open(p/'stdout.log','w');proc=subprocess.Popen([str(p/'GameData/keeperfx'),'-nointro','-nosound','-nick','LocalTester','-log','community.log',*(['-connect',endpoint] if endpoint else [])],executable=str(engine),env=env,cwd=p/'GameData',stdout=log,stderr=subprocess.STDOUT,start_new_session=True);processes.append((proc,log));until(lambda:rpc(apiport,'community_status'));return proc
+lobby_only=os.environ.get('KFX_TEST_LOBBY_ONLY')=='1'
 try:
- hostprofile=profile('host');hostport=port(True);cfg=dict(name='Local Dedicated QA',engine_binary=os.environ.get('KFX_TEST_SERVER_ENGINE',str(engine)),user_data=str(hostprofile),hub_url=base,endpoint='127.0.0.1:'+str(hostport),visibility='public',port=hostport,rotation=[{'campaign':'classic','level':52}],humans=1,spectators=True,app_resources=str(app/'Contents/Resources'));os.environ['KFX_HUB_ADMIN_KEY']=hub.admin_key;supervisor=ded.Host(cfg);hosterrors=[]
+ hostprofile=profile('host');hostport=port(True);cfg=dict(name='Local Dedicated QA',engine_binary=os.environ.get('KFX_TEST_SERVER_ENGINE',str(engine)),user_data=str(hostprofile),hub_url=base,endpoint='127.0.0.1:'+str(hostport),visibility='public',port=hostport,rotation=[{'campaign':'original','level':52}],humans=2 if lobby_only else 1,spectators=not lobby_only,app_resources=str(app/'Contents/Resources'));os.environ['KFX_HUB_ADMIN_KEY']=hub.admin_key;supervisor=ded.Host(cfg);hosterrors=[]
  def run_host():
   try:supervisor.run()
   except Exception:hosterrors.append(traceback.format_exc())
@@ -81,20 +82,46 @@ try:
   query.settimeout(2);query.sendto(b'KFXQ1 local-probe',('127.0.0.1',hostport));assert query.recvfrom(100)[0]==b'KFXA1 local-probe'
  print('PASS: server latency query does not allocate a player',flush=True)
  user=hub.handle('POST','/api/register',{'name':'LocalKeeper','password':'local game test password'});clientprofile=profile('client');clientport=port();client=launch(clientprofile,clientport,user['token']);rpc(clientport,'community_action',command=2000);until(lambda:rpc(clientport,'community_status').get('servers')==1);rpc(clientport,'community_action',command=2010);rpc(clientport,'community_action',command=2040)
- # The public listing must connect directly, without allocating a relay channel.
- until(lambda:rpc(clientport).get('turn',0)>=20,seconds=90);status=rpc(clientport);assert status['active'] and status['dedicated_player']==0,status;until(lambda:any(v.get('account') for v in supervisor.status.get('users',[])));assert not relay.channels,'Unexpected relay channel';print('PASS: public server joins directly; dedicated AI and cloud identity agree',flush=True)
- if os.environ.get('KFX_TEST_RECONNECT')=='1':
-  old=rpc(clientport);old_users=[(v.get('peer'),v.get('account')) for v in supervisor.status.get('users',[]) if v.get('account')]
-  os.kill(client.pid,signal.SIGSTOP)
-  try:time.sleep(35)
-  finally:os.kill(client.pid,signal.SIGCONT)
-  restored=until(lambda:(lambda value:value if value.get('active') and value.get('turn',0)>old['turn']+10 else None)(rpc(clientport)),seconds=90)
-  assert supervisor.status.get('players')==2,supervisor.status
-  assert old_users==[(v.get('peer'),v.get('account')) for v in supervisor.status.get('users',[]) if v.get('account')]
-  print('PASS: 35-second lost client resumes its authenticated player slot and simulation without restarting the match',flush=True)
- until(lambda:hub.handle('GET','/api/servers/'+supervisor.status['server_id']+'/spectate',{},'').get('size',0)>0)
- spectatorprofile=profile('spectator');spectatorport=port();spectator=launch(spectatorprofile,spectatorport);rpc(spectatorport,'community_action',command=2000);until(lambda:rpc(spectatorport,'community_status').get('servers')==1);rpc(spectatorport,'community_action',command=2010);rpc(spectatorport,'community_action',command=2045)
- watch=until(lambda:(lambda x:x if x.get('spectating') and x.get('turn',0)>=10 else None)(rpc(spectatorport)),seconds=60);assert not watch['active'],watch;before=watch['turn'];until(lambda:rpc(spectatorport).get('turn',0)>before+10,seconds=30);assert supervisor.status.get('players')==2,supervisor.status;print('PASS: real replay spectator advances without consuming a player slot',flush=True);assert not hosterrors,hosterrors
+ if lobby_only:
+  until(lambda:rpc(clientport).get('active') and any(user.get('account') for user in supervisor.status.get('users',[])))
+  print('PASS: packaged client entered a public lobby with its cloud identity',flush=True)
+ else:
+  # The public listing must connect directly, without allocating a relay channel.
+  until(lambda:rpc(clientport).get('turn',0)>=20,seconds=90);status=rpc(clientport);assert status['active'] and status['dedicated_player']==0,status;until(lambda:any(v.get('account') for v in supervisor.status.get('users',[])));assert not relay.channels,'Unexpected relay channel';print('PASS: public server joins directly; dedicated AI and cloud identity agree',flush=True)
+  if os.environ.get('KFX_TEST_RECONNECT')=='1':
+   old=rpc(clientport);old_users=[(v.get('peer'),v.get('account')) for v in supervisor.status.get('users',[]) if v.get('account')]
+   os.kill(client.pid,signal.SIGSTOP)
+   try:time.sleep(35)
+   finally:os.kill(client.pid,signal.SIGCONT)
+   restored=until(lambda:(lambda value:value if value.get('active') and value.get('turn',0)>old['turn']+10 else None)(rpc(clientport)),seconds=90)
+   assert supervisor.status.get('players')==2,supervisor.status
+   assert old_users==[(v.get('peer'),v.get('account')) for v in supervisor.status.get('users',[]) if v.get('account')]
+   print('PASS: 35-second lost client resumes its authenticated player slot and simulation without restarting the match',flush=True)
+  until(lambda:hub.handle('GET','/api/servers/'+supervisor.status['server_id']+'/spectate',{},'').get('size',0)>0)
+  spectatorprofile=profile('spectator');spectatorport=port();spectator=launch(spectatorprofile,spectatorport);rpc(spectatorport,'community_action',command=2000);until(lambda:rpc(spectatorport,'community_status').get('servers')==1);rpc(spectatorport,'community_action',command=2010);rpc(spectatorport,'community_action',command=2045)
+  watch=until(lambda:(lambda x:x if x.get('spectating') and x.get('turn',0)>=10 else None)(rpc(spectatorport)),seconds=60);assert not watch['active'],watch;before=watch['turn'];until(lambda:rpc(spectatorport).get('turn',0)>before+10,seconds=30);assert supervisor.status.get('players')==2,supervisor.status;print('PASS: real replay spectator advances without consuming a player slot',flush=True);assert not hosterrors,hosterrors
+ supervisor.stop=True
+ hostthread.join(12)
+ assert not hostthread.is_alive(), 'Public test host failed to stop'
+ web_process.terminate()
+ web_process.wait(timeout=5)
+ private_profile=profile('private-host')
+ private_port=port(True)
+ supervisor=ded.Host(dict(cfg,visibility='private',user_data=str(private_profile),port=private_port,spectators=False))
+ hostthread=threading.Thread(target=run_host,daemon=True)
+ hostthread.start()
+ until(lambda:supervisor.status.get('active'))
+ offline_profile=profile('offline-client')
+ shutil.copyfile(clientprofile/'save/community-session.cfg',offline_profile/'save/community-session.cfg')
+ offline_port=port()
+ launch(offline_profile,offline_port,endpoint='127.0.0.1:'+str(private_port))
+ if lobby_only:
+  until(lambda:rpc(offline_port).get('active') and supervisor.status.get('players')==2)
+  assert rpc(offline_port,'community_status')['account']=='LocalKeeper'
+ else:
+  until(lambda:rpc(offline_port).get('turn',0)>=20,seconds=60)
+ assert not hosterrors,hosterrors
+ print('PASS: remembered cloud identity can direct-connect to a private server while KeeperHub is offline',flush=True)
  print('Evidence profile:',work,flush=True)
 finally:
  if __import__('sys').exc_info()[0]:

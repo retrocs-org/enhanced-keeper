@@ -19,17 +19,101 @@ void browser_filter(){
 }
 void browser_refresh(){if(browser_tab==0||browser_tab==2||browser_tab==3){if(!kfx_hub_request("servers","/api/servers",nullptr,0))hub_message="A community request is still running.";else hub_message="Refreshing directory...";}else{browser_filter();hub_message=browser_servers.empty()?"No servers found in this tab.":"Server list updated.";}}
 void browser_initialize(){kfx_hub_initialize(path("").c_str());browser_load("servers-favourites.cfg",favourite_servers);browser_load("servers-recent.cfg",recent_servers);size_t length=0;char *url=(char*)SDL_LoadFile(path("community-url.cfg").c_str(),&length);if(url){std::string value(url,length);SDL_free(url);kfx_hub_set_url(value.c_str());}}
-void choose_startup_profile(){
+std::string settings_account, synced_settings, uploading_settings, incoming_settings;
+int settings_revision=-1, incoming_revision=-1;
+Uint64 next_settings_sync=0;
+std::string settings_status="Checking cloud settings";
+bool settings_conflict=false;
+int cloud_account_options_count(){return settings_conflict?2:5;}
+std::string read_profile_file(const char *filename){
  size_t length=0;
- const std::string marker=local_profile_marker();
- char *saved=static_cast<char *>(SDL_LoadFile(marker.c_str(),&length));
- if(saved){
-  const bool use_local=std::string(saved,length)==active_content_profile()+"\n";
-  SDL_free(saved);
-  unlink(marker.c_str());
-  if(use_local){kfx_hub_use_local_profile();return;}
+ char *data=static_cast<char *>(SDL_LoadFile(path(filename).c_str(),&length));
+ if(!data)return {};
+ std::string result;
+ if(length<=16384)result.assign(data,length);
+ SDL_free(data);
+ return result;
+}
+std::string quote_settings(const std::string &value){
+ std::string escaped;
+ for(char ch:value){
+  if(ch=='\n')escaped+="\\n";
+  else if(ch=='\r')escaped+="\\r";
+  else if(ch=='\t')escaped+="\\t";
+  else {if(ch=='\\'||ch=='"')escaped+='\\';escaped+=ch;}
  }
- if(kfx_hub_session_remembered()){
+ return '"'+escaped+'"';
+}
+bool record_synced_settings(int revision,const std::string &snapshot){
+ if(!write_small_file(path("cloud-settings-baseline.toml"),snapshot)||
+    !write_small_file(path("cloud-settings-revision.cfg"),std::to_string(revision)))return false;
+ settings_revision=revision;
+ synced_settings=snapshot;
+ return true;
+}
+bool apply_cloud_settings(){
+ const auto current=read_profile_file("settings.toml");
+ if(incoming_settings!=current){
+  if(!current.empty()&&!write_small_file(path("settings-before-cloud-sync.toml"),current))return false;
+  if(!write_small_file(path("settings.toml"),incoming_settings))return false;
+  load_settings();
+ }
+ return record_synced_settings(incoming_revision,incoming_settings);
+}
+void sync_cloud_settings(){
+ if(settings_account.empty()||settings_account!=kfx_hub_account_id()||settings_conflict)return;
+ if(incoming_revision>=0){
+  const std::string local=read_profile_file("settings.toml");
+  const std::string baseline=read_profile_file("cloud-settings-baseline.toml");
+  const std::string cached_revision=read_profile_file("cloud-settings-revision.cfg");
+  const bool cloud_changed=cached_revision!=std::to_string(incoming_revision);
+  const bool local_changed=!cached_revision.empty()&&!local.empty()&&baseline!=local;
+  if(cloud_changed&&!incoming_settings.empty()&&local!=incoming_settings){
+   if(local_changed){
+    settings_conflict=true;
+    if(page==22)selected=0;
+    settings_status="Sync conflict";
+    return;
+   }
+   if(game.game_kind!=GKind_Unset||network_is_active())return;
+   if(!apply_cloud_settings()){settings_status="Could not save cloud settings";return;}
+  }else if(!record_synced_settings(incoming_revision,incoming_settings)){
+   settings_status="Could not save sync status";
+   return;
+  }
+  incoming_revision=-1;
+  settings_status="Settings synced";
+ }
+ if(kfx_hub_busy()||SDL_GetTicks()<next_settings_sync)return;
+ const std::string current=read_profile_file("settings.toml");
+ if(settings_revision<0||current.empty()||current==synced_settings){
+  next_settings_sync=SDL_GetTicks()+15000;
+  kfx_hub_request("settings-read","/api/cloud/settings",nullptr,1);
+  return;
+ }
+ next_settings_sync=SDL_GetTicks()+5000;
+ const std::string body="{\"revision\":"+std::to_string(settings_revision)+",\"settings\":"+quote_settings(current)+"}";
+ if(kfx_hub_request("settings-write","/api/cloud/settings",body.c_str(),1)){
+  uploading_settings=current;
+  settings_status="Syncing settings";
+ }
+}
+bool activate_cloud_storage(){
+ const std::string id=kfx_hub_account_id();
+ if(id.size()!=32||!std::all_of(id.begin(),id.end(),[](unsigned char c){return std::isxdigit(c);}))return false;
+ const std::string root=profiles_base()+"/CloudProfiles";
+ struct stat info;
+ if(lstat(root.c_str(),&info)==0&&!S_ISDIR(info.st_mode))return false;
+ if(!use_player_storage(root+"/"+id))return false;
+ settings_account=id;
+ settings_conflict=false;
+ settings_status="Checking cloud settings";
+ settings_revision=incoming_revision=-1;
+ next_settings_sync=0;
+ return true;
+}
+void choose_startup_profile(){
+ if(kfx_hub_session_remembered()&&activate_cloud_storage()){
   kfx_hub_request("me","/api/me",nullptr,1);
   return;
  }
@@ -47,7 +131,35 @@ void browser_tick(){
  std::string current_map=hosting?host_map:"";if(hosting&&frontend_menu_state==FeSt_INITIAL){current_map=campaign.fname;if(current_map.size()>4&&current_map.substr(current_map.size()-4)==".cfg")current_map.resize(current_map.size()-4);current_map+=":"+std::to_string(get_loaded_level_number());}
  if(hosting)start_content_scan(current_map,true);else if(page==21&&!browser_servers.empty())start_content_scan(browser_servers[browser_index].map,false);
  if(kfx_hub_tick(hosting,count,hosting&&frontend_menu_state==FeSt_INITIAL,current_map.c_str())){
-  std::string tag=kfx_hub_result_tag();HubDocument d(kfx_hub_result());std::string error=hub_field(&d.root,"error");if(!error.empty()){hub_message=error;if(tag=="community")community_text=error;}
+  std::string tag=kfx_hub_result_tag();HubDocument d(kfx_hub_result());std::string error=hub_field(&d.root,"error");if(tag=="settings-read"||tag=="settings-write"){
+   if(settings_account==kfx_hub_account_id()){
+    const long status=kfx_hub_result_status();
+    if(status==200&&tag=="settings-read"){
+     incoming_revision=hub_integer(&d.root,"revision");
+     incoming_settings=hub_field(&d.root,"settings");
+    }else if(status==200){
+     settings_status=record_synced_settings(hub_integer(&d.root,"revision"),uploading_settings)?
+        "Settings synced":"Could not save sync status";
+    }else if(status==409){
+     settings_revision=-1;
+     next_settings_sync=0;
+    }else{
+     settings_status=status==401?"Sign in again to sync":status==0?"Offline - settings saved on this Mac":"Cloud settings unavailable";
+     next_settings_sync=SDL_GetTicks()+15000;
+    }
+   }
+  }
+  else if(!error.empty()){
+   hub_message=error;
+   if(tag=="cloud-login"&&kfx_hub_result_status()==401&&page==36){
+    cloud_create=true;
+    cloud_confirmation.clear();
+    if(cloud_name.find('@')!=std::string::npos){cloud_email=cloud_name;cloud_name.clear();}
+    hub_message="Sign-in failed. Check your password or confirm it to create an account.";
+    selected=0;
+   }else if(tag=="cloud-login")cloud_password.clear();
+   if(tag=="community")community_text=error;
+  }
   else if(tag.rfind("ping:",0)==0){browser_pings[hub_field(&d.root,"address")]=hub_integer(&d.root,"ping_ms");}
   else if(tag=="servers"){public_servers.clear();const VALUE *list=value_dict_get(&d.root,"servers");for(size_t i=0;list&&i<std::min(value_array_size(list),(size_t)128);i++){const VALUE *r=value_array_get(list,i);BrowserServer s;s.id=hub_field(r,"id");s.name=hub_field(r,"name");s.address=hub_field(r,"endpoint");s.engine=hub_field(r,"engine");s.map=hub_field(r,"map");s.content=hub_field(r,"mods");if(s.content.size()!=64||!std::all_of(s.content.begin(),s.content.end(),[](unsigned char c){return std::isxdigit(c);}))s.content.clear();s.kind=hub_field(r,"kind");s.status=hub_field(r,"status");s.region=hub_field(r,"region");s.players=hub_integer(r,"players");s.capacity=hub_integer(r,"capacity");s.password=hub_integer(r,"password")!=0;public_servers.push_back(s);}for(auto *saved:{&favourite_servers,&recent_servers})for(auto &entry:*saved)for(const auto &fresh:public_servers)if(entry.address==fresh.address&&entry.name==fresh.name)entry=fresh;browser_filter();hub_message=public_servers.empty()?"No public servers. LAN and direct play are available.":"Directory updated.";}
   else if(tag=="pair-start"){device_code=hub_field(&d.root,"device_code");pair_code=hub_field(&d.root,"user_code");pair_at=SDL_GetTicks()+3000;pair_deadline=SDL_GetTicks()+600000;hub_message="Approve this code in your browser.";SDL_OpenURL((std::string(kfx_hub_url())+"/index.php?route=%2Fdevice").c_str());}
@@ -55,9 +167,9 @@ void browser_tick(){
   else if(tag=="cloud-signup"){cloud_ticket=hub_field(&d.root,"ticket");selected=0;hub_message="Enter the six-digit code sent to your email.";}
   else if(tag=="cloud-verify"||tag=="cloud-login"){
    if(!hub_field(&d.root,"token").empty()){
-    cloud_ticket.clear();cloud_code.clear();cloud_password.clear();cloud_email.clear();
+    cloud_ticket.clear();cloud_code.clear();cloud_password.clear();cloud_confirmation.clear();cloud_email.clear();
     hub_message="Signed in as "+std::string(kfx_hub_account_name())+".";
-    if(page==36){startup_login=false;close_panel();}
+    if(page==36){if(activate_cloud_storage()){startup_login=false;close_panel();}else hub_message="Could not open the cloud profile on this Mac.";}
    }
   }
   else if(tag=="join"){
@@ -72,21 +184,37 @@ void browser_tick(){
   else if(tag=="publish")hub_message="Public lobby registered. Players can join directly.";
   else if(tag=="community"){community_text.clear();const char *keys[]={"events","friends","matches","challenges","replays"};const VALUE *rows=value_dict_get(&d.root,keys[community_tab]);for(size_t i=0;rows&&i<std::min(value_array_size(rows),(size_t)50);i++){const VALUE *r=value_array_get(rows,i);std::string title=hub_field(r,community_tab==0||community_tab==3?"title":community_tab==1?"name":community_tab==2?"map":"id");community_text+=title+"\n";std::string detail=hub_field(r,community_tab==0?"kind":community_tab==1?"status":community_tab==2?"verification":community_tab==3?"description":"sha");community_text+=detail+"\n\n";}if(community_text.empty())community_text="Nothing here yet. Create events and manage your profile on the website.";}
  }
+ sync_cloud_settings();
  if(kfx_hub_spectator_ready()){close_panel();snprintf(game.packet_fname,sizeof(game.packet_fname),"%s",kfx_hub_spectator_file());game.packet_load_enable=true;game.packet_load_initialized=false;frontend_set_state(FeSt_PACKET_DEMO);}
  if(!device_code.empty()&&SDL_GetTicks()>pair_deadline){device_code.clear();pair_code.clear();hub_message="Pairing expired. Choose Sign In again.";}
  if(!device_code.empty()&&SDL_GetTicks()>=pair_at&&!kfx_hub_busy()){pair_at=SDL_GetTicks()+3000;std::string body="{\"device_code\":"+hub_quote(device_code)+"}";kfx_hub_request("pair-poll","/api/device/poll",body.c_str(),0);}
 }
 bool browser_action(int action){
+ if(action==2114||action==2115){
+  if(!settings_conflict||settings_account!=kfx_hub_account_id())return true;
+  if(game.game_kind!=GKind_Unset||network_is_active()){
+   settings_status="Return to the main menu to resolve the sync conflict";
+   return true;
+  }
+  const bool resolved=action==2115?apply_cloud_settings():record_synced_settings(incoming_revision,incoming_settings);
+  if(!resolved){settings_status="Could not save settings";return true;}
+  incoming_revision=-1;
+  next_settings_sync=0;
+  settings_conflict=false;
+  selected=0;
+  settings_status=action==2115?"Settings synced":"Syncing settings from this Mac";
+  return true;
+ }
  if(action==2111){start_local_profile_picker();return true;}
  if(action==2106){remember_cloud=!remember_cloud;return true;}
- if(action==2112||action==2113){
-  cloud_create=action==2112;
+ if(action==2113){
+  cloud_create=false;
   if(cloud_create&&(cloud_name.size()>24||cloud_name.find('@')!=std::string::npos))cloud_name.clear();
   cloud_password.clear();cloud_code.clear();cloud_ticket.clear();
   hub_message.clear();open_panel(36);return true;
  }
  if(action>=2101&&action<=2103){start_edit(13+action-2100);return true;}
- if(action==2104){cloud_avatar=cloud_avatar%15+1;return true;}
+ if(action==2108){start_edit(18);return true;}
  if(action==2107){start_edit(17);return true;}
  if(action==2105){
   if(kfx_hub_busy())return true;
@@ -99,6 +227,10 @@ bool browser_action(int action){
    if(cloud_name.empty()||cloud_password.size()<12||(cloud_create&&cloud_email.empty())){
     hub_message="Enter your account details and at least 12 password characters.";return true;
    }
+   if(cloud_create&&cloud_password!=cloud_confirmation){
+    hub_message="The passwords must match.";
+    return true;
+   }
    tag=cloud_create?"cloud-signup":"cloud-login";
    route=cloud_create?"/api/cloud/signup":"/api/cloud/login";
    body="{\"name\":"+hub_quote(cloud_name)+",\"password\":"+hub_quote(cloud_password);
@@ -107,7 +239,8 @@ bool browser_action(int action){
   }
   if(kfx_hub_request(tag.c_str(),route.c_str(),body.c_str(),0)){
    kfx_hub_remember_session(remember_cloud);
-   cloud_password.clear();hub_message="Contacting the account service...";
+   if(tag!="cloud-login"){cloud_password.clear();cloud_confirmation.clear();}
+   hub_message="Contacting the account service...";
   }
   return true;
  }
@@ -130,7 +263,7 @@ bool browser_action(int action){
  if(action==2043&&!browser_servers.empty()){SDL_SetClipboardText(browser_servers[browser_index].address.c_str());hub_message="Server address copied.";return true;}
  if(action==2050){if(!kfx_hub_request("pair-start","/api/device/start","{}",0))hub_message="Wait for the current request.";return true;}
  if(action==2051){SDL_OpenURL((std::string(kfx_hub_url())+"/index.php?route=%2Fprofile").c_str());return true;}
- if(action==2052){device_code.clear();pair_code.clear();kfx_hub_sign_out();hub_message="Signed out on this game.";return true;}
+ if(action==2052){device_code.clear();pair_code.clear();settings_conflict=false;kfx_hub_sign_out();hub_message="Signed out on this game.";return true;}
  if(action==2053){page=25;selected=0;hub_edit=kfx_hub_url();return true;}
  if(action==2064){start_edit(13);hub_message="Optional preview map, for example classic:52. Lobby readiness checks the final choice.";return true;}
  if(action==2063){start_edit(10);return true;}
@@ -155,28 +288,20 @@ void browser_draw(){
    button(24,135,592,"Code: "+cloud_code+(editing==17?"|":""),2107,selected==0,42);
    button(24,230,592,"Verify Email",2105,selected==1,42);
   }else{
-   const std::string label=cloud_create?"Username":"Username or email address";
    const std::string visible_name=cloud_name.size()>42?"..."+cloud_name.substr(cloud_name.size()-39):cloud_name;
-   button(24,96,592,label+(visible_name.empty()?"":": "+visible_name)+(editing==14?"|":""),2101,selected==0,40);
-   if(cloud_create)button(24,148,592,"Email: "+cloud_email+(editing==15?"|":""),2102,selected==1,40);
-   button(24,cloud_create?200:152,592,"Password: "+std::string(cloud_password.size(),'*')+(editing==16?"|":""),2103,selected==(cloud_create?2:1),40);
+   centered(86,cloud_create?"Username":"Username or email",20);
+   button(104,114,432,visible_name+(editing==14?"|":""),2101,selected==0,38);
+   if(cloud_create)button(104,159,432,cloud_email.empty()?"Email address":short_text(cloud_email,46),2102,selected==1,38);
+   centered(cloud_create?200:163,"Password",20);
+   const auto masked=[](const std::string &value){return std::string(std::min<size_t>(value.size(),24),'*');};
+   button(104,cloud_create?225:190,432,masked(cloud_password)+(editing==16?"|":""),2103,selected==(cloud_create?2:1),38);
    if(cloud_create){
-    static SDL_Surface *atlas=nullptr;
-    if(!atlas){const char *resources=getenv("KFX_APP_RESOURCES");if(resources)atlas=IMG_Load((std::string(resources)+"/avatar-presets.png").c_str());}
-    const int avatar=cloud_avatar-1;
-    if(atlas){
-     const int w=atlas->w/5,h=atlas->h/3;
-     SDL_Rect from={(avatar%5)*w,(avatar/5)*h,w,h},to={24,254,68,68};
-     SDL_BlitSurfaceScaled(atlas,&from,canvas,&to,SDL_SCALEMODE_LINEAR);
-    }
-    button(106,259,510,"Change Avatar  "+std::to_string(cloud_avatar)+"/15",2104,selected==3,48);
-   }
-   if(cloud_create)button(24,335,592,"Send Verification Code",2105,selected==4,42);
-   else{
-    button(24,207,592,remember_cloud?"Remember Me: On":"Remember Me: Off",2106,selected==2,38);
-    button(24,258,592,"Sign In",2105,selected==3,42);
-    button(24,316,592,"Create Cloud Account",2112,selected==4,38);
-    button(24,startup_login?426:367,592,"Sign In with a Local Profile",2111,selected==5,38);
+    button(104,274,432,"Confirm password "+masked(cloud_confirmation)+(editing==18?"|":""),2108,selected==3,38);
+    button(104,325,432,"Send Verification Code",2105,selected==4,42);
+   }else{
+    button(176,244,288,remember_cloud?"Remember Me: On":"Remember Me: Off",2106,selected==2,34);
+    button(104,291,432,"Sign In or Create Account",2105,selected==3,43);
+    button(104,startup_login?426:347,432,"Use a Local Profile",2111,selected==4,38);
    }
   }
   small_line(24,!cloud_create&&!startup_login?405:397,hub_message,592);return;
@@ -203,7 +328,12 @@ void browser_draw(){
   button(504,341,112,"Account",2023,selected==7,34);
   button(24,382,284,"Community",2024,selected==8,32);button(332,382,284,"Direct Connect",2025,selected==9,32);
  }else if(page==21&&!browser_servers.empty()){const auto &s=browser_servers[browser_index];centered(88,s.name,24);small_line(24,126,s.address+" / "+s.engine,592);small_line(24,151,s.map+" / "+s.region+(s.password?" / Password required":""),592);button(64,180,512,"Password: "+std::string(server_password.size(),'*'),2044,selected==0,32);button(64,219,512,"Join Server",2040,selected==1,38);button(64,271,512,"Toggle Favourite",2042,selected==2,38);button(64,321,248,"Copy Address",2043,selected==3,38);button(328,321,248,"Spectate",2045,selected==4,38);
- }else if(page==22){centered(94,kfx_hub_account_name()[0]?std::string("Signed in: ")+kfx_hub_account_name():"Optional community account",24);if(!pair_code.empty()){centered(137,"Pairing code: "+pair_code,28);small_line(24,180,"Approve this code on your own browser only.",592);}else small_line(24,148,"LAN and direct play do not require an account.",592);button(64,190,512,"Sign In",2113,selected==4,36);button(64,234,512,"Sign In with Browser",2050,selected==0,36);button(64,278,512,"Open Website / Profile",2051,selected==1,36);button(64,322,512,"Sign Out",2052,selected==2,36);button(64,366,512,"Community Service",2053,selected==3,36);
+ }else if(page==22&&settings_conflict){
+  centered(100,"Settings changed on both devices",22);
+  small_line(60,158,settings_status,520);
+  button(84,225,472,"Keep Settings on This Mac",2114,selected==0,42);
+  button(84,285,472,"Use Cloud Settings",2115,selected==1,42);
+ }else if(page==22){centered(94,kfx_hub_account_name()[0]?std::string("Signed in: ")+kfx_hub_account_name():"Optional community account",24);if(!pair_code.empty()){centered(137,"Pairing code: "+pair_code,28);small_line(24,180,"Approve this code on your own browser only.",592);}else small_line(24,148,kfx_hub_account_name()[0]?settings_status:"LAN and direct play do not require an account.",592);button(64,190,512,"Sign In",2113,selected==4,36);button(64,234,512,"Sign In with Browser",2050,selected==0,36);button(64,278,512,"Open Website / Profile",2051,selected==1,36);button(64,322,512,"Sign Out",2052,selected==2,36);button(64,366,512,"Community Service",2053,selected==3,36);
  }else if(page==23){button(24,98,592,"Name: "+host_title+(editing==7?"|":""),2060,selected==0,38);button(24,151,592,"Address: "+host_address+(editing==8?"|":""),2061,selected==1,38);button(24,204,592,"Password: "+std::string(server_password.size(),'*'),2063,selected==2,38);button(24,257,592,"Preview map: "+(host_map.empty()?"Unselected":host_map)+(editing==13?"|":""),2064,selected==3,38);small_line(24,308,"Example map: classic:52. Final map is checked in the lobby.",592);button(64,350,512,"Create / Publish Lobby",2062,selected==4,42);
  }else if(page==24){const char *names[]={"Events","Friends","Match History","Co-op Challenges","Replays"};button(24,90,108,"Prev",2080,selected==0,36);centered(99,names[community_tab],24);button(508,90,108,"Next",2081,selected==1,36);std::vector<std::string> lines;std::istringstream stream(community_text);std::string line;while(std::getline(stream,line))lines.push_back(line);int limit=5;community_offset=std::min(community_offset,std::max(0,(int)lines.size()-limit));for(int i=0;i<limit&&community_offset+i<(int)lines.size();i++)text(24,150+i*37,lines[community_offset+i],20,592);button(24,351,160,"Up",2083,selected==2,36);button(216,351,208,"Open Website",2082,selected==3,36);button(456,351,160,"Down",2084,selected==4,36);
  }else if(page==25){small_line(24,103,"Internet service URL (custom servers supported)",592);button(24,157,592,hub_edit+(editing==9?"|":""),2070,selected==0,48);small_line(24,231,"Remote services require HTTPS. Account tokens are",592);small_line(24,268,"cleared when you change the service address.",592);button(64,325,512,"Save Service Address",2071,selected==1,44);}

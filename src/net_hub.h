@@ -10,6 +10,7 @@ int kfx_hub_set_url(const char *url);
 int kfx_hub_request(const char *tag,const char *route,const char *body,int credentials);
 int kfx_hub_tick(int hosting,int players,int playing,const char *map);
 const char *kfx_hub_result_tag(void);
+long kfx_hub_result_status(void);
 const char *kfx_hub_result(void);
 int kfx_hub_probe(const char *endpoint);
 int kfx_hub_busy(void);

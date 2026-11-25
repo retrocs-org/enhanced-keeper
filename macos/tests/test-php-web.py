@@ -233,6 +233,24 @@ class PHPWebsiteTests(unittest.TestCase):
             self.request('/api/cloud/login', {'name': email, 'password': 'an incorrect password'})
         self.assertEqual(error.exception.code, 401)
 
+    def test_cloud_settings_require_authentication_and_current_revision(self):
+        route = '/api/cloud/settings'
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            self.request(route)
+        self.assertEqual(error.exception.code, 401)
+        account = json.load(self.request('/api/register', {
+            'name': 'SettingsKeeper', 'password': 'a long settings password',
+        }))
+        csrf = {'X-CSRF-Token': account['csrf']}
+        self.assertEqual(json.load(self.request(route))['revision'], 0)
+        settings = '# This file gets written by the game automatically.\n[video]\nshadows = 1\n'
+        payload = {'revision': 0, 'settings': settings}
+        self.assertEqual(json.load(self.request(route, payload, csrf))['revision'], 1)
+        self.assertEqual(json.load(self.request(route)), {'revision': 1, 'settings': settings})
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            self.request(route, payload, csrf)
+        self.assertEqual(error.exception.code, 409)
+
     def test_public_dedicated_admission_requires_one_use_account_ticket(self):
         host = json.load(self.request('/api/servers/register', {
             'name': 'Public Keeper', 'endpoint': '127.0.0.1:5556',

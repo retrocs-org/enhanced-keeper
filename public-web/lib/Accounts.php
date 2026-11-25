@@ -80,7 +80,7 @@ trait HubAccounts {
             return ['ok'=>true];
         }
         demand(($data['confirmation']??null)==='DELETE','Type DELETE to confirm');
-        foreach(['sessions','devices','recovery','tickets','cloud_profiles','cloud_email_changes','participants','identities','entrants','completions'] as $table)
+        foreach(['sessions','devices','recovery','tickets','cloud_profiles','cloud_settings','cloud_email_changes','participants','identities','entrants','completions'] as $table)
             $this->q("DELETE FROM $table WHERE user=?",[$uid]);
         $this->q('DELETE FROM friends WHERE a=? OR b=?',[$uid,$uid]);
         $this->q('DELETE FROM cloud_signup WHERE name=?',[$account['name']]);
@@ -93,6 +93,16 @@ trait HubAccounts {
     }
 
     private function accountWrite(string $route,array $data,string $token,?string $uid): ?array {
+        if($route==='/api/cloud/settings'){
+            demand($uid,'Sign in first',401);
+            $revision=$data['revision']??null;
+            $settings=$data['settings']??null;
+            demand(is_int($revision)&&$revision>=0&&$revision<2147483647,'Invalid settings revision');
+            demand(is_string($settings)&&strlen($settings)<=16384&&str_starts_with($settings,'# This file gets written by the game automatically.')&&!str_contains($settings,"\0"),'Invalid game settings');
+            $this->q('INSERT OR IGNORE INTO cloud_settings VALUES(?,0,?)',[$uid,'']);
+            demand($this->q('UPDATE cloud_settings SET settings=?,revision=revision+1 WHERE user=? AND revision=?',[$settings,$uid,$revision])->rowCount()===1,'Cloud settings changed on another device',409);
+            return ['revision'=>$revision+1];
+        }
         $settings=$this->profileWrite($route,$data,$token,$uid);
         if($settings!==null)return $settings;
         if(in_array($route,['/api/cloud/signup','/api/cloud/resend'],true)){

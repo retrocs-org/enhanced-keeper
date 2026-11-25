@@ -85,6 +85,17 @@ class Disc:
                 target.parent.mkdir(parents=True,exist_ok=True)
                 offset,size=self.files[source]
                 target.write_bytes(self.read(offset,size));copied+=1
+        # Some editions contain multiplayer layouts with no KeeperFX map index.
+        multiplayer = destination/'multiplayer/original'
+        for layout in sorted(multiplayer.glob('map*.slb')):
+            if not re.fullmatch(r'map\d{5}', layout.stem):
+                continue
+            if not all(layout.with_suffix('.'+ext).is_file() for ext in ('apt','clm','dat','own','tng')):
+                continue
+            index = layout.with_suffix('.lof')
+            if not index.exists():
+                level = int(layout.stem[3:])
+                index.write_text(f'NAME_TEXT = Original map {level}\nKIND = MULTI\n', encoding='ascii')
         return len(names)+copied
 
 

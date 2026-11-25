@@ -98,6 +98,11 @@ final class KeeperHub {
             }
             return $answer;
         }
+        if($route==='/api/cloud/settings'){
+            demand($uid,'Sign in first',401);
+            $row=$this->one('SELECT revision,settings FROM cloud_settings WHERE user=?',[$uid]);
+            return $row?['revision'=>(int)$row['revision'],'settings'=>$row['settings']]:['revision'=>0,'settings'=>''];
+        }
         if($route==='/api/me'){demand($uid,'Sign in first',401);return $this->one('SELECT u.id,u.name,u.public,p.email,COALESCE(p.avatar,1) AS avatar FROM users u LEFT JOIN cloud_profiles p ON p.user=u.id WHERE u.id=?',[$uid]);}
         if($route==='/api/servers'){$this->q("UPDATE matches SET ended=?,status=CASE WHEN status='lobby' THEN 'cancelled' ELSE 'abandoned' END WHERE ended=0 AND server IN (SELECT id FROM servers WHERE last_seen<?)",[$this->now,$this->now-90]);return ['servers'=>$this->rows('SELECT id,name,endpoint,engine,map,mods,players,capacity,password,region,kind,status FROM servers WHERE last_seen>? ORDER BY name LIMIT 128',[$this->now-90])];}
         if($route==='/api/friends'){demand($uid,'Sign in first',401);return ['friends'=>$this->rows('SELECT u.id,u.name,f.status,f.a AS requester FROM friends f JOIN users u ON u.id=CASE WHEN f.a=? THEN f.b ELSE f.a END WHERE f.a=? OR f.b=?',[$uid,$uid,$uid])];}

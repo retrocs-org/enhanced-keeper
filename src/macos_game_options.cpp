@@ -210,7 +210,7 @@ SDL_Surface *native_sprite(const TbSprite *sprite){
 }
 SDL_Surface *native_label(const std::string &value,int size,bool accent){
     ensure_skin();TbSpriteSheet *chosen=accent?options_accent_font:options_font;TbSpriteSheet *font=chosen?chosen:(frontend_menu_state!=FeSt_INITIAL&&frontend_font[1]?frontend_font[1]:winfont);
-    if(!font||std::any_of(value.begin(),value.end(),[](unsigned char c){return c>=128;}))return nullptr;
+    if(!font||value.find('@')!=std::string::npos||std::any_of(value.begin(),value.end(),[](unsigned char c){return c>=128;}))return nullptr;
     int height=1;for(unsigned char c=32;c<127;c++){const TbSprite *glyph=get_sprite(font,c-31);if(glyph)height=std::max(height,(int)glyph->SHeight);}
     int width=0;for(unsigned char c:value){const TbSprite *glyph=c>=32&&c<127?get_sprite(font,c-31):nullptr;width+=glyph?glyph->SWidth+1:height/2;}
     SDL_Surface *image=SDL_CreateSurface(std::max(1,width),height,SDL_PIXELFORMAT_RGBA32);if(!image)return nullptr;
@@ -336,6 +336,56 @@ bool copy_exclusive(const std::string &source,const std::string &dest){
     if(ferror(input)||fflush(output)!=0||fsync(fd)!=0)ok=false;fclose(input);if(fclose(output)!=0)ok=false;
     if(!ok)unlink(dest.c_str());return ok;
 }
+bool has_named_player_profile(){
+    const char *folder=getenv("KFX_PLAYER_PROFILE_DIR");
+    return folder&&*folder;
+}
+void import_legacy_saves(){
+    if(!has_named_player_profile()||network_is_active()||game.game_kind!=GKind_Unset){
+        notice="Open Saved Games from the main menu with a named profile.";
+        return;
+    }
+    namespace fs=std::filesystem;
+    const char *base=getenv("KFX_BASE_USER_DATA_DIR");
+    const fs::path source=fs::path(base&&*base?base:PlatformManager_GetUserPrefDir())/"save";
+    const fs::path destination=path("");
+    int copied=0, skipped=0, failed=0;
+    const char *members[]={"",".png",".json",".requirements",".label",".protected",
+        ".backup1",".backup1.png",".backup1.json",".backup1.requirements",
+        ".backup2",".backup2.png",".backup2.json",".backup2.requirements",
+        ".backup3",".backup3.png",".backup3.json",".backup3.requirements"};
+    std::error_code error;
+    if(fs::is_symlink(fs::symlink_status(source,error))||!fs::is_directory(source,error)){
+        notice="No legacy save folder found.";
+        return;
+    }
+    for(const auto &entry:fs::directory_iterator(source,error)){
+        const std::string name=entry.path().filename().string();
+        if(name.size()!=12||name.compare(0,4,"fx1g")||name.compare(8,4,".sav")||
+           name.find_first_not_of("0123456789",4)!=8||!fs::is_regular_file(entry.symlink_status(error)))continue;
+        std::vector<std::pair<fs::path,fs::path>> files;
+        bool occupied=false;
+        for(const char *suffix:members){
+            const auto from=source/(name+suffix), to=destination/(name+suffix);
+            if(fs::symlink_status(to,error).type()!=fs::file_type::not_found){
+                occupied=true;
+                break;
+            }
+            if(fs::is_regular_file(fs::symlink_status(from,error)))files.emplace_back(from,to);
+        }
+        if(occupied){++skipped;continue;}
+        size_t done=0;
+        for(;done<files.size();++done)
+            if(!copy_exclusive(files[done].first.string(),files[done].second.string()))break;
+        if(done==files.size()){++copied;continue;}
+        while(done>0){--done;fs::remove(files[done].second,error);}
+        ++failed;
+    }
+    load_game_save_catalogue();
+    scan_saves();
+    notice="Imported "+std::to_string(copied)+" saves. Occupied slots: "+std::to_string(skipped)+". Failed: "+std::to_string(failed)+".";
+}
+
 void inspect_save();
 void load_selected(bool checked=false){
     if(network_is_active()){notice="Saved games cannot be loaded during multiplayer.";return;}
@@ -386,6 +436,7 @@ bool browser_action(int);
 void browser_draw();
 void browser_tick();
 void browser_initialize();
+int cloud_account_options_count();
 void browser_filter();
 void browser_refresh();
 void community_request();
@@ -396,7 +447,7 @@ void feature_tick();
 void wheel_draw();
 bool polish_action(int action);
 void save_feedback_draw();
-std::string cloud_name,cloud_email,cloud_password,cloud_code,cloud_ticket;
+std::string cloud_name,cloud_email,cloud_password,cloud_code,cloud_ticket,cloud_confirmation;
 int cloud_avatar=1;
 bool cloud_create=false, choosing_local_profile=false, remember_cloud=false;
 bool startup_login=false;
@@ -409,6 +460,7 @@ std::string *cloud_input(int field){
     case 15:return &cloud_email;
     case 16:return &cloud_password;
     case 17:return &cloud_code;
+    case 18:return &cloud_confirmation;
     default:return nullptr;
     }
 }
@@ -451,7 +503,7 @@ void activate(int action){
     if(enhancement_action(action)||play_tools_action(action)||browser_action(action)||feature_action(action)||polish_action(action))return;
     focus_action=action;
     if(action==901&&page==36){
-        cloud_password.clear();cloud_ticket.clear();cloud_code.clear();
+        cloud_password.clear();cloud_confirmation.clear();cloud_ticket.clear();cloud_code.clear();
         if(cloud_create){cloud_create=false;open_panel(36);}
         else if(!startup_login)open_panel(22);
         return;
@@ -486,6 +538,7 @@ void activate(int action){
     if(action==900){close_panel();return;}
     if(action>=200 && action<212){int row=(action-200)/2;change(row,(action%2)?1:-1);return;}
     if(action==300||action==301){backup_choice=0;save_index=std::clamp(save_index+(action==300?-1:1),0,std::max(0,(int)saves.size()-1));return;}
+    if(action==310&&page==2){import_legacy_saves();return;}
     if(action==302){load_selected();return;}
     if(action==303){scan_saves();return;}
     if(action==400||action==401){if(!actions.empty())action_index=(action_index+(action==400?-1:1)+(int)actions.size())%actions.size();capturing=false;return;}
@@ -521,16 +574,16 @@ void backup_step(int direction);
 void navigate(int direction){
     mouse_navigation=false;focus_action=-1;
     if(page==8){selected=(selected+direction+12)%12;return;}
-    if(page==36){int count=cloud_ticket.empty()?(cloud_create?5:6):2;selected=(selected+direction+count)%count;return;}
+    if(page==36){int count=cloud_ticket.empty()?5:2;selected=(selected+direction+count)%count;return;}
     if(page>=30){int count=enhancement_count();selected=(selected+direction+count)%count;return;}
     if(page==27&&choosing_local_profile){
-        int count=local_profile_count()+(local_profile_count()?3:1);selected=(selected+direction+count)%count;return;
+        int count=std::min(4,local_profile_count()+1);selected=(selected+direction+count)%count;return;
     }
     if(page>=27&&page<=29){int count=page==27?6:page==28?7:requirements_state>=0?2:1;selected=(selected+direction+count)%count;return;}
     if(page==9){report_offset=std::max(0,report_offset+direction);return;}
     if(page==10)return;
     if(page==26){selected=(selected+direction+2)%2;return;}
-    if(page>=20){int count=page==20?13:page==21?5:page==22?5:page==23?5:page==24?5:2;selected=(selected+direction+count)%count;return;}
+    if(page>=20){int count=page==20?13:page==21?5:page==22?cloud_account_options_count():page==23?5:page==24?5:2;selected=(selected+direction+count)%count;return;}
     if(page>=15){int count=page==15?8:page==16?6:page==17?4:page==18?2:3;selected=(selected+direction+count)%count;return;}
     if(page==13){selected=(selected+direction+6)%6;return;}
     if(page==14){selected=(selected+direction+2)%2;return;}
@@ -551,14 +604,13 @@ void confirm_control(){
     if(page==8){const int sections[]={5,0,1,2,3,4,6,7};const int extra[]={1200,1300,800,901};activate(selected<8?100+sections[selected]:extra[selected-8]);return;}
     if(page>=30&&page<=35){enhancement_confirm();return;}
     if(page==27&&choosing_local_profile){const int count=local_profile_count();
-        const int actions[]={1203,1201,1202};
-        activate(selected<count?1210+selected:actions[selected-count]);return;}
+        activate(selected<count?1210+selected:1203);return;}
     if(page==27){const int choices[]={1201,1202,1203,1204,1205,1206};activate(choices[selected]);return;}
     if(page==28){activate(selected==6?1500:selected==5?1306:1301+selected);return;}
     if(page==29){activate(selected?1401:1402);return;}
     if(page==36){
-        const int signup[]={2101,2102,2103,2104,2105};
-        const int signin[]={2101,2103,2106,2105,2112,2111};
+        const int signup[]={2101,2102,2103,2108,2105};
+        const int signin[]={2101,2103,2106,2105,2111};
         activate(cloud_ticket.empty()?(cloud_create?signup[selected]:signin[selected]):selected?2105:2107);
         return;
     }
@@ -567,7 +619,7 @@ void confirm_control(){
     if((page==0||page==7)&&selected==5)activate(page==0?840:841);
     else if(page==0||page==1||page==7)change(selected,1);
     else if(page==5){if(selected==3)activate(500);else change(selected,1);}
-    else if(page==2)activate(309);
+    else if(page==2)activate(saves.empty()&&has_named_player_profile()?310:309);
     else if(page==12)activate(302);
     else if(page==9)activate(selected?815:600);
     else if(page==10)activate(601);
@@ -585,7 +637,7 @@ void confirm_control(){
     else if(page==19){const int actions[]={1100,1102,1101};activate(actions[selected]);}
     else if(page==20){const int actions[]={2010,2011,2012,2030,2031,2020,2022,2023,2024,2025,2021,2027,2026};activate(actions[selected]);}
     else if(page==21){const int actions[]={2044,2040,2042,2043,2045};activate(actions[selected]);}
-    else if(page==22)activate(selected==4?2113:2050+selected);
+    else if(page==22){const int actions[]={2050,2051,2052,2053,2113,2114,2115};activate(actions[cloud_account_options_count()==2?selected+5:selected]);}
     else if(page==23){const int actions[]={2060,2061,2063,2064,2062};activate(actions[selected]);}
     else if(page==24){const int actions[]={2080,2081,2083,2082,2084};activate(actions[selected]);}
     else if(page==25)activate(2070+selected);
@@ -607,7 +659,7 @@ void direction_control(int direction){
 void append_input(std::string value){
     if(auto *input=cloud_input(editing)){
         if(edit_selected){input->clear();edit_selected=false;}
-        const size_t limit=editing==14?(cloud_create?24:254):editing==15?254:editing==16?128:6;
+        const size_t limit=editing==14?(cloud_create?24:254):editing==15?254:(editing==16||editing==18)?128:6;
         for(unsigned char c:value)if(c>=32&&c<127&&input->size()<limit)input->push_back(c);
         return;
     }
@@ -816,6 +868,7 @@ bool kfx_options_event(const SDL_Event *event){
         if(page==12 && key==SDLK_M){activate(842);return true;}
         if(page==2 && key==SDLK_H){activate(814);return true;}
         if(page==20 && key==SDLK_F&&(event->key.mod&(SDL_KMOD_GUI|SDL_KMOD_CTRL))){start_edit(6);return true;}
+        if(page==2 && key==SDLK_I){activate(310);return true;}
         if(page==2 && key==SDLK_F && (event->key.mod&(SDL_KMOD_GUI|SDL_KMOD_CTRL))){start_edit(1);return true;}
         return true;
     }
@@ -881,7 +934,10 @@ void kfx_options_draw(void){
         button(24,106,386,std::string("Search: ")+save_search+(editing==1?"|":""),304,editing==1,40);const char *filters[]={"All saves","Manual","Automatic","Favourites"};button(426,106,190,filters[save_filter],305,false,40);
         if(saves.empty())centered(212,"No matching saved games.",24);
         int offset=(save_index/4)*4;for(int i=0;i<4&&offset+i<(int)saves.size();i++)button(24,156+i*50,592,(saves[offset+i].favourite?"* ":"")+saves[offset+i].title,320+i,offset+i==save_index,42);
-        button(24,366,160,"Previous",300);button(456,366,160,"Next",301);button(216,366,208,"Recovery",1550);
+        button(24,366,160,"Previous",300);button(456,366,160,"Next",301);if(has_named_player_profile()){
+            button(179,366,113,"Recovery",1550);
+            button(299,366,149,"Import Old Saves",310);
+        }else button(216,366,208,"Recovery",1550);
     }else if(page==12){
         if(saves.empty()){page=2;}else{
             Save entry=selected_save();centered(83,short_text(entry.title,36),24);

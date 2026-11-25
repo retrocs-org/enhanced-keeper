@@ -1312,7 +1312,9 @@ static char *_resolve_file_path_internal(char *dst, size_t dst_size,
       break;
   case FGrp_Save:
 #if defined(__APPLE__)
-      mdir=PlatformManager_GetUserPrefDir();
+      mdir=getenv("KFX_PLAYER_PROFILE_DIR");
+      if (mdir == NULL || mdir[0] == '\0')
+          mdir=PlatformManager_GetUserPrefDir();
 #else
       mdir=keeper_runtime_directory;
 #endif

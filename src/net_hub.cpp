@@ -26,6 +26,7 @@ bool local_profile=false;
 bool host_started=false;
 std::string base="https://keeper-enhanced.retrocs.org",folder,account,name,account_id,server_id,server_secret,match_id,last_tag,last_body;
 struct Registration{std::string host,token,role;int port;};std::vector<Registration> registrations;
+long last_status=0;
 struct Reply{std::string tag,body;long status=0;};std::future<Reply> job;Uint64 heartbeat_at=0;
 struct Request{std::string tag,route,body,token;};std::deque<Request> queue;
 void live_reply(const VALUE *);void live_tick();
@@ -63,7 +64,7 @@ extern "C" int kfx_hub_request(const char *tag,const char *route,const char *bod
 namespace {std::string advertised_content;}
 extern "C" void kfx_hub_content(const char *value){advertised_content=value?value:"";}
 extern "C" int kfx_hub_tick(int hosting,int players,int playing,const char *map){
- int ready=0;if(job.valid()&&job.wait_for(std::chrono::seconds(0))==std::future_status::ready){Reply r=job.get();last_tag=r.tag;last_body=r.body;Document d(r.body);std::string token=field(&d.root,"token");if((r.tag=="pair-poll"||r.tag=="cloud-verify"||r.tag=="cloud-login")&&!token.empty()){
+ int ready=0;if(job.valid()&&job.wait_for(std::chrono::seconds(0))==std::future_status::ready){Reply r=job.get();last_tag=r.tag;last_body=r.body;last_status=r.status;Document d(r.body);std::string token=field(&d.root,"token");if((r.tag=="pair-poll"||r.tag=="cloud-verify"||r.tag=="cloud-login")&&!token.empty()){
      local_profile=false;remember_session=r.tag=="pair-poll"||remember_next_login;
      account=token;name=field(&d.root,"name");account_id=field(&d.root,"id");save_token();
  }
@@ -84,6 +85,7 @@ extern "C" int kfx_hub_tick(int hosting,int players,int playing,const char *map)
  if(!job.valid()&&!queue.empty()){Request q=queue.front();queue.pop_front();job=std::async(std::launch::async,http,base,q.tag,q.route,q.body,q.token);}
  return ready;
 }
+extern "C" long kfx_hub_result_status(){return last_status;}
 extern "C" const char *kfx_hub_result_tag(){return last_tag.c_str();}
 extern "C" const char *kfx_hub_result(){return last_body.c_str();}
 extern "C" int kfx_hub_busy(){return job.valid()||!queue.empty();}
