@@ -2,11 +2,28 @@
 if (!defined('KFX_API_INTERNAL')) { http_response_code(404); exit; }
 trait HubServers {
     private function hostCredential(string $id,string $token): array {$row=$this->one('SELECT * FROM servers WHERE id=?',[$id]);demand($row&&hash_equals($row['secret'],hash('sha256',$token)),'Server credential rejected',403);return $row;}
-    private function serverWrite(string $route,array $parts,array $data,string $token,?string $uid): ?array {
+    private function serverWrite(string $route,array $parts,array $data,string $token,?string $uid,string $peer): ?array {
         if($route==='/api/servers/register'){
-            demand(!array_key_exists('password',$data)||is_bool($data['password']),'Password-required flag must be boolean');$kind=$data['kind']??'listen';demand(in_array($kind,['listen','dedicated'],true),'Invalid host type');demand($kind!=='dedicated'||($this->admin!==''&&is_string($data['admin_key']??null)&&hash_equals($this->admin,$data['admin_key'])),'Dedicated registration needs the local administrator key',403);
-            $name=api_text($data['name']??null,64);$address=api_endpoint($data['endpoint']??null);$engine=api_text($data['engine']??null,32);$region=api_text($data['region']??'Local',24);$rotation=$data['rotation']??[];demand(is_array($rotation)&&array_is_list($rotation)&&count($rotation)<=32,'Invalid map rotation');foreach($rotation as $map)demand(is_string($map)&&strlen($map)<=80,'Invalid map rotation');
-            $sid=bin2hex(random_bytes(12));$secret=api_token();$map=mb_substr((string)($data['map']??''),0,80);$this->q('INSERT INTO servers VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',[$sid,$name,$address,$engine,$map,mb_substr((string)($data['mods']??''),0,64),1,4,!empty($data['password'])?1:0,$region,$kind,$uid??'',hash('sha256',$secret),$this->now,'lobby',json_encode($rotation)]);$mid=bin2hex(random_bytes(16));$this->q("INSERT INTO matches(id,server,started,map,engine,status) VALUES(?,?,?,?,?,'lobby')",[$mid,$sid,$this->now,$map,$engine]);if($uid)$this->q('INSERT INTO participants(match,user) VALUES(?,?)',[$mid,$uid]);return ['id'=>$sid,'secret'=>$secret,'match_id'=>$mid];
+            demand(!array_key_exists('password',$data)||is_bool($data['password']),'Password-required flag must be boolean');
+            $kind=$data['kind']??'listen';
+            demand(in_array($kind,['listen','dedicated'],true),'Invalid host type');
+            $key=$data['admin_key']??'';
+            $trusted=$kind==='dedicated'&&$key!==''&&$this->admin!==''&&is_string($key)&&hash_equals($this->admin,$key);
+            if($kind==='dedicated'&&$key!=='')demand($trusted,'Dedicated administrator key rejected',403);
+            if($kind==='dedicated'&&!$trusted)$kind='community';
+            $name=api_text($data['name']??null,64);
+            $endpoint=$data['endpoint']??'';
+            if($endpoint===''){
+                $port=$data['port']??null;
+                demand(is_int($port)&&$port>0&&$port<=65535,'A valid gameplay port is required');
+                $ip=in_array($peer,$this->localPublicPeers,true)?$this->localPublicAddress:$peer;
+                demand(filter_var($ip,FILTER_VALIDATE_IP,FILTER_FLAG_NO_PRIV_RANGE|FILTER_FLAG_NO_RES_RANGE)&&
+                    (!defined('FILTER_FLAG_GLOBAL_RANGE')||filter_var($ip,FILTER_VALIDATE_IP,FILTER_FLAG_GLOBAL_RANGE)),
+                    'The directory sees a non-public address; configure a public endpoint',422);
+                $endpoint=(str_contains($ip,':')?'['.$ip.']':$ip).':'.$port;
+            }
+            $address=api_endpoint($endpoint);$engine=api_text($data['engine']??null,32);$region=api_text($data['region']??'Local',24);$rotation=$data['rotation']??[];demand(is_array($rotation)&&array_is_list($rotation)&&count($rotation)<=32,'Invalid map rotation');foreach($rotation as $map)demand(is_string($map)&&strlen($map)<=80,'Invalid map rotation');
+            $sid=bin2hex(random_bytes(12));$secret=api_token();$map=mb_substr((string)($data['map']??''),0,80);$this->q('INSERT INTO servers VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',[$sid,$name,$address,$engine,$map,mb_substr((string)($data['mods']??''),0,64),1,4,!empty($data['password'])?1:0,$region,$kind,$uid??'',hash('sha256',$secret),$this->now,'lobby',json_encode($rotation)]);$mid=bin2hex(random_bytes(16));$this->q("INSERT INTO matches(id,server,started,map,engine,status) VALUES(?,?,?,?,?,'lobby')",[$mid,$sid,$this->now,$map,$engine]);if($uid)$this->q('INSERT INTO participants(match,user) VALUES(?,?)',[$mid,$uid]);return ['id'=>$sid,'secret'=>$secret,'match_id'=>$mid,'endpoint'=>$address,'trusted'=>$trusted];
         }
         if(count($parts)<4||$parts[1]!=='servers')return null;$sid=$parts[2];$action=$parts[3];
         if($action==='join'){

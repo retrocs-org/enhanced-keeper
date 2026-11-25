@@ -12,8 +12,12 @@ function api_endpoint(mixed $value): string {$value=api_text($value,150);demand(
 final class KeeperHub {
     use HubAccounts,HubServers,HubCommunity;
     public PDO $db; public float $now; public bool $mysql=false;
+    private string $localPublicAddress;
+    private array $localPublicPeers;
     public function __construct(string $file,private string $admin='',private string $relayUrl='',private string $relayKey='',?float $now=null,array $connection=[]){
         $this->now=$now??microtime(true);
+        $this->localPublicAddress=$connection['local_public_address']??'';
+        $this->localPublicPeers=$connection['local_public_peers']??[];
         if(str_starts_with($file,'mysql:')){
             $this->mysql=true;$options=[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC,PDO::ATTR_EMULATE_PREPARES=>false,PDO::ATTR_STRINGIFY_FETCHES=>false,PDO::ATTR_TIMEOUT=>5];
             if(!empty($connection['ssl_ca'])){$options[PDO::MYSQL_ATTR_SSL_CA]=$connection['ssl_ca'];$options[PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT]=true;}
@@ -52,6 +56,7 @@ final class KeeperHub {
         $route=parse_url($uri,PHP_URL_PATH);$parts=explode('/',trim((string)$route,'/'));parse_str((string)(parse_url($uri,PHP_URL_QUERY)??''),$query);
         demand(in_array($method,['GET','POST'],true),'Unsupported method',405);
         if($method==='POST')$this->limit($peer,$route==='/api/connectivity'?'connectivity':'requests',$route==='/api/connectivity'?5:360);
+        if($route==='/api/servers/register'&&$method==='POST')$this->limit($peer,'server-register',15);
         if(in_array($route,['/api/login','/api/register'],true)&&$method==='POST')$this->limit($peer,'login',10);
         if($route==='/api/recovery/reset'&&$method==='POST')$this->limit($peer,'recovery',5,3600);
         $session=$token!==''?$this->one('SELECT s.*,u.name FROM sessions s JOIN users u ON u.id=s.user WHERE token=? AND expires>?',[hash('sha256',$token),$this->now]):false;$uid=$session['user']??null;
@@ -62,7 +67,7 @@ final class KeeperHub {
         $this->db->beginTransaction();try{
             foreach(['sessions','devices','tickets'] as $table)$this->q("DELETE FROM $table WHERE expires<?",[$this->now]);
             if($method==='GET')$answer=$this->read($route,$parts,$query,$session,$uid);
-            else $answer=$this->accountWrite($route,$data,$token,$uid)??$this->serverWrite($route,$parts,$data,$token,$uid)??$this->communityWrite($route,$parts,$data,$token,$uid);
+            else $answer=$this->accountWrite($route,$data,$token,$uid)??$this->serverWrite($route,$parts,$data,$token,$uid,$peer)??$this->communityWrite($route,$parts,$data,$token,$uid);
             demand(is_array($answer),'Not found',404);$this->db->commit();return $answer;
         }catch(Throwable $e){if($this->db->inTransaction())$this->db->rollBack();throw $e;}
     }

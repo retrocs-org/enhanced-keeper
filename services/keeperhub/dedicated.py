@@ -3,7 +3,9 @@
 One synchronized AI host + up to three human players. Does not claim a fifth slot.
 """
 import argparse,base64,fcntl,json,os,re,secrets,signal,socket,subprocess,sys,threading,time,urllib.request,urllib.error,urllib.parse
+from ipaddress import IPv4Address
 from pathlib import Path
+import struct
 
 def request(base,route,data=None,token=''):
     headers={'Content-Type':'application/json'}
@@ -24,6 +26,71 @@ def rpc(port):
         while b'\n' not in raw and len(raw)<65536:raw+=c.recv(4096)
         value=json.loads(raw.split(b'\n',1)[0]);return value.get('data',{}) if value.get('success') else {}
 
+class NatPmpMapping:
+    """Maintain a UDP forwarding lease on the default IPv4 gateway."""
+
+    def __init__(self, port):
+        self.port = port
+        self.gateway = None
+        self.external_port = port
+        self.endpoint = None
+        self.renew_at = 0
+        self.expires_at = 0
+
+    def exchange(self, opcode, payload, size):
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.connect((self.gateway, 5351))
+            for timeout in (0.25, 0.5, 1, 2):
+                sock.settimeout(timeout)
+                sock.send(bytes((0, opcode)) + payload)
+                try:
+                    reply = sock.recv(64)
+                except socket.timeout:
+                    continue
+                if len(reply) < 8 or reply[:2] != bytes((0, opcode + 128)):
+                    continue
+                result, = struct.unpack_from('!H', reply, 2)
+                if result:
+                    raise OSError(f'NAT-PMP gateway rejected request (result {result})')
+                if len(reply) == size:
+                    return reply[8:]
+        raise OSError('NAT-PMP gateway did not answer')
+
+    def renew(self):
+        routes = subprocess.run(['ip', '-j', '-4', 'route', 'show', 'default'],
+                                capture_output=True, text=True, timeout=3, check=True)
+        gateways = [route for route in json.loads(routes.stdout) if route.get('gateway')]
+        if not gateways:
+            raise OSError('No default IPv4 gateway for NAT-PMP')
+        self.gateway = min(gateways, key=lambda route: route.get('metric', 0))['gateway']
+        address = IPv4Address(self.exchange(0, b'', 12))
+        if not address.is_global or address.is_multicast:
+            raise OSError('NAT-PMP gateway has no public IPv4 address; check for upstream NAT')
+        local_port, external_port, lifetime = struct.unpack(
+            '!HHI', self.exchange(1, struct.pack('!HHHI', 0, self.port, self.external_port, 600), 16))
+        if local_port != self.port or not external_port or not lifetime:
+            raise OSError('NAT-PMP gateway did not grant the requested UDP mapping')
+        now = time.monotonic()
+        self.external_port = external_port
+        self.renew_at = now + min(lifetime / 2, 60)
+        self.expires_at = now + lifetime
+        return f'{address}:{external_port}'
+
+    def refresh(self):
+        now = time.monotonic()
+        if now < self.renew_at and now < self.expires_at:
+            return
+        try:
+            endpoint = self.renew()
+        except (OSError, ValueError, subprocess.SubprocessError) as error:
+            if now >= self.expires_at:
+                raise RuntimeError(f'Automatic endpoint failed: {error}. Configure a manual endpoint and UDP forwarding.') from error
+            self.renew_at = min(now + 10, self.expires_at)
+            return
+        if self.endpoint and endpoint != self.endpoint:
+            raise RuntimeError('The public UDP address changed; restart to register the new endpoint.')
+        self.endpoint = endpoint
+
 def validate(config):
     for field in ('engine_binary','user_data','name','rotation'):assert field in config,'Missing '+field
     engine=Path(config['engine_binary']).resolve();profile=Path(config['user_data']).resolve();assert engine.is_file() and os.access(engine,os.X_OK),'Engine is not executable';assert any((profile/'GameData'/n).is_file() for n in ('keeper-enhanced.cfg','keeperfx.cfg')),'Prepare a separate dedicated profile first';assert '.app/' not in str(profile),'User data must be outside the application';assert 1<=config.get('humans',1)<=3,'Dedicated mode supports 1–3 humans plus its AI';assert config['rotation'] and len(config['rotation'])<=32,'Choose 1–32 maps'
@@ -33,7 +100,8 @@ def validate(config):
     password=os.environ.get('KFX_SERVER_PASSWORD','')
     assert len(password.encode())<=31 and not any(ord(c)<32 for c in password),'Password must be at most 31 UTF-8 bytes without control characters'
     if config.get('visibility','public')=='private':return engine,profile
-    assert config.get('endpoint'),'Public servers need an advertised endpoint'
+    endpoint=config.get('endpoint')
+    assert endpoint is None or isinstance(endpoint,str),'Endpoint must be a hostname:port or auto'
     assert config.get('hub_url','').startswith(('http://127.0.0.1:','http://localhost:','https://')),'Use local HTTP or HTTPS';return engine,profile
 
 class Host:
@@ -59,14 +127,33 @@ class Host:
             except BlockingIOError:raise RuntimeError('This dedicated profile already has a running host')
             self._run_locked()
     def _run_locked(self):
-        cfg=self.config;public=cfg.get('visibility','public')=='public';base=cfg.get('hub_url','').rstrip('/');key=os.environ.get('KFX_HUB_ADMIN_KEY','');assert not public or len(key)>=24,'Public hosting needs KFX_HUB_ADMIN_KEY';state=self.profile/'dedicated';state.mkdir(mode=0o700,exist_ok=True)
+        cfg=self.config;public=cfg.get('visibility','public')=='public';base=cfg.get('hub_url','').rstrip('/');key=os.environ.get('KFX_HUB_ADMIN_KEY','');state=self.profile/'dedicated';state.mkdir(mode=0o700,exist_ok=True)
         stopfile=state/'stop.request';nextfile=state/'next.request';stopfile.unlink(missing_ok=True);nextfile.unlink(missing_ok=True)
+        endpoint=cfg.get('endpoint') or ''
+        mapping=NatPmpMapping(cfg.get('port',5556)) if public and endpoint=='auto' else None
         while not self.stop:
+            if mapping:
+                mapping.refresh()
+                endpoint=mapping.endpoint
             item=cfg['rotation'][self.index%len(cfg['rotation'])];self.index+=1;self.next=False
             with socket.socket() as sock:sock.bind(('127.0.0.1',0));api_port=sock.getsockname()[1]
             runtime=self.profile/'GameData';gamecfg=runtime/'keeper-enhanced.cfg';legacy=runtime/'keeperfx.cfg';text=(gamecfg if gamecfg.exists() else legacy).read_text();text=re.sub(r'(?mi)^\s*(?:API_ENABLED|API_PORT|RENDERER)\s*=.*\n?','',text);gamecfg.write_text(text+f'\nAPI_ENABLED=TRUE\nAPI_PORT={api_port}\nRENDERER=SOFTWARE\n')
             room={'id':secrets.token_hex(12),'secret':''}
-            if public:room=request(base,'/api/servers/register',{'name':cfg['name'],'endpoint':cfg['endpoint'],'engine':cfg.get('engine_version','1.4.0.0'),'kind':'dedicated','admin_key':key,'map':item['campaign']+':'+str(item['level']),'rotation':[v['campaign']+':'+str(v['level']) for v in cfg['rotation']],'password':bool(os.environ.get('KFX_SERVER_PASSWORD'))})
+            if public:
+                registration = {
+                    'name': cfg['name'], 'port': cfg.get('port', 5556),
+                    'engine': cfg.get('engine_version', '1.4.0.0'), 'kind': 'dedicated',
+                    'map': f"{item['campaign']}:{item['level']}",
+                    'rotation': [f"{v['campaign']}:{v['level']}" for v in cfg['rotation']],
+                    'password': bool(os.environ.get('KFX_SERVER_PASSWORD')),
+                }
+                if endpoint:
+                    registration['endpoint'] = endpoint
+                if key:
+                    registration['admin_key'] = key
+                room = request(base, '/api/servers/register', registration)
+            trusted = public and room.get('trusted', bool(key))
+            spectators = trusted and not os.environ.get('KFX_SERVER_PASSWORD') and cfg.get('spectators', False)
             env=dict(os.environ,KFX_USER_DATA_DIR=str(self.profile),KFX_HEADLESS='1',KFX_LOCAL_NETWORK_ONLY='1',SDL_VIDEODRIVER='dummy',SDL_RENDER_DRIVER='software',SDL_AUDIODRIVER='dummy',ALSOFT_DRIVERS='null',KFX_HUB_URL=base,KFX_HUB_SERVER_ID=room['id'],KFX_HUB_SERVER_SECRET=room['secret'])
             if not public:
                 env['KFX_PRIVATE_SERVER']='1'
@@ -80,19 +167,21 @@ class Host:
             print('Headless lobby ready:',cfg['name'],'map',item['campaign'],item['level'],flush=True)
             try:
                 while not self.stop and not self.next and self.process.poll() is None:
+                    if mapping:
+                        mapping.refresh()
                     try:
                         if stopfile.exists():self.stop=True;stopfile.unlink();break
                         if nextfile.exists():self.next=True;nextfile.unlink();break
                         status=rpc(api_port);self.status={**status,'server_id':room['id'],'map':item};(state/'status.json').write_text(json.dumps(self.status));failures=0
                         if status.get('turn',0)>0 and status.get('active'):had_game=True
-                        if public and not os.environ.get('KFX_SERVER_PASSWORD') and cfg.get('spectators',False) and replay.exists() and not stream_truncated:
+                        if spectators and replay.exists() and not stream_truncated:
                             with replay.open('rb') as f:f.seek(offset);raw=f.read(32768)
                             if raw:answer=request(base,'/api/servers/'+room['id']+'/stream',{'offset':offset,'data':base64.b64encode(raw).decode()},room['secret']);offset=answer['offset'];stream_truncated=bool(answer.get('truncated'))
                         humans=[v for v in status.get('users',[]) if v.get('peer')!=0]
                         ended=had_game and (not status.get('active') or humans and all(v.get('outcome') in (1,2) for v in humans))
                         if ended:
                             identified=[{'user':v['account'],'result':'won' if v['outcome']==1 else 'lost'} for v in humans if v.get('account') and v.get('outcome') in (1,2)]
-                            if public and identified and all(v.get('verified_finish') for v in humans):
+                            if trusted and identified and all(v.get('verified_finish') for v in humans):
                                 try:request(base,'/api/servers/'+room['id']+'/result',{'match':room['match_id'],'results':identified,'cooperative':bool(cfg.get('cooperative',False))},room['secret']);verified=True
                                 except Exception:pass # Unverified/disconnected games never become ranked wins.
                             break
@@ -102,7 +191,7 @@ class Host:
                     time.sleep(1)
             finally:
                 self.finish_child();log.close()
-                if public and not os.environ.get('KFX_SERVER_PASSWORD') and cfg.get('spectators',False) and replay.exists() and not stream_truncated:
+                if spectators and replay.exists() and not stream_truncated:
                     with replay.open('rb') as f:
                         f.seek(offset)
                         while True:

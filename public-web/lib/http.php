@@ -11,6 +11,8 @@ function serve_php_api(string $origin,string $uri,string $method): never {
         $authorization=$_SERVER['HTTP_AUTHORIZATION']??'';$cookie=$_COOKIE['kfx_session']??'';demand(is_string($cookie),'Invalid session');$bearer='';if($authorization!==''){demand(preg_match('/^Bearer ([A-Za-z0-9_-]{1,150})$/D',$authorization,$m),'Invalid authorization',401);$bearer=$m[1];}
         $state=web_setting('state_dir','KFX_HUB_STATE');[$db,$connection]=database_config();
         $key=web_setting('admin_key','KFX_HUB_ADMIN_KEY');$keyFile=web_setting('admin_key_file','KFX_HUB_ADMIN_KEY_FILE',$state.'/admin.key');if($key===''&&is_file($keyFile)&&!is_link($keyFile))$key=trim((string)file_get_contents($keyFile));
+        $connection['local_public_address']=web_setting('local_public_address','KFX_HUB_LOCAL_PUBLIC_ADDRESS');
+        $connection['local_public_peers']=preg_split('/[\s,]+/',web_setting('local_public_peers','KFX_HUB_LOCAL_PUBLIC_PEERS'),-1,PREG_SPLIT_NO_EMPTY);
         $hub=new KeeperHub($db,$key,'','',null,$connection);
         $value=$hub->handle($method,$uri,$data,$bearer?:$cookie,$_SERVER['REMOTE_ADDR']??'local',$_SERVER['HTTP_X_CSRF_TOKEN']??'',$cookie!==''&&$bearer==='');
         $route=parse_url($uri,PHP_URL_PATH);

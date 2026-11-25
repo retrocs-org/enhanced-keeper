@@ -18,6 +18,10 @@ return [
     // Optional compatibility with an existing private database connection file.
     // Leave blank when configuring the database above.
     'database_config_file' => '',
+    // Optional for servers registering from the same private network as this directory.
+    // Comma-separated exact peer IPs that have a static UDP forward on this WAN address.
+    'local_public_address' => '',
+    'local_public_peers' => '',
     'admin_key' => '',
     'admin_key_file' => '/var/lib/keeperfx-e/admin.key',
     'release_manifest' => '/var/lib/keeperfx-e/releases.json',

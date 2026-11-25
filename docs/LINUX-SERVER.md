@@ -78,9 +78,26 @@ use compatible dependencies; a macOS binary cannot be used on Linux.
 ## Visibility and optional password
 
 Set `"visibility": "private"` for LAN or direct-address play. Set
-`"visibility": "public"` to register in the directory; configure `endpoint` with
-the reachable hostname and UDP port and `hub_url` with your PHP service URL.
-The existing default URL is retained across the project rename.
+`"visibility": "public"` to register in the directory, and set `hub_url` to
+your PHP service URL. For manual forwarding, set `endpoint` to the public
+hostname and UDP port. If you omit `endpoint`, KeeperHub advertises the
+public IP it observes and the configured gameplay port. With a static
+forward, use the same internal and external UDP port for this mode. For a
+server on the directory's private network, configure `local_public_address`
+and `local_public_peers` on the directory host to translate known local peers
+to its WAN address. Behind a reverse proxy, configure the web server to set
+`REMOTE_ADDR` from trusted proxies.
+
+With `"endpoint": "auto"`, the server instead uses NAT-PMP and the default
+IPv4 gateway (`ip` from iproute2) to obtain a public IPv4 address and a renewable
+UDP mapping. The gateway must
+support NAT-PMP and have a public IPv4 address. The lease expires after
+shutdown. If the gateway cannot provide a mapping, configure a reachable
+endpoint manually.
+
+LAN players can use the server's local IP and gameplay port in either mode.
+To use the public hostname on the LAN, use NAT loopback or local DNS that
+resolves it to the server's LAN address when public and local ports match.
 
 Create `/etc/keeper-enhanced/server.env` with mode 600, root-owned. For a
 password-protected server add:
@@ -89,14 +106,14 @@ password-protected server add:
 KFX_SERVER_PASSWORD=replace-with-your-game-password
 ```
 
-Omit it for an open server. Maximum password length: 31 UTF-8 bytes. For public
-hosting also set `KFX_HUB_ADMIN_KEY` to the directory administrator key. Private
-hosting needs no key. Secrets are passed through the service environment, not
-command-line arguments, logs or server-directory fields. The listing only
-indicates whether a password is required. Never commit this environment file.
+Omit it for an open server. Maximum password length is 31 UTF-8 bytes.
+Public listings need no administrator key. Hosts authorized to submit verified
+results or spectator streams can use `KFX_HUB_ADMIN_KEY` with the existing
+directory credential. Keep credentials in the service environment. The listing
+only indicates whether a password is required. Keep this environment file local.
 
 Allow incoming **UDP 5556** (or the configured port) and forward it to the host
-if behind NAT. LAN broadcast discovery uses UDP 5557 on the same subnet. HTTP
+if using manual forwarding behind NAT. LAN broadcast discovery uses UDP 5557 on the same subnet. HTTP
 HAProxy configuration does not forward gameplay UDP. Public registration requires
 outbound HTTPS to the directory. Direct players need no website account.
 
