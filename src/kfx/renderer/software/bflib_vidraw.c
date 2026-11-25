@@ -1645,93 +1645,51 @@ void setup_vecs(unsigned char *screenbuf, unsigned char *nvec_map,
  * @param sprite The source sprite.
  * @return Gives 0 on success.
  */
-TbResult LbHugeSpriteDrawUsingScalingUpData(uchar *outbuf, int scanline, int outheight,
-    int32_t *xstep, int32_t *ystep, const struct TbHugeSprite *sprite)
+static TbResult LbHugeSpriteDrawUsingScalingUpData(uchar *outbuf, int scanline, int outheight,
+    int32_t *xstep, int32_t *ystep, const struct TbHugeSprite *sprite, long sp_len)
 {
-    SYNCDBG(17,"Drawing");
-    int ystep_delta;
-    const unsigned char *sprdata;
-    int32_t *ycurstep;
+    if (!outbuf || !sprite || !sprite->Data || !sprite->Lines || sp_len <= 0 ||
+        scanline <= 0 || outheight <= 0 || sprite->SWidth > SPRITE_SCALING_XSTEPS ||
+        sprite->SHeight > SPRITE_SCALING_YSTEPS)
+        return Lb_FAIL;
 
-    ystep_delta = 2;
-    if (scanline < 0) {
-        ystep_delta = -2;
-    }
-    ycurstep = ystep;
-
-    for (uint32_t h = 0; h < sprite->SHeight; h++)
+    for (unsigned long h = 0; h < sprite->SHeight; h++)
     {
-        if (ycurstep[1] != 0)
+        int64_t top = ystep[2*h], bottom = top + ystep[2*h+1];
+        if (top < 0) top = 0;
+        if (bottom > outheight) bottom = outheight;
+        if (bottom <= top) continue;
+        int32_t offset = sprite->Lines[h];
+        if (offset < 0 || offset >= sp_len) return Lb_FAIL;
+        size_t pos = (size_t)offset;
+        unsigned long x = 0;
+        while (x < sprite->SWidth)
         {
-            int ycur;
-            int solid_len;
-            TbPixel * out_line;
-            int xdup;
-            int ydup;
-            int32_t *xcurstep;
-            ydup = ycurstep[1];
-            if (ycurstep[0]+ydup > outheight)
-                ydup = outheight-ycurstep[0];
-            xcurstep = xstep;
-            sprdata = &sprite->Data[sprite->Lines[h]];
-            TbPixel *out_end;
-            out_end = outbuf;
-            while (out_end - outbuf < scanline)
+            uint32_t solid, transparent;
+            if ((size_t)sp_len - pos < sizeof(solid)) return Lb_FAIL;
+            memcpy(&solid, sprite->Data + pos, sizeof(solid));
+            pos += sizeof(solid);
+            if (solid > sprite->SWidth - x || solid > (size_t)sp_len - pos)
+                return Lb_FAIL;
+            for (uint32_t i = 0; i < solid; i++, x++)
             {
-                int pxlen;
-                pxlen = *(uint32_t *)sprdata;
-                sprdata += 4;
-                TbPixel *out_start;
-                out_start = out_end;
-                for(;pxlen > 0; pxlen--)
-                {
-                    xdup = xcurstep[1];
-                    if (xcurstep[0]+xdup > abs(scanline))
-                        xdup = abs(scanline)-xcurstep[0];
-                    if (xdup > 0)
-                    {
-                        unsigned char pxval;
-                        pxval = *sprdata;
-                        for (;xdup > 0; xdup--)
-                        {
-                            *out_end = pxval;
-                            out_end++;
-                        }
-                    }
-                    sprdata++;
-                    xcurstep += 2;
-                }
-                ycur = ydup - 1;
-                if (ycur > 0)
-                {
-                    solid_len = out_end - out_start;
-                    out_line = out_start + scanline;
-                    for (;ycur > 0; ycur--)
-                    {
-                        if (solid_len > 0) {
-                            LbPixelBlockCopyForward(out_line, out_start, solid_len);
-                        }
-                        out_line += scanline;
-                    }
-                }
-                // Transparent bytes count
-                pxlen = *(uint32_t *)sprdata;
-                sprdata += 4;
-                out_end -= xcurstep[0];
-                xcurstep += 2 * pxlen;
-                // In case we've exceeded sprite width, don't try to access xcurstep[] any more
-                if ((unsigned long) ((xcurstep - xstep) / 2) >= sprite->SWidth)
-                    break;
-                out_end += xcurstep[0];
+                int64_t left = xstep[2*x], right = left + xstep[2*x+1];
+                if (left < 0) left = 0;
+                if (right > scanline) right = scanline;
+                if (right <= left) continue;
+                for (int64_t y = top; y < bottom; y++)
+                    memset(outbuf + (size_t)y * (size_t)scanline + (size_t)left,
+                        sprite->Data[pos+i], (size_t)(right-left));
             }
-            outbuf += scanline;
-            ycur = ydup - 1;
-            for (;ycur > 0; ycur--)
-            {
-                outbuf += scanline;
-            }
+            pos += solid;
+            if (x == sprite->SWidth) break;
+            if ((size_t)sp_len - pos < sizeof(transparent)) return Lb_FAIL;
+            memcpy(&transparent, sprite->Data + pos, sizeof(transparent));
+            pos += sizeof(transparent);
+            if (transparent > sprite->SWidth - x || (!solid && !transparent))
+                return Lb_FAIL;
+            x += transparent;
         }
-        ycurstep += ystep_delta;
     }
     return Lb_SUCCESS;
 }
@@ -1752,7 +1710,7 @@ TbResult LbHugeSpriteDraw(const struct TbHugeSprite * spr, long sp_len,
     unsigned char *r, int r_row_delta, int r_height, short xshift, short yshift, int units_per_px)
 {
     LbSpriteSetScalingData(-xshift*units_per_px/16, -yshift*units_per_px/16, spr->SWidth, spr->SHeight, spr->SWidth*units_per_px/16, spr->SHeight*units_per_px/16);
-    return LbHugeSpriteDrawUsingScalingUpData(r, r_row_delta, r_height, xsteps_array, ysteps_array, spr);
+    return LbHugeSpriteDrawUsingScalingUpData(r, r_row_delta, r_height, xsteps_array, ysteps_array, spr, sp_len);
 }
 
 /**

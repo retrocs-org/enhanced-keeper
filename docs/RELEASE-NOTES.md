@@ -1,4 +1,7 @@
 ## Build and audio fixes
+- Fix native campaign-frame generation and bound sprite decoding and clipping to
+  prevent memory corruption when starting a new campaign. Repair existing imports.
+- Add normal menu click feedback to More Options actions.
 - Keep the main-menu soundtrack playing through settings, credits, load, network
   and selection menus without restarting it on navigation.
 - Fix macOS ENet socket lengths and remove unused declarations and duplicate library links.

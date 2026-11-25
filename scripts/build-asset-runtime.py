@@ -51,6 +51,21 @@ def tools(jobs,offline):
         run(['cmake','--build',build/'libpng','--parallel',jobs]);run(['cmake','--install',build/'libpng'])
     for name in ('pngpal2raw','png2bestpal','po2ngdat','sndbanker','rnctools'):
         source=checkout(name,offline)
+        if name == 'pngpal2raw':
+            cpp = source/'src/pngpal2raw.cpp'
+            text = cpp.read_text()
+            start = text.index('int hspr_pack(')
+            end = text.index('#pragma pack(1)', start)
+            packed = text[start:end].replace('*(long *)(out_row+outIndex) = area;', 'memcpy(out_row+outIndex, &area, sizeof(uint32_t));').replace('sizeof(long)', 'sizeof(uint32_t)')
+            text = text[:start]+packed+text[end:]
+            start = text.index('short save_hugspr_file(')
+            end = text.index('short save_smallspr_v1_file(', start)
+            packed = text[start:end].replace('long * row_shifts = new long[img.height]', 'uint32_t * row_shifts = new uint32_t[img.height]')
+            packed = packed.replace('sizeof(long)', 'sizeof(uint32_t)').replace('new png_byte[img.width*3]', 'new png_byte[img.width*9+8]')
+            text = text[:start]+packed+text[end:]
+            if cpp.read_text() != text:
+                cpp.write_text(text)
+                for obj in (source/'obj').glob('*.o'): obj.unlink()
         if name == 'sndbanker':
             # The on-disk format is 32-bit, including on LP64 macOS/Linux.
             header = source/'src/prog_options.h'
@@ -149,7 +164,7 @@ LANGS = eng chi cht cze dut fre ger ita jpn kor lat pol rus spa swe
         shutil.copy2(graphics/'LICENSE',licenses/'FXGraphics-GPL-3.0.txt');shutil.copy2(sounds/'LICENSE',licenses/'FXsounds-GPL-3.0.txt')
         for art in (ROOT/'macos/packaging/controllers').glob('*.png'):shutil.copy2(art,stage/'fxdata'/art.name)
         asset_sources=json.loads((ROOT/'assets/upstream/asset-sources.json').read_text())
-        (stage/'asset-build.json').write_text(json.dumps({'source':'generated locally','revisions':SOURCES,'assets':{k:v['revision'] for k,v in asset_sources.items()}},indent=2)+'\n')
+        (stage/'asset-build.json').write_text(json.dumps({'source':'generated locally','native_asset_format':2,'revisions':SOURCES,'assets':{k:v['revision'] for k,v in asset_sources.items()}},indent=2)+'\n')
         stage.rename(output)
     print('Generated runtime ready: '+str(output),flush=True)
 

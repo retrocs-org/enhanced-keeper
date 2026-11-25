@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Repair locally generated LP64 sound banks without reimporting original discs."""
+"""Repair locally generated LP64 sound banks and campaign frames without discs."""
 import argparse
+import json
 from pathlib import Path
 import os
 import shutil
@@ -29,11 +30,14 @@ def valid_bank(path):
 def repair(game):
     banks = list((game/'sound').glob('*.dat'))
     broken = [bank for bank in banks if not valid_bank(bank)]
-    if not broken:
+    marker = game/'asset-build.json'
+    metadata = json.loads(marker.read_text()) if marker.is_file() else {}
+    repair_frames = bool(metadata) and metadata.get('native_asset_format', 0) < 2
+    if not broken and not repair_frames:
         return
-    if not (game/'asset-build.json').is_file():
+    if not marker.is_file():
         raise ValueError('Invalid sound bank in a runtime not generated locally: '+str(broken[0]))
-    print('Repairing generated sound banks from local GPL sources.', flush=True)
+    print('Repairing generated sound banks and campaign frames from local GPL sources.', flush=True)
     with tempfile.TemporaryDirectory(prefix='keeper-sound-') as temporary:
         runtime = Path(temporary)/'runtime'
         command = [sys.executable, str(ROOT/'scripts/build-asset-runtime.py'), '--output', str(runtime), '--jobs', os.environ.get('KFX_JOBS','4')]
@@ -44,11 +48,20 @@ def repair(game):
             source = runtime/'sound'/bank.name
             if not valid_bank(source):
                 raise ValueError('Generated sound bank failed validation: '+bank.name)
-        for bank in broken:
-            stage = bank.with_suffix('.dat.repair')
-            shutil.copy2(runtime/'sound'/bank.name, stage)
-            stage.replace(bank)
-    print('Repaired sound effects and speech banks.', flush=True)
+        replacements = [(runtime/'sound'/bank.name, bank) for bank in broken]
+        if repair_frames:
+            replacements += [(source, game/source.relative_to(runtime))
+                             for source in (runtime/'campgns').rglob('*frame*.dat')]
+        for source, target in replacements:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            stage = target.with_suffix('.dat.repair')
+            shutil.copy2(source, stage)
+            stage.replace(target)
+        metadata['native_asset_format'] = 2
+        stage = marker.with_suffix('.json.repair')
+        stage.write_text(json.dumps(metadata, indent=2)+'\n')
+        stage.replace(marker)
+    print('Repaired generated sound banks and campaign frames.', flush=True)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)

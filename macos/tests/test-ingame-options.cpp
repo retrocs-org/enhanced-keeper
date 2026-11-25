@@ -2,7 +2,9 @@
 #include <cassert>
 #include <fstream>
 #include "../../src/macos_window_placement.h"
+static int menu_click_count=0;
 extern "C" {
+void do_sound_menu_click(){menu_click_count++;}
 int GetRemoteUserCount(){return 0;}
 TbBool network_is_host(){return true;}
 struct NetState netstate={};
@@ -141,7 +143,7 @@ int main(){
  game.packet_load_enable=1;game.packet_fopened=1;open_panel(28);assert(!(game.operation_flags&GOF_Paused));close_panel();game.packet_load_enable=0;game.packet_fopened=0;
  online=true;kfx_options_open(nullptr);assert(!(game.operation_flags&GOF_Paused));close_panel();online=false;
  game.operation_flags|=GOF_Paused;kfx_options_open(nullptr);close_panel();assert(game.operation_flags&GOF_Paused);game.operation_flags=0;
- open_panel(3);activate(402);pad(SDL_GAMEPAD_BUTTON_EAST);assert(capturing&&captured==CBtn_B);pad(SDL_GAMEPAD_BUTTON_LEFT_SHOULDER);key(SDLK_RETURN);assert(settings.kbkeys[0].controller_buttons==(CBtn_B|CBtn_LEFTSHOULDER));assert(save_settings_count==1);
+ open_panel(3);int before_click=menu_click_count;activate(402);assert(menu_click_count==before_click+1);pad(SDL_GAMEPAD_BUTTON_EAST);assert(capturing&&captured==CBtn_B);pad(SDL_GAMEPAD_BUTTON_LEFT_SHOULDER);key(SDLK_RETURN);assert(settings.kbkeys[0].controller_buttons==(CBtn_B|CBtn_LEFTSHOULDER));assert(save_settings_count==1);
  preset=0;page=1;change(0,1);assert(fps_limit_main==30);change(1,1);assert(debug_display_frametime==1);close_panel();
  preset=0;debug_display_frametime=0;kfx_options_initialize();assert(preset==1&&debug_display_frametime==1);
  FILE *file=fopen((test_folder+"/fx1g0005.sav.backup1").c_str(),"wb");assert(file);FileChunkHeader header={sizeof(CatalogueEntry),SGC_InfoBlock,1};CatalogueEntry entry={};strcpy(entry.textname,"Backup test");strcpy(entry.campaign_name,"Test campaign");entry.level_num=7;fwrite(&header,sizeof(header),1,file);fwrite(&entry,sizeof(entry),1,file);fclose(file);
