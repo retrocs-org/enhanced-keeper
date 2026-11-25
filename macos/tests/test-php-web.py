@@ -106,7 +106,7 @@ class PHPWebsiteTests(unittest.TestCase):
         with self.request('/api-browser') as response:
             page=response.read().decode();self.assertIn('api-explorer',page);self.assertIn('Endpoint reference',page)
         with self.request('/services') as response:
-            page=response.read().decode();self.assertIn('Ways to play',page);self.assertNotIn('The same network in-game and on the web.',page);self.assertIn('service-refresh',page)
+            page=response.read().decode();self.assertIn('Server browser',page);self.assertNotIn('Ways to play',page);self.assertIn('route=%2Fnetwork%2Fservers', response.geturl())
         with self.request('/profile') as response:self.assertIn('<form method="post" id="login"',response.read().decode())
 
     def test_original_landing_is_separate_from_community(self):
@@ -126,8 +126,8 @@ class PHPWebsiteTests(unittest.TestCase):
         import re
         with self.request('/network/events') as response:page=response.read().decode()
         main=re.search(r'<nav aria-label="Main navigation">(.*?)</nav>',page,re.S).group(1)
-        self.assertIn('Network',main);self.assertIn('>Servers<',main);self.assertIn('>Features<',main);self.assertIn('>Leaderboard<',main);self.assertIn('>Downloads<',main);self.assertNotIn('>Events<',main);self.assertNotIn('>Replays<',main)
-        self.assertIn('aria-label="Network navigation"',page)
+        self.assertNotIn('>Network<',main);self.assertIn('>Servers<',main);self.assertIn('>Features<',main);self.assertIn('>Leaderboard<',main);self.assertIn('>Downloads<',main);self.assertNotIn('>Events<',main);self.assertNotIn('>Replays<',main)
+        self.assertIn('aria-label="Community navigation"',page)
         self.assertIn('/index.php?route=%2Fnetwork%2Freplays',page)
         self.assertIn('<form method="post" id="event" hidden>',page)
         self.assertIn('<section id="pair-panel" hidden>',page)

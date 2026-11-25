@@ -1,6 +1,10 @@
 'use strict';
 const $=id=>document.getElementById(id);let session={},servers=[],me=null;
-function note(text){$('notice').textContent=text;}
+function note(text){
+ const onAccountPage=!$('login-panel').hidden;
+ $('account-status').textContent=onAccountPage?text:'';
+ $('notice').textContent=onAccountPage?'':text;
+}
 function node(tag,text,parent){const n=document.createElement(tag);n.textContent=text;if(parent)parent.append(n);return n;}
 async function api(path,data){const r=await fetch(kfxRoute('/api/'+path),{method:data?'POST':'GET',headers:data?{'Content-Type':'application/json','X-CSRF-Token':session.csrf||''}:{},body:data?JSON.stringify(data):undefined,credentials:'same-origin'});const value=await r.json();if(!r.ok)throw Error(value.error||'Request failed');return value;}
 function action(label,handler,parent){const b=node('button',label,parent);b.addEventListener('click',()=>Promise.resolve().then(handler).catch(e=>note(e.message)));return b;}
@@ -8,6 +12,7 @@ async function refresh(){
  session=await kfxSession(true);const route=kfxPage();
  $('session').textContent=session.signed_in?'Signed in as '+session.name:'Guest · LAN and direct play need no account';
  $('login-panel').hidden=session.signed_in||!['/profile','/device'].includes(route);
+ document.body.classList.toggle('account-auth',!$('login-panel').hidden);
  $('pair-panel').hidden=route!=='/device'||!session.signed_in;
  $('profile-panel').hidden=!session.signed_in||route!=='/profile';
  $('event').hidden=!session.signed_in;$('upload-replay').hidden=!session.signed_in;
@@ -28,19 +33,42 @@ $('refresh').onclick=()=>refresh().catch(e=>note(e.message));$('filter').oninput
 refresh().then(async()=>{if(kfxPage().startsWith('/keeper/')){const profile=await api('profiles/'+kfxPage().split('/').pop());const panel=$('public-profile');panel.hidden=false;node('h2',profile.name+'’s Keeper',panel);node('p',(profile.verified_stats.matches||0)+' verified matches · '+(profile.verified_stats.wins||0)+' wins',panel);node('p',profile.achievements.join(' · ')||'No achievements yet.',panel);}}).catch(e=>note(e.message));
 
 $('recovery-codes-form').addEventListener('submit',async event=>{event.preventDefault();try{const result=await api('recovery/codes',Object.fromEntries(new FormData(event.target)));event.target.reset();$('recovery-output').textContent=result.codes.join('\n');$('recovery-output').hidden=false;note(result.message);}catch(error){note(error.message);}});
-$('recover').addEventListener('submit',async event=>{event.preventDefault();try{const result=await api('recovery/reset',Object.fromEntries(new FormData(event.target)));event.target.reset();note(result.message);await refresh();}catch(error){note(error.message);}});
+$('recover').addEventListener('submit',async event=>{event.preventDefault();try{const result=await api('recovery/reset',Object.fromEntries(new FormData(event.target)));event.target.reset();showAccountMode('login');note(result.message);await refresh();}catch(error){note(error.message);}});
 
 const route=kfxPage();
 for(const [id,paths] of Object.entries({'server-panel':['/community','/servers'],'events-panel':['/community','/events'],'challenge-panel':['/community','/challenges'],'replay-panel':['/community','/replays']}))$(id).hidden=!paths.includes(route);
 
 let cloudTicket = '';
+const accountModes = {
+    login: ['login', 'Sign in', 'Access your cloud profile, friends, and match history.'],
+    signup: ['cloud-signup', 'Create your account', 'Keep your cloud profile and match history together. We’ll email you a six-digit code to verify your account.'],
+    verify: ['cloud-verify', 'Check your email', 'Enter the six-digit verification code. It expires after 15 minutes.'],
+    recover: ['recover', 'Recover your account', 'Use an offline recovery code to set a new password. This signs you out of other sessions.'],
+};
+function showAccountMode(mode, moveFocus = true) {
+    const [form, title, intro] = accountModes[mode];
+    for (const [formId] of Object.values(accountModes)) $(formId).hidden = formId !== form;
+    for (const button of document.querySelectorAll('[data-account-mode]')) {
+        button.hidden = button.dataset.accountMode === mode;
+        if (button.dataset.accountMode === 'signup') {
+            button.textContent = mode === 'verify' ? 'Request a new code' : 'Create an account';
+        }
+    }
+    $('account-heading').textContent = title;
+    $('account-intro').textContent = intro;
+    $('account-status').textContent = '';
+    if (moveFocus) $('account-heading').focus();
+}
+for (const button of document.querySelectorAll('[data-account-mode]')) {
+    button.addEventListener('click', () => showAccountMode(button.dataset.accountMode));
+}
 $('cloud-signup').addEventListener('submit', async event => {
     event.preventDefault();
     try {
         const result = await api('cloud/signup', Object.fromEntries(new FormData(event.target)));
         cloudTicket = result.ticket;
         event.target.reset();
-        $('cloud-verify').hidden = false;
+        showAccountMode('verify', false);
         $('cloud-verify').elements.code.focus();
         note('Enter the six-digit code sent to your email.');
     } catch (error) { note(error.message); }
@@ -51,7 +79,7 @@ $('cloud-verify').addEventListener('submit', async event => {
         await api('cloud/verify', {ticket: cloudTicket, code: event.target.elements.code.value, browser: true});
         cloudTicket = '';
         event.target.reset();
-        event.target.hidden = true;
+        showAccountMode('login', false);
         await refresh();
         note('Email verified.');
     } catch (error) { note(error.message); }
