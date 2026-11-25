@@ -3303,6 +3303,7 @@ void draw_debug_messages() {
  * @return Gives 0 if a movie has started, 1 if normal draw occured, 2 on error.
  */
 #if defined(__APPLE__)
+int kfx_title_motion_preference();
 static bool draw_keeper_title()
 {
     static bool attempted=false;
@@ -3311,6 +3312,8 @@ static bool draw_keeper_title()
     static std::vector<unsigned char> pixels;
     struct LightPixel { size_t offset; float phase; float strength; int layer; };
     static std::vector<LightPixel> lights;
+    const int motion=kfx_title_motion_preference();
+    if(motion==2)return false;
     if(!attempted){
         attempted=true;
         const char *resources=getenv("KFX_APP_RESOURCES");
@@ -3328,7 +3331,7 @@ static bool draw_keeper_title()
         if(title){
             const auto *source=static_cast<const unsigned char *>(title->pixels);
             pixels.assign(source,source+static_cast<size_t>(title->pitch)*title->h);
-            for(int y=0;y<title->h;++y)for(int x=0;x<title->w;++x){
+            if(motion==0)for(int y=0;y<title->h;++y)for(int x=0;x<title->w;++x){
                 const float nx=static_cast<float>(x)/title->w,ny=static_cast<float>(y)/title->h;
                 const size_t offset=static_cast<size_t>(y)*title->pitch+x*4;
                 const auto *rgb=source+offset;
@@ -3355,7 +3358,7 @@ static bool draw_keeper_title()
         std::vector<LightPixel>().swap(lights);
         return false;
     }
-    if(now-last_frame>=33){
+    if(motion==0&&now-last_frame>=33){
         const float seconds=(now+4200-deadline)/1000.f;
         const float fire[]={0.f,std::sin(seconds*11)+.35f*std::sin(seconds*23),
             std::sin(seconds*9+1.f)+.3f*std::sin(seconds*19)};

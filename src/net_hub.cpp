@@ -1,5 +1,6 @@
 // Optional community service client. No service is contacted until the user opens the browser.
 #include "net_hub.h"
+#include "net_lobby.h"
 #include <curl/curl.h>
 #include "json-dom.h"
 #include <SDL3/SDL.h>
@@ -28,6 +29,7 @@ std::string base="https://keeper-enhanced.retrocs.org",folder,account,name,accou
 struct Registration{std::string host,token,role;int port;};std::vector<Registration> registrations;
 long last_status=0;
 struct Reply{std::string tag,body;long status=0;};std::future<Reply> job;Uint64 heartbeat_at=0;
+std::string lobby_epoch;
 struct Request{std::string tag,route,body,token;};std::deque<Request> queue;
 void live_reply(const VALUE *);void live_tick();
 std::string quote(const std::string &s){std::string out="\"";for(unsigned char c:s){if(c=='"'||c=='\\')out+='\\';if(c>=32)out+=c;}return out+'"';}
@@ -71,7 +73,7 @@ extern "C" int kfx_hub_tick(int hosting,int players,int playing,const char *map)
  if(r.tag=="me"&&r.status==401&&!local_profile){account.clear();save_token();}
  if(r.tag=="me"&&!local_profile&&!field(&d.root,"id").empty()){account_id=field(&d.root,"id");name=field(&d.root,"name");save_token();}
  if((r.tag=="publish"||r.tag=="join")&&!field(&d.root,"match_id").empty())match_id=field(&d.root,"match_id");
- if(r.tag=="publish"&&!field(&d.root,"secret").empty()){server_id=field(&d.root,"id");server_secret=field(&d.root,"secret");heartbeat_at=0;}
+ if(r.tag=="publish"&&!field(&d.root,"secret").empty()){server_id=field(&d.root,"id");server_secret=field(&d.root,"secret");lobby_epoch.clear();heartbeat_at=0;}
  if(r.tag=="join"){
      const VALUE *required=value_dict_get(&d.root,"login_ticket_required");
      identity_ticket=required&&value_type(required)==VALUE_BOOL&&value_bool(required)?"":field(&d.root,"identity_ticket");
@@ -80,7 +82,21 @@ extern "C" int kfx_hub_tick(int hosting,int players,int playing,const char *map)
  if(r.tag=="stream")live_reply(&d.root);
  if(r.tag=="heartbeat")apply_channels(&d.root);ready=1;}
  if(hosting)host_started=true;
- if((hosting||host_started)&&!server_id.empty()&&!job.valid()&&queue.empty()&&SDL_GetTicks()>=heartbeat_at){heartbeat_at=SDL_GetTicks()+(hosting&&!playing?500:3000);std::string body="{\"mods\":"+quote(advertised_content)+",\"players\":"+std::to_string(std::clamp(players,0,4))+",\"status\":"+quote(hosting?(playing?"playing":"lobby"):"offline")+(map&&*map?",\"map\":"+quote(map):"")+"}";kfx_hub_request("heartbeat",("/api/servers/"+server_id+"/heartbeat").c_str(),body.c_str(),2);if(!hosting){server_id.clear();server_secret.clear();registrations.clear();}}
+ if((hosting||host_started)&&!server_id.empty()&&!job.valid()&&queue.empty()&&SDL_GetTicks()>=heartbeat_at){
+     heartbeat_at=SDL_GetTicks()+(hosting&&!playing?500:3000);
+     std::string body="{\"mods\":"+quote(advertised_content)+",\"players\":"+std::to_string(std::clamp(players,0,4))
+         +",\"status\":"+quote(hosting?(playing?"playing":"lobby"):"offline")+(map&&*map?",\"map\":"+quote(map):"");
+     if(hosting&&!playing&&kfx_hub_requires_login_ticket()){
+         unsigned occupied=1;
+         for(NetUserId peer=1;peer<netstate.max_users;++peer){
+             if(netstate.users[peer].progress==USER_LOGGEDIN)occupied|=1u<<peer;
+         }
+         body+=",\"occupied\":"+std::to_string(occupied)+",\"lobby_epoch\":"+quote(lobby_epoch);
+     }
+     body+="}";
+     kfx_hub_request("heartbeat",("/api/servers/"+server_id+"/heartbeat").c_str(),body.c_str(),2);
+     if(!hosting){server_id.clear();server_secret.clear();lobby_epoch.clear();registrations.clear();}
+ }
  live_tick();
  if(!job.valid()&&!queue.empty()){Request q=queue.front();queue.pop_front();job=std::async(std::launch::async,http,base,q.tag,q.route,q.body,q.token);}
  return ready;
@@ -114,6 +130,7 @@ extern "C" int kfx_hub_admit_peer(int peer,unsigned occupied,const char *ticket)
     const std::string user=field(&result.root,"user");
     if(user.empty())return 0;
     identities[peer]=user;
+    lobby_epoch=field(&result.root,"lobby_epoch");
     return 1;
 }
 

@@ -3,7 +3,7 @@ struct HubDocument{VALUE root;HubDocument(const std::string &s){value_init_null(
 std::string hub_field(const VALUE *root,const char *key){const VALUE *v=root?value_dict_get(root,key):nullptr;return v&&value_type(v)==VALUE_STRING?value_string(v):"";}
 int hub_integer(const VALUE *root,const char *key){const VALUE *v=root?value_dict_get(root,key):nullptr;return v&&(value_type(v)==VALUE_INT32||value_type(v)==VALUE_UINT32)?value_int32(v):0;}
 std::string hub_quote(const std::string &s){std::string out="\"";for(unsigned char c:s){if(c=='"'||c=='\\')out+='\\';if(c>=32)out+=c;}return out+'"';}
-struct BrowserServer{std::string id,name,address,engine,map,kind,region,content,status,ai_style;int players=0,capacity=4;bool password=false;std::vector<std::string> clients;};
+struct BrowserServer{std::string id,name,address,engine,map,kind,region,content,status,ai_style;int players=0,capacity=4;bool password=false,voting=false;std::vector<std::string> clients;};
 BrowserServer browser_server_from_json(const VALUE *r)
 {
     BrowserServer s;
@@ -22,6 +22,7 @@ BrowserServer browser_server_from_json(const VALUE *r)
     s.players=hub_integer(r,"players");
     s.capacity=hub_integer(r,"capacity");
     s.password=hub_integer(r,"password")!=0;
+    s.voting=hub_integer(r,"voting")!=0;
     const VALUE *clients=value_dict_get(r,"client_versions");
     if(clients&&value_type(clients)==VALUE_ARRAY){
         for(size_t index=0;index<std::min<size_t>(16,value_array_size(clients));++index){
@@ -485,7 +486,7 @@ void browser_draw(){
     small_line(24,170,version_status,592);
     small_line(24,191,missing.empty()?"Required sprite archives present":"Missing "+missing,592);
     if(dedicated_listing(s))small_line(24,212,kfx_hub_has_session()?"Cloud sign-in present":"Cloud sign-in required",592);
-    button(64,235,512,"Password: "+std::string(server_password.size(),'*'),2044,selected==0,32);button(64,272,512,"Join Server",2040,selected==1,38);button(64,315,250,"Toggle Favourite",2042,selected==2,38);button(323,315,139,"Copy Address",2043,selected==3,38);button(470,315,106,"Spectate",2045,selected==4,38);if(hub_message.rfind("Cloud session expired",0)==0)button(64,368,512,"Sign In Again",2113,selected==5,38);else if(hub_message.rfind("Lobby is full",0)==0||hub_message.rfind("Match already started",0)==0)button(64,368,512,"Find Another Server",2000,selected==5,38);else if(party_owner()&&!s.id.empty())button(64,368,512,party.target.id==s.id&&party.target_blocker.empty()?"View Party Readiness":"Check Party Readiness",2121,selected==5,38);
+    button(64,235,512,"Password: "+std::string(server_password.size(),'*'),2044,selected==0,32);button(64,272,512,"Join Server",2040,selected==1,38);button(64,315,250,"Toggle Favourite",2042,selected==2,38);button(323,315,139,"Copy Address",2043,selected==3,38);button(470,315,106,"Spectate",2045,selected==4,38);if(hub_message.rfind("Cloud session expired",0)==0)button(64,368,512,"Sign In Again",2113,selected==5,38);else if(hub_message.rfind("Lobby is full",0)==0||hub_message.rfind("Match already started",0)==0)button(64,368,512,"Find Another Server",2000,selected==5,38);else if(party_owner()&&!s.id.empty()){if(s.voting)button(326,368,250,"Vote on Map",2138,selected==5,38);button(64,368,s.voting?250:512,party.target.id==s.id&&party.target_blocker.empty()?"View Party Readiness":"Check Party Readiness",2121,selected==(s.voting?6:5),38);}
  }else if(page==22&&settings_conflict){
   centered(100,"Settings changed on both devices",22);
   small_line(60,158,settings_status,520);

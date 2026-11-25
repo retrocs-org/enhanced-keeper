@@ -109,6 +109,7 @@ def validate(config):
     engine=Path(config['engine_binary']).resolve();profile=Path(config['user_data']).resolve();assert engine.is_file() and os.access(engine,os.X_OK),'Engine is not executable';assert any((profile/'GameData'/n).is_file() for n in ('keeper-enhanced.cfg','keeperfx.cfg')),'Prepare a separate dedicated profile first';assert '.app/' not in str(profile),'User data must be outside the application';assert 1<=config.get('humans',1)<=3,'Dedicated mode supports 1–3 humans plus its AI';assert config['rotation'] and len(config['rotation'])<=32,'Choose 1–32 maps'
     for item in config['rotation']:assert re.fullmatch('[A-Za-z0-9_-]{1,63}',item['campaign']) and type(item['level'])==int and 0<item['level']<=99999,'Invalid map'
     assert config.get('ai_style','defensive') in ('defensive','balanced','rush'),'Invalid AI style'
+    assert type(config.get('allow_party_map_votes',False)) is bool,'allow_party_map_votes must be true or false'
     assert type(config.get('manual_start',False)) is bool,'manual_start must be true or false'
     assert type(config.get('cooperative', False)) is bool, 'cooperative must be true or false'
     assert config.get('visibility','public') in ('private','public'),'Visibility must be private or public'
@@ -165,6 +166,9 @@ class Host:
         clients=supported_clients(self.engine) if public else []
         endpoint=cfg.get('endpoint') or ''
         mapping=NatPmpMapping(cfg.get('port',5556)) if public and endpoint=='auto' else None
+        voting=public and cfg.get('cooperative') and cfg.get('allow_party_map_votes')
+        retained_room=None
+        next_ballot=None
         while not self.stop:
             if mapping:
                 mapping.refresh()
@@ -176,13 +180,22 @@ class Host:
                 if self.lobby_override is not None:
                     map_index,humans,ai_style=self.lobby_override
                     self.lobby_override=None
+            applying=next_ballot
+            next_ballot=None
+            if applying:
+                humans,ai_style=applying['settings']
+                requested=applying['winning']
+                map_index=next(index for index,item in enumerate(cfg['rotation'])
+                    if f"{item['campaign']}:{item['level']}"==requested)
             self.index=map_index+1
             item=cfg['rotation'][map_index]
             self.next=False
             with socket.socket() as sock:sock.bind(('127.0.0.1',0));api_port=sock.getsockname()[1]
             runtime=self.profile/'GameData';gamecfg=runtime/'keeper-enhanced.cfg';legacy=runtime/'keeperfx.cfg';text=(gamecfg if gamecfg.exists() else legacy).read_text();text=re.sub(r'(?mi)^\s*(?:API_ENABLED|API_PORT|RENDERER)\s*=.*\n?','',text);gamecfg.write_text(text+f'\nAPI_ENABLED=TRUE\nAPI_PORT={api_port}\nRENDERER=SOFTWARE\n')
             room={'id':secrets.token_hex(12),'secret':''}
-            if public:
+            if retained_room:
+                room,retained_room=retained_room,None
+            elif public:
                 registration = {
                     'name': cfg['name'], 'port': cfg.get('port', 5556),
                     'engine': version, 'kind': 'dedicated', 'client_versions': clients,
@@ -191,7 +204,7 @@ class Host:
                     'password': bool(os.environ.get('KFX_SERVER_PASSWORD')),
                 }
                 if cfg.get('cooperative'):
-                    registration['coop']={'humans':humans,'ai_style':ai_style}
+                    registration['coop']={'humans':humans,'ai_style':ai_style,'map_voting':bool(voting)}
                 if endpoint:
                     registration['endpoint'] = endpoint
                 if key:
@@ -219,6 +232,8 @@ class Host:
             replay=state/(room['id']+'.pck');port=int(cfg.get('port',5556));args=[str(runtime/'keeperfx'),'-nointro','-server',str(port),'-campaign',item['campaign'],'-level',str(item['level']),'-waitusers',str(humans+1),'-nosound','-nick',cfg.get('ai_name','ServerAI'),'-packetsave',str(replay),'-log','dedicated.log']
             log=open(state/'engine-output.log','ab');self.process=subprocess.Popen(args,executable=str(self.engine),cwd=runtime,env=env,stdout=log,stderr=subprocess.STDOUT);offset=0;had_game=False;failures=0;verified=False;stream_truncated=False
             self.api_port=api_port
+            next_ballot_at=0
+            departed=set()
             print('Headless lobby ready:',cfg['name'],'map',item['campaign'],item['level'],flush=True)
             try:
                 while not self.stop and not self.next and self.process.poll() is None:
@@ -231,15 +246,27 @@ class Host:
                             startfile.unlink()
                             self.command('{"command":"start"}')
                         status=rpc(api_port);self.status={**status,'server_id':room['id'],'map':item,'humans':humans,'ai_style':ai_style,'cooperative':bool(cfg.get('cooperative'))};(state/'status.json').write_text(json.dumps(self.status));failures=0
+                        if applying and status.get('active'):
+                            request(base,f"/api/servers/{room['id']}/map-applied",
+                                {'party':applying['party'],'map':applying['winning']},room['secret'])
+                            applying=None
+                        if voting and not applying and status.get('active') and status.get('players')==1 and not had_game and time.monotonic()>=next_ballot_at:
+                            next_ballot_at=time.monotonic()+3
+                            vote=request(base,f"/api/servers/{room['id']}/map-ballot",{},room['secret']).get('ballot')
+                            if vote:
+                                next_ballot={**vote,'settings':(humans,ai_style)}
+                                retained_room=room
+                                break
+                        departed.update(user['account'] for user in status.get('users',[]) if user.get('departed') and user.get('account'))
                         if status.get('turn',0)>0 and status.get('active'):had_game=True
                         if spectators and replay.exists() and not stream_truncated:
                             with replay.open('rb') as f:f.seek(offset);raw=f.read(32768)
                             if raw:answer=request(base,'/api/servers/'+room['id']+'/stream',{'offset':offset,'data':base64.b64encode(raw).decode()},room['secret']);offset=answer['offset'];stream_truncated=bool(answer.get('truncated'))
-                        humans=[v for v in status.get('users',[]) if v.get('peer')!=0]
-                        ended=had_game and (not status.get('active') or humans and all(v.get('outcome') in (1,2) for v in humans))
+                        human_players=[v for v in status.get('users',[]) if v.get('peer')!=0]
+                        ended=had_game and (not status.get('active') or human_players and all(v.get('outcome') in (1,2) for v in human_players))
                         if ended:
-                            identified=[{'user':v['account'],'result':'won' if v['outcome']==1 else 'lost'} for v in humans if v.get('account') and v.get('outcome') in (1,2)]
-                            if trusted and identified and all(v.get('verified_finish') for v in humans):
+                            identified=[{'user':v['account'],'result':'won' if v['outcome']==1 else 'lost'} for v in human_players if v.get('account') and v.get('outcome') in (1,2)]
+                            if trusted and identified and all(v.get('verified_finish') for v in human_players):
                                 try:request(base,'/api/servers/'+room['id']+'/result',{'match':room['match_id'],'results':identified,'cooperative':bool(cfg.get('cooperative',False))},room['secret']);verified=True
                                 except Exception:pass # Unverified/disconnected games never become ranked wins.
                             break
@@ -258,9 +285,9 @@ class Host:
                             except Exception:break
                             if finished:break
                 try:
-                    if public:request(base,'/api/servers/'+room['id']+'/close',{},room['secret'])
+                    if public and not retained_room:request(base,'/api/servers/'+room['id']+'/close',{'departed':sorted(departed)[:3]},room['secret'])
                 except Exception:pass
-            if self.process.returncode and not self.stop and not self.next:raise RuntimeError('Engine exited unexpectedly; inspect dedicated/engine-output.log')
+            if self.process.returncode and not self.stop and not self.next and not retained_room:raise RuntimeError('Engine exited unexpectedly; inspect dedicated/engine-output.log')
 
 def lobby_setup(config):
     print('Co-op lobby setup: Human keepers vs server AI')

@@ -50,6 +50,10 @@ if($path==='/lair')$pageTitles['/lair']=['The Lair','Find a public game or see w
         <?php endforeach; ?>
     </nav>
 </section><section id="pair-panel" hidden><h2>Connect the game</h2><p>Choose Sign In inside the game, then enter its pairing code here. Approve only a code displayed by your own game.</p><form method="post" id="pair"><label>Game pairing code<input name="code" required minlength="8" maxlength="8" autocomplete="off"></label><button>Approve this game</button></form></section><section id="server-panel"<?= in_array($path,['/lair','/servers','/community'],true)?'':' hidden' ?>><div class="section-title"><h2>Server browser</h2><button id="refresh">Refresh</button></div><label>Filter servers<input id="filter" type="search" placeholder="Name, map or region"></label><div class="table-wrap"><table><thead><tr><th>Server</th><th>Map</th><th>Players</th><th>Version</th><th>Connection</th><th></th></tr></thead><tbody id="servers"></tbody></table></div><p id="server-state">Loading directory…</p></section><?php if($path==='/lair'): ?>
+<section id="lair-history">
+    <h2>Your match history</h2>
+    <div id="lair-match-list" role="status"></div>
+</section>
 <section id="rankings">
     <h2>Verified rankings</h2>
     <p id="lair-rank-state" role="status">Loading verified records…</p>

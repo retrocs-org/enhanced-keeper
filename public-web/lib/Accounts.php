@@ -85,7 +85,7 @@ trait HubAccounts {
         $this->q('DELETE FROM party_messages WHERE sender=?',[$uid]);
         $this->q('DELETE FROM friend_messages WHERE sender=? OR recipient=?',[$uid,$uid]);
         $this->q('DELETE FROM cloud_save_requirements WHERE id IN (SELECT id FROM cloud_saves WHERE user=?)',[$uid]);
-        foreach(['cloud_saves','social_reads','game_activity','game_presence','sessions','devices','recovery','tickets','cloud_profiles','cloud_settings','cloud_email_changes','participants','identities','entrants','completions'] as $table)
+        foreach(['cloud_saves','social_reads','game_activity','game_presence','sessions','devices','recovery','tickets','cloud_profiles','cloud_settings','cloud_email_changes','participants','match_party_roster','identities','entrants','completions'] as $table)
             $this->q("DELETE FROM $table WHERE user=?",[$uid]);
         $this->q('DELETE FROM friends WHERE a=? OR b=?',[$uid,$uid]);
         $this->q('DELETE FROM cloud_signup WHERE name=?',[$account['name']]);

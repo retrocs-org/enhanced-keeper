@@ -75,10 +75,11 @@ coop_mode=os.environ.get('KFX_TEST_COOP')
 test_coop=coop_mode in ('1','3')
 coop_humans=3 if coop_mode=='3' else 2
 manual_start=os.getenv('KFX_TEST_MANUAL_COOP')=='1'
+test_vote=os.getenv('KFX_TEST_MAP_VOTE')=='1'
 test_party=test_coop or os.environ.get('KFX_TEST_PARTY')=='1'
 lobby_only=test_party or os.environ.get('KFX_TEST_LOBBY_ONLY')=='1'
 try:
- hostprofile=profile('host');hostport=port(True);cfg=dict(name='Local Dedicated QA',engine_binary=os.environ.get('KFX_TEST_SERVER_ENGINE',str(engine)),user_data=str(hostprofile),hub_url=base,endpoint='127.0.0.1:'+str(hostport),visibility='public',port=hostport,rotation=[{'campaign':'original','level':52}],manual_start=manual_start,humans=3 if manual_start else coop_humans if test_coop else 3 if test_party else 2 if lobby_only else 1,cooperative=test_coop,ai_style=os.getenv('KFX_TEST_AI_STYLE','defensive'),spectators=not lobby_only,app_resources=str(app/'Contents/Resources'));os.environ['KFX_HUB_ADMIN_KEY']=hub.admin_key;supervisor=ded.Host(cfg);hosterrors=[]
+ hostprofile=profile('host');hostport=port(True);cfg=dict(name='Local Dedicated QA',engine_binary=os.environ.get('KFX_TEST_SERVER_ENGINE',str(engine)),user_data=str(hostprofile),hub_url=base,endpoint='127.0.0.1:'+str(hostport),visibility='public',port=hostport,rotation=([{'campaign':'original','level':53}] if test_vote else [])+[{'campaign':'original','level':52}],allow_party_map_votes=test_vote,manual_start=manual_start,humans=3 if manual_start else coop_humans if test_coop else 3 if test_party else 2 if lobby_only else 1,cooperative=test_coop,ai_style=os.getenv('KFX_TEST_AI_STYLE','defensive'),spectators=not lobby_only,app_resources=str(app/'Contents/Resources'));os.environ['KFX_HUB_ADMIN_KEY']=hub.admin_key;supervisor=ded.Host(cfg);hosterrors=[]
  def run_host():
   try:supervisor.run()
   except Exception:hosterrors.append(traceback.format_exc())
@@ -99,7 +100,20 @@ try:
   buddy_port=port()
   launch(buddy_profile,buddy_port,buddy['token'])
   until(lambda:rpc(clientport,'community_status')['party_members']==2)
-  rpc(clientport,'community_action',command=2121)
+  if test_vote:
+   def party_call(token,action='state',**fields):
+    return hub.handle('POST','/api/party',{'action':action,**fields},token)
+   server_id=supervisor.status['server_id']
+   opened=party_call(user['token'],'open-map-vote',server=server_id)
+   assert [option['map'] for option in opened['ballot']['options']]==['original:53','original:52']
+   party_call(user['token'],'map-vote',map='original:52')
+   party_call(buddy['token'],'map-vote',map='original:52')
+   party_call(user['token'],'confirm-map-vote',map='original:52')
+   until(lambda:(party_call(user['token']).get('target') or {}).get('server',{}).get('map')=='original:52')
+   assert supervisor.status.get('server_id')==server_id
+   rpc(clientport,'community_action',command=2120)
+  else:
+   rpc(clientport,'community_action',command=2121)
   until(lambda:rpc(clientport,'community_status').get('party_ready'))
   rpc(clientport,'community_action',command=2135)
   until(lambda:rpc(buddy_port,'community_status')['party_prompt']==cfg['name'])

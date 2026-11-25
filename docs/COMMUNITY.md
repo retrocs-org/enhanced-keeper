@@ -282,3 +282,17 @@ until the operator starts it. Once at least one human has joined, send
 `dedicated/start.request` file in the server profile. The lobby checks the
 connected players' versions and content before starting. The server status
 includes the readiness report.
+
+
+Public co-op servers can opt into party map votes with
+`"allow_party_map_votes": true` and at least two entries in `rotation`.
+The party owner opens the ballot from the server details, and each member can
+change their vote. The owner confirms a leading choice, breaking any tie.
+Choosing another map requires an empty lobby. Once the server loads it, the
+party readiness check runs against the new map.
+
+
+Public dedicated lobbies reserve one seat per party member for 60 seconds when
+the owner sends the join prompt. The party roster shows the hold timer and
+marks players **In Lobby** after the server admits them. Unused seats become
+available again when the hold expires.

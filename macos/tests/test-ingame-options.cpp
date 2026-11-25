@@ -27,6 +27,10 @@ int debug_display_frametime=0;
 struct FrametimeMeasurements frametime_measurements={};
 unsigned long GetPing(int){return 0;}
 const char *kfx_network_recovery_status(void){return "";}
+GameTurn get_gameturn(){return 0;}
+int kfx_network_retry_now(){return 0;}
+TbBool load_game_save_catalogue(){return true;}
+TbBool load_settings(){return true;}
 struct TbSpriteSheet *frontend_font[FRONTEND_FONTS_COUNT]={},*winfont=nullptr;
 unsigned long key_modifiers=0;
 TbControllerButtons controller_button_state=0;
@@ -155,6 +159,20 @@ int main(){
  assert(kfx_options_set_display(0,800,600));kfx_options_apply_display();assert(kfx_options_confirm_display(1));assert(saved_display_mode==0&&saved_resolution==0);
  display_mode=1;activate(500);fail_display=true;kfx_options_apply_display();assert(saved_display_mode==0);fail_display=false;
  saved_display_mode=-1;kfx_options_initialize();assert(saved_display_mode==0&&resolution_index==0);assert(configured_movies==configured_frontend);
+ // The timeline preserves a snapshot when pinning a rotating backup.
+ game.game_kind=GKind_Unset;frontend_menu_state=FeSt_MAIN_MENU;
+ open_panel(2);scan_saves();activate(312);assert(save_timeline);
+ auto recovery=std::find_if(saves.begin(),saves.end(),[](const Save &row){return row.slot==5&&row.backup==1;});
+ assert(recovery!=saves.end());save_index=(int)(recovery-saves.begin());
+ const auto source=recovery->path;
+ activate(1008);
+ const auto copy=selected_save().path;
+ assert(copy!=source&&access(source.c_str(),F_OK)==0&&access((copy+".protected").c_str(),F_OK)==0);
+ unlink((copy+".protected").c_str());unlink(copy.c_str());scan_saves();activate(312);assert(!save_timeline);
+ open_panel(16);activate(899);assert(kfx_title_motion_preference()==1);
+ activate(899);assert(kfx_title_motion_preference()==2);
+ title_motion_mode=0;kfx_options_initialize();assert(kfx_title_motion_preference()==2);
+ activate(899);assert(kfx_title_motion_preference()==0);
  // Search/filter and backup grouping keep one row per save slot.
  scan_saves();assert(saves.size()==2);save_search="does not exist";filter_saves();assert(saves.empty());save_search="Backup";filter_saves();assert(!saves.empty());save_search.clear();save_filter=2;filter_saves();
  save_filter=0;filter_saves();
@@ -217,7 +235,7 @@ int main(){
  open_panel(0);selected=5;confirm_control();assert(page==15);activate(901);assert(page==0);open_panel(7);selected=5;confirm_control();assert(page==16);activate(901);assert(page==7);
  {VALUE status;const char *payload=kfx_options_community_status();assert(json_dom_parse(payload,strlen(payload),nullptr,0,&status,nullptr)==0);assert(value_type(&status)==VALUE_DICT);value_fini(&status);}
  assert(valid_endpoint("localhost:5556",endpoint)&&endpoint=="localhost:5556");assert(valid_endpoint("[::1]:5556",endpoint));assert(!valid_endpoint("bad host:5556",endpoint));assert(!valid_endpoint("127.0.0.1:",endpoint));assert(normalized_version(VER_STRING)=="1.4.0.0");
- BrowserServer alpha;alpha.id="fixture-id";alpha.name="Alpha";alpha.address="127.0.0.1:5556";alpha.engine="1.4.0.0";BrowserServer beta=alpha;beta.name="Beta";beta.address="127.0.0.1:5557";beta.engine="9.9.9.9";public_servers={alpha,beta};browser_pings[alpha.address]=1;browser_pings[beta.address]=2;browser_tab=0;browser_search.clear();browser_compatible=true;browser_filter();assert(browser_servers.size()==1);browser_compatible=false;browser_search="Beta";browser_filter();assert(browser_servers.size()==1&&browser_servers[0].name=="Beta");browser_search.clear();browser_filter();browser_index=0;favourite_servers.clear();browser_action(2042);std::vector<BrowserServer> remembered;browser_load("servers-favourites.cfg",remembered);assert(remembered.size()==1&&remembered[0].id=="fixture-id");server_password="old password";browser_action(2010);assert(page==21&&server_password.empty());open_panel(20);selected=10;confirm_control();assert(editing==6);editing=0;selected=11;confirm_control();assert(browser_sort==1);close_panel();
+ BrowserServer alpha;alpha.id="fixture-id";alpha.name="Alpha";alpha.address="127.0.0.1:5556";alpha.engine="1.4.0.0";alpha.kind="listen";BrowserServer beta=alpha;beta.name="Beta";beta.address="127.0.0.1:5557";beta.engine="9.9.9.9";public_servers={alpha,beta};browser_pings[alpha.address]=1;browser_pings[beta.address]=2;browser_tab=0;browser_search.clear();browser_compatible=true;browser_filter();assert(browser_servers.size()==1);browser_compatible=false;browser_search="Beta";browser_filter();assert(browser_servers.size()==1&&browser_servers[0].name=="Beta");browser_search.clear();browser_filter();browser_index=0;favourite_servers.clear();browser_action(2042);std::vector<BrowserServer> remembered;browser_load("servers-favourites.cfg",remembered);assert(remembered.size()==1&&remembered[0].id=="fixture-id");server_password="old password";browser_action(2010);assert(page==21&&server_password.empty());open_panel(20);selected=10;confirm_control();assert(editing==6);editing=0;selected=11;confirm_control();assert(browser_sort==1);close_panel();
  mouse_navigation=false;focus_action=-1;focus_animation[2500]=123;button(1,1,100,"A",2500,true);button(110,1,100,"B",2501,true);assert(focus_animation[2500]==123&&focus_animation.count(2501));
  kfx_hub_new_match();kfx_hub_record_terminal(1,1);kfx_hub_record_departure(1);assert(kfx_hub_terminal_verified(1));kfx_hub_record_departure(2);kfx_hub_record_terminal(2,2);assert(!kfx_hub_terminal_verified(2));
  std::string isolated=test_folder+"/profile-tests";SDL_CreateDirectory(isolated.c_str());setenv("KFX_BASE_USER_DATA_DIR",isolated.c_str(),1);open_panel(27);activate(1200);assert(content_profiles.size()==1);new_profile="test-mod";assert(create_profile());assert(access((isolated+"/ContentProfiles/test-mod/EnhancedData").c_str(),F_OK)==0);activate(1204);std::ifstream chosen(isolated+"/content-profile.cfg");std::string name;std::getline(chosen,name);assert(name=="test-mod");new_profile="../outside";assert(!create_profile());render_file="/tmp/kfx-content-profiles.png";kfx_options_draw();unsetenv("KFX_BASE_USER_DATA_DIR");

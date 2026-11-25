@@ -20,11 +20,44 @@ async function refresh(){
  else if(route==='/profile')await loadProfile();
  else if(['/events','/community'].includes(route))me=await api('me');
  if(['/lair','/servers','/community'].includes(route)){servers=(await api('servers')).servers;drawServers();}
- if(route==='/lair')await loadLairRankings();
+ if(route==='/lair')await Promise.all([loadLairRankings(),loadLairHistory()]);
  if(['/events','/community'].includes(route))await loadEvents();
  if(['/community','/challenges','/replays'].includes(route))await loadExtras();
 }
 
+async function loadLairHistory(){
+ const panel=$('lair-match-list');
+ panel.replaceChildren();
+ if(!session.signed_in){
+  node('a','Sign in to see your matches',panel).href=kfxRoute('/profile');
+  return;
+ }
+ try {
+  const {matches}=await api('matches');
+  if(!matches.length)node('p','No matches recorded yet.',panel);
+  for(const match of matches){
+   const card=node('article','',panel);
+   const when=new Date(Number(match.started)*1000).toLocaleString();
+   node('h3',match.map||'Unknown map',card);
+   node('p',when+' · '+(match.your_result||match.status),card);
+   for(const keeper of match.keepers||[]){
+    node('p',keeper.name+(Number(keeper.together)?' · Party':'')+(keeper.result?' · '+keeper.result:''),card);
+   }
+   if(match.replay_id)action('Download replay to watch',()=>downloadMatchReplay(match.replay_id),card);
+  }
+ }catch(error){node('p',error.message,panel);}
+}
+async function downloadMatchReplay(id){
+ const reply=await api('replays/'+id);
+ const binary=Uint8Array.from(atob(reply.data),character=>character.charCodeAt(0));
+ const url=URL.createObjectURL(new Blob([binary],{type:'application/octet-stream'}));
+ const link=document.createElement('a');
+ link.href=url;
+ link.download='keeper-'+id+'.pck';
+ link.click();
+ setTimeout(()=>URL.revokeObjectURL(url),1000);
+ note('Replay downloaded. Open it in Keeper-Enhanced.');
+}
 async function loadLairRankings(){
  const body=$('lair-rankings');
  try {

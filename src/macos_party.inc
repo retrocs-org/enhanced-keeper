@@ -4,17 +4,22 @@ struct PartyPlayer {
     bool online = false;
     int unread = 0;
 };
+struct PartyMap {std::string name;int votes;};
 struct PartyView {
     std::string account, id, owner, server, server_name, prompt;
     BrowserServer target;
+    Uint64 seat_deadline=0;
     std::string target_revision, target_blocker;
     std::vector<PartyPlayer> friends, members, invites;
     std::vector<std::string> chat, direct_chat;
+    std::vector<PartyMap> ballot;
+    std::string ballot_choice,ballot_winner,ballot_server;
     int unread=0, party_unread=0;
 };
 PartyView party;
 std::string party_notice, party_message, party_join_server, shown_party_prompt, direct_friend, direct_name;
 std::map<int, PartyPlayer> party_targets;
+int ballot_offset=0;
 int party_tab = 0, party_offset = 0, party_chat_offset = 0;
 Uint64 party_poll_at = 0, party_last_input = 0, social_toast_until = 0;
 bool mute_social_in_match=false;
@@ -189,11 +194,31 @@ void party_reply(const std::string &tag, const VALUE &root, const std::string &e
             party.chat.push_back(hub_field(row, "name") + ": " + hub_field(row, "body"));
         }
     }
+    const VALUE *ballot=value_dict_get(&root,"ballot");
+    const VALUE *maps=ballot&&value_type(ballot)==VALUE_DICT?value_dict_get(ballot,"options"):nullptr;
+    const bool new_ballot=party.ballot.empty();
+    party.ballot.clear();
+    party.ballot_choice=hub_field(ballot,"choice");
+    party.ballot_winner=hub_field(ballot,"winning");
+    party.ballot_server=hub_field(ballot,"server");
+    if(maps&&value_type(maps)==VALUE_ARRAY){
+        for(size_t index=0;index<std::min<size_t>(32,value_array_size(maps));++index){
+            const VALUE *map=value_array_get(maps,index);
+            party.ballot.push_back({hub_field(map,"map"),hub_integer(map,"votes")});
+        }
+    }
+    if(party.ballot.empty()&&party_tab==6){party_tab=1;selected=0;}
+    else if(new_ballot&&!party.ballot.empty()&&page==38&&party_tab==1){
+        party_tab=6;ballot_offset=selected=0;
+    }
     const VALUE *prompt = value_dict_get(&root, "prompt");
     if (prompt && value_type(prompt) != VALUE_DICT) prompt = nullptr;
     party.server = hub_field(prompt, "id");
     party.server_name = hub_field(prompt, "name");
     party.prompt = hub_field(prompt, "idempotency_key");
+    const VALUE *reserved=prompt?value_dict_get(prompt,"reserved"):nullptr;
+    const bool has_hold=reserved&&value_type(reserved)==VALUE_BOOL&&value_bool(reserved);
+    party.seat_deadline=has_hold?SDL_GetTicks()+1000ull*std::max(0,hub_integer(prompt,"seconds_remaining")):0;
     if(party.prompt!=joining_prompt){
         party_join_server.clear();
         joining_prompt.clear();
@@ -319,7 +344,27 @@ bool party_action(int action)
         }
         return true;
     }
+    if(action==2138&&page==21&&party_owner()&&!browser_servers.empty()){
+        if(party_request("open-map-vote","server",browser_servers[browser_index].id)){
+            party_tab=1;
+            open_panel(38);
+        }
+        return true;
+    }
     if (page != 38) return false;
+    if(action==2139&&!party.ballot.empty()){party_tab=6;ballot_offset=selected=0;return true;}
+    if(action==2170||action==2171){
+        ballot_offset=std::clamp(ballot_offset+(action==2170?-1:1),0,std::max(0,(int)party.ballot.size()-4));
+        return true;
+    }
+    if(party_tab==6&&action>=2172&&action<2180){
+        const int index=ballot_offset+(action-2172)%4;
+        if(index<(int)party.ballot.size()){
+            const bool confirm=action>=2176;
+            party_request(confirm?"confirm-map-vote":"map-vote","map",party.ballot[index].name);
+        }
+        return true;
+    }
     if(action==2136){
         if(party_owner()&&party.id==party_match_room&&kfx_hub_request("servers","/api/servers",nullptr,0)){
             party_rematch_pending=true;
@@ -443,6 +488,25 @@ void party_draw()
         return;
     }
 
+    if(party_tab==6&&!party.ballot.empty()){
+        small_line(29,138,"Map vote / "+party.ballot_server,580);
+        if(!party.ballot_winner.empty()){
+            small_line(29,180,"Waiting for server to load "+party.ballot_winner,580);
+        }else{
+            int lead=0;
+            for(const auto &map:party.ballot)lead=std::max(lead,map.votes);
+            for(int i=0;i<4&&ballot_offset+i<(int)party.ballot.size();++i){
+                const auto &map=party.ballot[ballot_offset+i];
+                const int y=165+i*42;
+                control(29,y,395,(map.name==party.ballot_choice?"> ":"")+map.name+" / "+std::to_string(map.votes),2172+i);
+                if(party_owner()&&lead>0&&map.votes==lead)control(439,y,172,"Confirm",2176+i);
+            }
+            if(ballot_offset>0)control(29,345,135,"Previous",2170);
+            if(ballot_offset+4<(int)party.ballot.size())control(179,345,135,"Next",2171);
+        }
+        if(!party_notice.empty())small_line(29,388,party_notice,580);
+        return;
+    }
     if(party_tab==5&&party.id==party_match_room){
         centered(154,party_match_result,24);
         const auto count=std::count(party_match_departed.begin(),party_match_departed.end(),true);
@@ -455,8 +519,11 @@ void party_draw()
         return;
     }
     const auto self=std::find_if(party.members.begin(),party.members.end(),[](const PartyPlayer &p){return p.id==party.account;});
-    const bool can_join=!party.prompt.empty()&&!network_is_active()&&!party_join_connecting;
-    const bool can_retry=can_join&&self!=party.members.end()&&!self->join.empty()&&self->join!="Invited";
+    const Uint64 now=SDL_GetTicks();
+    const bool showing_hold=party.seat_deadline&&now<party.seat_deadline;
+    const bool can_join=!party.prompt.empty()&&!network_is_active()&&!party_join_connecting&&
+        (!party.seat_deadline||showing_hold);
+    const bool can_retry=can_join&&self!=party.members.end()&&!self->join.empty()&&self->join!="Invited"&&self->join!="Reserved";
     const bool showing_friends=party_tab==0||party_tab==4;
     const bool showing_invites=party_tab==2;
     const auto &rows=showing_friends?party.friends:showing_invites?party.invites:party.members;
@@ -519,10 +586,13 @@ void party_draw()
             small_line(276,145,party.target.name.empty()
                 ? (party_owner()?"Party chat / You lead":"Party chat") : party.target.name,226);
             control(513,137,91,"Older",2132);
-            draw_party_chat(party.chat,175,4);
+            draw_party_chat(party.chat,175,showing_hold?3:4);
             control(275,276,243,party_message.empty()?"Write a party message":short_text(party_message,25),2125);
             control(530,276,74,"Send",2126);
-            if(party_notice.rfind("Cloud session expired",0)==0)
+            if(showing_hold)
+                small_line(280,247,"Seats held / "+std::to_string((party.seat_deadline-now+999)/1000)+"s",318);
+            if(!party.ballot.empty())control(275,310,329,"Open Map Vote",2139);
+            else if(party_notice.rfind("Cloud session expired",0)==0)
                 control(275,310,329,"Sign In Again",2113);
             else if(party_notice.rfind("Lobby is full",0)==0&&party_owner())
                 control(275,310,329,"Choose Another Server",2137);

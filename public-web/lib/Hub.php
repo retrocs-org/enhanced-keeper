@@ -122,12 +122,28 @@ final class KeeperHub {
             return $row?['revision'=>(int)$row['revision'],'settings'=>$row['settings']]:['revision'=>0,'settings'=>''];
         }
         if($route==='/api/me'){demand($uid,'Sign in first',401);return $this->one('SELECT u.id,u.name,u.public,p.email,COALESCE(p.avatar,1) AS avatar FROM users u LEFT JOIN cloud_profiles p ON p.user=u.id WHERE u.id=?',[$uid]);}
-        if($route==='/api/servers'){$this->q("UPDATE matches SET ended=?,status=CASE WHEN status='lobby' THEN 'cancelled' ELSE 'abandoned' END WHERE ended=0 AND server IN (SELECT id FROM servers WHERE last_seen<?)",[$this->now,$this->now-90]);$servers=$this->rows('SELECT s.id,s.name,s.endpoint,s.engine,s.map,s.mods,s.players,s.capacity,s.password,s.region,s.kind,s.status,c.versions,o.ai_style FROM servers s LEFT JOIN server_compat c ON c.server=s.id LEFT JOIN server_coop o ON o.server=s.id WHERE s.last_seen>? ORDER BY s.name LIMIT 128',[$this->now-90]);
+        if($route==='/api/servers'){$this->q("UPDATE matches SET ended=?,status=CASE WHEN status='lobby' THEN 'cancelled' ELSE 'abandoned' END WHERE ended=0 AND server IN (SELECT id FROM servers WHERE last_seen<?)",[$this->now,$this->now-90]);$servers=$this->rows('SELECT s.id,s.name,s.endpoint,s.engine,s.map,s.mods,s.players,s.capacity,s.password,s.region,s.kind,s.status,c.versions,o.ai_style,CASE WHEN v.server IS NULL THEN 0 ELSE 1 END AS voting FROM servers s LEFT JOIN server_compat c ON c.server=s.id LEFT JOIN server_coop o ON o.server=s.id LEFT JOIN server_voting v ON v.server=s.id WHERE s.last_seen>? ORDER BY s.name LIMIT 128',[$this->now-90]);
             foreach($servers as &$server){$server['client_versions']=json_decode($server['versions']??'[]',true)?:[];unset($server['versions']);}
             unset($server);
             return ['servers'=>$servers];}
         if($route==='/api/friends'){demand($uid,'Sign in first',401);return ['friends'=>$this->rows('SELECT u.id,u.name,f.status,f.a AS requester FROM friends f JOIN users u ON u.id=CASE WHEN f.a=? THEN f.b ELSE f.a END WHERE f.a=? OR f.b=?',[$uid,$uid,$uid])];}
-        if($route==='/api/matches'){demand($uid,'Sign in first',401);return ['matches'=>$this->rows("SELECT m.* FROM matches m JOIN participants p ON p.match=m.id WHERE p.user=? AND m.status NOT IN ('lobby','cancelled') ORDER BY started DESC LIMIT 50",[$uid])];}
+        if($route==='/api/matches'){
+            demand($uid,'Sign in first',401);
+            $matches=$this->rows("SELECT m.*,p.result AS your_result FROM matches m
+                JOIN participants p ON p.match=m.id WHERE p.user=? AND m.status NOT IN ('lobby','cancelled')
+                ORDER BY m.started DESC LIMIT 50",[$uid]);
+            foreach($matches as &$match){
+                $match['keepers']=$this->rows('SELECT u.name,p.result,CASE WHEN r.party=mine.party THEN 1 ELSE 0 END AS together
+                    FROM participants p JOIN users u ON u.id=p.user
+                    LEFT JOIN match_party_roster r ON r.match=p.match AND r.user=p.user
+                    LEFT JOIN match_party_roster mine ON mine.match=p.match AND mine.user=?
+                    WHERE p.match=? ORDER BY together DESC,u.name',[$uid,$match['id']]);
+                $replay=$this->one("SELECT id FROM replays WHERE match=? ORDER BY id LIMIT 1",[$match['id']]);
+                $match['replay_id']=$replay['id']??'';
+            }
+            unset($match);
+            return ['matches'=>$matches];
+        }
         if($route==='/api/leaderboard'){
             $rows=$this->rows("SELECT u.id,u.name,COUNT(*) AS matches,SUM(CASE WHEN p.result='won' THEN 1 ELSE 0 END) AS wins FROM users u JOIN participants p ON p.user=u.id JOIN matches m ON m.id=p.match WHERE u.public=1 AND m.verification='verified' AND m.ended>0 GROUP BY u.id,u.name ORDER BY wins DESC,matches DESC,u.name ASC LIMIT 100");
             foreach($rows as &$row){$row['matches']=(int)$row['matches'];$row['wins']=(int)$row['wins'];}unset($row);

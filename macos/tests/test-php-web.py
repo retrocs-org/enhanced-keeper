@@ -369,26 +369,66 @@ class PHPWebsiteTests(unittest.TestCase):
         self.assertEqual(error.exception.code, 409)
         for member in (owner, friend):
             party(member, 'readiness', revision=selected['target']['revision'], message='Ready')
+        prefix='/api/servers/'+server['id']
+        earlier_ticket=call(prefix+'/join', {}, stranger['token'])['identity_ticket']
         party(owner, 'prompt', server=server['id'])
+        for path, body, token in [
+            (prefix+'/join', {}, stranger['token']),
+            (prefix+'/admit', {'peer':1, 'occupied':1, 'ticket':earlier_ticket}, server['secret']),
+        ]:
+            with self.assertRaises(urllib.error.HTTPError) as error:
+                call(path, body, token)
+            self.assertEqual(error.exception.code,409)
+            self.assertIn('reserved',json.load(error.exception)['error'])
+        dsn=('mysql:unix_socket='+os.environ['KFX_TEST_MYSQL_SOCKET']+';dbname='+self.mysql_database
+             if hasattr(self,'mysql_database') else str(Path(self.temp.name)/'test.sqlite3'))
+        check_expiry = '''define('KFX_API_INTERNAL',true);require 'public-web/lib/Hub.php';
+        $hub=new KeeperHub($argv[1],'','','',microtime(true)+61,['user'=>'root','password'=>'','migrate'=>false]);
+        $result=$hub->handle('POST',$argv[2],[],$argv[3]);
+        if(empty($result['identity_ticket']))exit(1);'''
+        subprocess.run(['php','-r',check_expiry,dsn,prefix+'/join',stranger['token']],cwd=ROOT,
+                       check=True,capture_output=True)
         with self.assertRaises(urllib.error.HTTPError) as error:
             party(owner, 'prompt', server=server['id'])
         self.assertEqual(error.exception.code, 409)
         invited=party(friend)
         self.assertEqual(invited['prompt']['id'], server['id'])
         prompt=invited['prompt']['idempotency_key']
-        self.assertEqual({p['join'] for p in invited['members']}, {'Invited'})
+        self.assertTrue(invited['prompt']['reserved'])
+        self.assertTrue(0<invited['prompt']['seconds_remaining']<=60)
+        self.assertEqual({p['join'] for p in invited['members']}, {'Reserved'})
         with self.assertRaises(urllib.error.HTTPError) as error:
             party(stranger, 'join-progress', prompt=prompt, message='In Lobby')
         self.assertEqual(error.exception.code, 403)
         party(friend, 'join-progress', prompt=prompt, message='Joining')
         party(friend, 'join-progress', prompt=prompt, message='In Lobby')
-        self.assertEqual({p['id']:p['join'] for p in party(owner)['members']},
-                         {owner['id']:'Invited', friend['id']:'In Lobby'})
+        self.assertEqual({p['join'] for p in party(owner)['members']}, {'Reserved'})
         self.assertIsNone(party(stranger)['prompt'])
-        call('/api/servers/'+server['id']+'/heartbeat', {'map': 'classic:52'}, server['secret'])
+        prefix='/api/servers/'+server['id']
+        for peer, member in enumerate((owner, friend), 1):
+            ticket=call(prefix+'/join', {}, member['token'])['identity_ticket']
+            call(prefix+'/admit', {'ticket':ticket, 'peer':peer, 'occupied':1|(2 if peer==2 else 0)}, server['secret'])
+        self.assertEqual({p['join'] for p in party(owner)['members']}, {'In Lobby'})
+        call(prefix+'/heartbeat', {'status':'lobby','players':1,'occupied':1,'lobby_epoch':''},server['secret'])
+        self.assertEqual({p['join'] for p in party(owner)['members']}, {'In Lobby'})
+        call(prefix+'/heartbeat', {'map':'classic:52','status':'playing','players':3}, server['secret'])
         changed = party(friend)
         self.assertIsNone(changed['prompt'])
         self.assertEqual({p['readiness'] for p in changed['members']}, {'Server changed. Select it again.'})
+        call(prefix+'/close', {'departed':[friend['id']]},server['secret'])
+        history_url=self.origin+'/api/matches'
+        with urllib.request.urlopen(urllib.request.Request(history_url,headers={'Authorization':'Bearer '+owner['token']})) as reply:
+            before=json.load(reply)['matches']
+        self.assertEqual(len(before),1)
+        self.assertEqual(before[0]['map'],'classic:52')
+        self.assertEqual({(p['name'],p['result'],p['together']) for p in before[0]['keepers']},
+                         {('PartyOwner','',1),('PartyFriend','disconnected',1)})
+        import base64
+        replay=call('/api/replays', {'match':before[0]['id'],'data':base64.b64encode(b'replay fixture').decode()},owner['token'])
+        with urllib.request.urlopen(urllib.request.Request(history_url,headers={'Authorization':'Bearer '+owner['token']})) as reply:
+            self.assertEqual(json.load(reply)['matches'][0]['replay_id'],replay['id'])
+        with urllib.request.urlopen(urllib.request.Request(history_url,headers={'Authorization':'Bearer '+stranger['token']})) as reply:
+            self.assertEqual(json.load(reply)['matches'],[])
         party(owner, 'kick', user=friend['id'])
         self.assertEqual(party(friend)['party'], '')
         self.assertIsNone(party(friend)['prompt'])

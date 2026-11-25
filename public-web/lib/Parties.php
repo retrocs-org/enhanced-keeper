@@ -12,11 +12,13 @@ trait HubParties {
         $id=$party['id'];
         if($party['owner']===$user)$this->q('DELETE FROM party_joins WHERE prompt=?',[$party['prompt']]);
         if($party['owner']!==$user){
+            $this->q('DELETE FROM party_seat_holds WHERE party=? AND user=?',[$id,$user]);
             $this->q('DELETE FROM party_members WHERE party=? AND user=?',[$id,$user]);
             $this->q('DELETE FROM party_checks WHERE party=? AND user=?',[$id,$user]);
+            $this->q('DELETE FROM party_map_votes WHERE party=? AND user=?',[$id,$user]);
             return;
         }
-        foreach(['party_messages','party_invites','party_members','party_checks','party_targets'] as $table){
+        foreach(['party_messages','party_invites','party_members','party_checks','party_targets','party_ballots','party_map_votes','party_seat_holds'] as $table){
             $this->q("DELETE FROM $table WHERE party=?",[$id]);
         }
         $this->q('DELETE FROM party_rooms WHERE id=?',[$id]);
@@ -36,8 +38,8 @@ trait HubParties {
     }
 
     private function partyServer(string $id): array|false {
-        return $this->one('SELECT s.id,s.name,s.engine,s.map,s.mods,s.kind,s.status,s.players,s.capacity,s.password,c.versions
-            FROM servers s LEFT JOIN server_compat c ON c.server=s.id WHERE s.id=? AND s.last_seen>?',
+        return $this->one('SELECT s.id,s.name,s.engine,s.map,s.mods,s.kind,s.status,s.players,s.capacity,s.password,s.rotation,c.versions,CASE WHEN v.server IS NULL THEN 0 ELSE 1 END AS voting
+            FROM servers s LEFT JOIN server_compat c ON c.server=s.id LEFT JOIN server_voting v ON v.server=s.id WHERE s.id=? AND s.last_seen>?',
             [$id,$this->now-90]);
     }
 
@@ -50,6 +52,31 @@ trait HubParties {
         if($server['password'])return 'Server requires a password';
         if($server['capacity']-$server['players']<$count)return 'Not enough room for the party';
         return '';
+    }
+
+    private function resetPartyTarget(array $party,array $server): void {
+        $id=$party['id'];
+        $this->q('DELETE FROM party_seat_holds WHERE party=?',[$id]);
+        $this->q('DELETE FROM party_targets WHERE party=?',[$id]);
+        $this->q('DELETE FROM party_checks WHERE party=?',[$id]);
+        $this->q('INSERT INTO party_targets VALUES(?,?,?,?)',
+            [$id,$server['id'],bin2hex(random_bytes(12)),$this->partyServerSignature($server)]);
+        $this->q('DELETE FROM party_joins WHERE prompt=?',[$party['prompt']]);
+        $this->q("UPDATE party_rooms SET server='',prompt='',prompt_expires=0 WHERE id=?",[$id]);
+    }
+
+    private function partyBallot(array $party,string $user): ?array {
+        $ballot=$this->one('SELECT * FROM party_ballots WHERE party=? AND expires>?',[$party['id'],$this->now]);
+        if(!$ballot)return null;
+        $server=$this->partyServer($ballot['server']);
+        if(!$server)return null;
+        $maps=json_decode($server['rotation'],true)?:[];
+        $votes=$this->rows('SELECT v.user,v.map FROM party_map_votes v JOIN party_members m
+            ON m.party=v.party AND m.user=v.user WHERE v.party=?',[$party['id']]);
+        $counts=array_count_values(array_column($votes,'map'));
+        return ['winning'=>$ballot['winning'],'server'=>$server['name'],
+            'options'=>array_map(static fn($map)=>['map'=>$map,'votes'=>(int)($counts[$map]??0)],$maps),
+            'choice'=>array_column($votes,'map','user')[$user]??''];
     }
 
     private function partyState(string $user,string $friend='',string $reading=''): array {
@@ -99,9 +126,19 @@ trait HubParties {
                 $server=$this->one("SELECT id,name FROM servers WHERE id=? AND last_seen>? AND status='lobby'",
                     [$party['server'],$this->now-90]);
                 if($server){
-                    $prompt=$server+['idempotency_key'=>$party['prompt']];
+                    $prompt=$server+['idempotency_key'=>$party['prompt'],
+                        'seconds_remaining'=>(int)ceil($party['prompt_expires']-$this->now)];
+                    $held=$this->rows('SELECT user FROM party_seat_holds WHERE party=? AND server=? AND expires>?',
+                        [$party['id'],$server['id'],$this->now]);
+                    $prompt['reserved']=(bool)$held;
+                    $joined=$held?array_column($this->rows("SELECT i.user FROM identities i JOIN matches m ON m.id=i.match
+                        WHERE m.server=? AND m.status='lobby' AND m.ended=0",[$server['id']]),'user'):[];
                     $results=array_column($this->rows('SELECT user,result FROM party_joins WHERE prompt=?',[$party['prompt']]),'result','user');
-                    foreach($members as &$member)$member['join']=$results[$member['id']]??'Invited';
+                    foreach($members as &$member){
+                        $reported=$results[$member['id']]??($held?'Reserved':'Invited');
+                        $member['join']=in_array($member['id'],$joined,true)?'In Lobby':
+                            ($held&&$reported==='In Lobby'?'Reserved':$reported);
+                    }
                     unset($member);
                 }
             }
@@ -127,7 +164,7 @@ trait HubParties {
             WHERE m.party=? AND m.sender<>? AND m.created>COALESCE(r.seen,0)',
             [$user,'p-'.$party['id'],$party['id'],$user])['total']:0;
         return ['unread'=>(int)array_sum($counts)+$partyUnread,'party_unread'=>$partyUnread,'conversation'=>$friend, 'friend_messages'=>$direct, 'party'=>$party['id']??'', 'owner'=>$party['owner']??'', 'friends'=>$friends,
-            'invites'=>$invites, 'members'=>$members, 'messages'=>$messages, 'prompt'=>$prompt, 'target'=>$target];
+            'invites'=>$invites, 'members'=>$members, 'messages'=>$messages, 'prompt'=>$prompt, 'target'=>$target,'ballot'=>$party?$this->partyBallot($party,$user):null];
     }
 
     private function partyWrite(string $route,array $data,?string $user): ?array {
@@ -183,6 +220,7 @@ trait HubParties {
                 demand((int)$this->one('SELECT COUNT(*) AS size FROM party_members WHERE party=?',[$id])['size']<4,'Party is full',409);
                 demand($this->q('INSERT OR IGNORE INTO party_members VALUES(?,?)',[$user,$id])->rowCount()===1,'Already in a party',409);
                 $this->q('DELETE FROM party_invites WHERE recipient=?',[$user]);
+                $this->q('DELETE FROM party_seat_holds WHERE party=?',[$id]);
                 $this->q('DELETE FROM party_joins WHERE prompt=(SELECT prompt FROM party_rooms WHERE id=?)',[$id]);
                 $this->q("UPDATE party_rooms SET server='',prompt='',prompt_expires=0 WHERE id=?",[$id]);
             }
@@ -203,6 +241,13 @@ trait HubParties {
                 $result=trim(api_text($data['message']??null,160));
                 $this->q('DELETE FROM party_joins WHERE prompt=? AND user=?',[$prompt,$user]);
                 $this->q('INSERT INTO party_joins VALUES(?,?,?)',[$prompt,$user,$result]);
+            }elseif($action==='map-vote'){
+                $map=api_text($data['map']??null,80);
+                $ballot=$this->partyBallot($party,$user);
+                demand($ballot&&$ballot['winning']===''&&in_array($map,array_column($ballot['options'],'map'),true),
+                    'Choose a map from the open ballot',409);
+                $this->q('DELETE FROM party_map_votes WHERE party=? AND user=?',[$id,$user]);
+                $this->q('INSERT INTO party_map_votes VALUES(?,?,?)',[$id,$user,$map]);
             }elseif($action==='readiness'){
                 $revision=api_text($data['revision']??null,24);
                 $target=$this->one('SELECT revision FROM party_targets WHERE party=?',[$id]);
@@ -218,20 +263,51 @@ trait HubParties {
                     demand($member!==$user,'Use Leave Party to disband');
                     demand($this->q('DELETE FROM party_members WHERE party=? AND user=?',[$id,$member])->rowCount()===1,'Player is not in this party',404);
                     $this->q('DELETE FROM party_checks WHERE party=? AND user=?',[$id,$member]);
+                    $this->q('DELETE FROM party_map_votes WHERE party=? AND user=?',[$id,$member]);
+                    $this->q('DELETE FROM party_seat_holds WHERE party=? AND user=?',[$id,$member]);
+                }elseif($action==='open-map-vote'){
+                    $server=api_text($data['server']??null,32);
+                    $listing=$this->partyServer($server);
+                    demand($listing&&$listing['voting']&&$listing['status']==='lobby','This lobby does not allow map voting',409);
+                    demand(!$this->one("SELECT 1 FROM party_ballots WHERE party=? AND winning<>'' AND expires>?",[$id,$this->now]),
+                        'The previous selection is still loading',409);
+                    demand(count(json_decode($listing['rotation'],true)?:[])>1,'This lobby has one map',409);
+                    $this->q('DELETE FROM party_ballots WHERE party=?',[$id]);
+                    $this->q('DELETE FROM party_map_votes WHERE party=?',[$id]);
+                    $this->q('INSERT INTO party_ballots VALUES(?,?,?,?)',[$id,$server,'',$this->now+180]);
+                }elseif($action==='confirm-map-vote'){
+                    $map=api_text($data['map']??null,80);
+                    $ballot=$this->partyBallot($party,$user);
+                    $selection=$this->one('SELECT server FROM party_ballots WHERE party=?',[$id]);
+                    demand($ballot&&$ballot['winning']===''&&$selection,'Map vote expired',409);
+                    $counts=array_column($ballot['options'],'votes','map');
+                    demand(($counts[$map]??0)>0&&$counts[$map]===max($counts),'Confirm a map tied for the most votes',409);
+                    if($this->mysql)$this->one('SELECT id FROM servers WHERE id=? FOR UPDATE',[$selection['server']]);
+                    $listing=$this->partyServer($selection['server']);
+                    demand($listing&&$listing['voting']&&$listing['status']==='lobby','The lobby is unavailable',409);
+                    if($map===$listing['map']){
+                        $this->resetPartyTarget($party,$listing);
+                        $this->q('DELETE FROM party_ballots WHERE party=?',[$id]);
+                    }else{
+                        demand((int)$listing['players']===1,'The server must be empty before changing maps',409);
+                        demand(!$this->lobbyHeldUsers($listing['id'],[],true),'Wait for lobby seat holds to expire before changing maps',409);
+                        demand(!$this->one("SELECT 1 FROM party_ballots WHERE server=? AND winning<>'' AND expires>?".($this->mysql?" FOR UPDATE":""),
+                            [$listing['id'],$this->now]),'The server is already changing maps',409);
+                        $this->q('UPDATE party_ballots SET winning=?,expires=? WHERE party=?',[$map,$this->now+45,$id]);
+                    }
+
                 }elseif($action==='select-server'||$action==='prompt'){
                     $server=api_text($data['server']??null,32);
+                    $locked=$action==='prompt'?$this->lockLobby($server):null;
                     $row=$this->partyServer($server);
                     $count=(int)$this->one('SELECT COUNT(*) AS size FROM party_members WHERE party=?',[$id])['size'];
                     $blocker=$this->partyServerBlocker($row,$count);
                     demand($blocker==='',$blocker,409);
                     $signature=$this->partyServerSignature($row);
                     if($action==='select-server'){
-                        $this->q('DELETE FROM party_targets WHERE party=?',[$id]);
-                        $this->q('DELETE FROM party_checks WHERE party=?',[$id]);
-                        $this->q('INSERT INTO party_targets VALUES(?,?,?,?)',[$id,$server,bin2hex(random_bytes(12)),$signature]);
-                        $this->q('DELETE FROM party_joins WHERE prompt=?',[$party['prompt']]);
-                        $this->q("UPDATE party_rooms SET server='',prompt='',prompt_expires=0 WHERE id=?",[$id]);
+                        $this->resetPartyTarget($party,$row);
                     }else{
+                        demand(!$this->partyBallot($party,$user),'Finish the map vote first',409);
                         $target=$this->one('SELECT * FROM party_targets WHERE party=?',[$id]);
                         demand($target&&$target['server']===$server&&$target['signature']===$signature,'Select the server to check readiness',409);
                         demand((float)$party['prompt_expires']<=$this->now,'Join prompt already sent',409);
@@ -239,9 +315,28 @@ trait HubParties {
                             ON m.party=c.party AND m.user=c.user WHERE m.party=? AND c.result='Ready' AND c.seen>?",
                             [$id,$this->now-20])['size'];
                         demand($ready===$count,'Wait until everyone is ready',409);
+                        demand($locked&&$locked['status']==='lobby'&&$locked['last_seen']>$this->now-90&&
+                            $locked['map']===$row['map']&&$locked['mods']===$row['mods'],'Server lobby changed. Select it again.',409);
+                        demand(!$this->one("SELECT 1 FROM party_ballots WHERE server=? AND winning<>'' AND expires>?".
+                            ($this->mysql?' FOR UPDATE':''),[$server,$this->now]),'Lobby is changing maps',409);
+                        $reserved=in_array($locked['kind'],['dedicated','community'],true);
+                        $expires=$this->now+($reserved?60:90);
+                        $this->q('DELETE FROM party_seat_holds WHERE party=?',[$id]);
+                        if($reserved){
+                            $match=$this->one("SELECT id FROM matches WHERE server=? AND ended=0 AND status='lobby'",[$server]);
+                            demand($match,'Server lobby unavailable',409);
+                            $joined=array_column($this->lobbyAdmissions($match['id'],true),'user');
+                            $held=$this->lobbyHeldUsers($server,$joined,true);
+                            $members=array_column($this->rows('SELECT user FROM party_members WHERE party=?',[$id]),'user');
+                            $unused=count(array_diff($members,$joined,$held));
+                            demand(max((int)$locked['players'],count($joined)+1)+count($held)+$unused<=(int)$locked['capacity'],
+                                'The lobby has too few unreserved seats for your party.',409);
+                            foreach($members as $member)$this->q('INSERT INTO party_seat_holds VALUES(?,?,?,?)',
+                                [$server,$id,$member,$expires]);
+                        }
                         $this->q('DELETE FROM party_joins WHERE prompt=?',[$party['prompt']]);
                         $this->q('UPDATE party_rooms SET server=?,prompt=?,prompt_expires=? WHERE id=?',
-                            [$server,bin2hex(random_bytes(12)),$this->now+90,$id]);
+                            [$server,bin2hex(random_bytes(12)),$expires,$id]);
                     }
                 }else throw new ApiProblem(404,'Unknown party action');
             }

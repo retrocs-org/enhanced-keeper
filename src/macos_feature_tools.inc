@@ -65,9 +65,11 @@ void feature_draw(){
         button(24,312,284,label_model<0?"Labels: Auto":label_model?"Labels: DualSense":"Labels: Xbox",895,selected==5,40);button(332,312,284,quick_wheel_enabled?"R3 wheel: On":"R3 wheel: Off",894,selected==6,40);
         button(24,366,592,"Test and calibrate controller",896,selected==7,40);
     }else if(page==16){
-        const char *names[]={"Standard","Large Text and Cursor","Captions and Comfort","Reduced Camera Movement"};for(int i=0;i<4;i++)button(50,98+i*56,540,names[i],880+i,selected==i,44);
-        text(24,337,"Caption duration",20,280);text(330,337,std::to_string(kfx_caption_seconds)+" sec",20,170);button(524,330,40,"-",890,false,36);button(572,330,40,"+",891,selected==4,36);
-        text(24,387,"Camera pan speed",20,280);text(330,387,std::to_string((int)round(kfx_camera_pan_scale*100))+"%",20,170);button(524,380,40,"-",892,false,36);button(572,380,40,"+",893,selected==5,36);
+        const char *names[]={"Standard","Large Text and Cursor","Captions and Comfort","Reduced Camera Movement"};for(int i=0;i<4;i++)button(50,94+i*44,540,names[i],880+i,selected==i,36);
+        const char *motion[]={"Title: Animated","Title: Still Artwork","Title: Skip"};
+        button(50,275,540,motion[title_motion_mode],899,selected==4,38);
+        text(24,337,"Caption duration",20,280);text(330,337,std::to_string(kfx_caption_seconds)+" sec",20,170);button(524,330,40,"-",890,false,36);button(572,330,40,"+",891,selected==5,36);
+        text(24,387,"Camera pan speed",20,280);text(330,387,std::to_string((int)round(kfx_camera_pan_scale*100))+"%",20,170);button(524,380,40,"-",892,false,36);button(572,380,40,"+",893,selected==6,36);
     }else if(page==17&&!saves.empty()){
         Save entry=selected_save();centered(88,short_text(entry.title,38),24);std::string base=save_base(entry);bool protected_save=access((base+".protected").c_str(),F_OK)==0;
         button(64,136,512,editing==5?save_alias+"|":"Rename Save",1000,selected==0||editing==5,44);button(64,202,512,protected_save?"Favourite: Protected":"Protect as Favourite",1001,selected==1,44);button(64,268,512,"Preview Backups",1003,selected==2,44);button(64,334,512,protected_save?"Unprotect before deleting":"Move Save to Trash",1004,selected==3,44);

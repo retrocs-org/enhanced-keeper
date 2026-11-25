@@ -125,6 +125,8 @@ time_t last_autosave=0;
 int report_offset=0,help_parent=2;
 bool capture_preview=false;
 int editing=0,save_filter=0,backup_choice=0,focus_action=-1;
+bool save_timeline=false;
+int title_motion_mode=0;
 std::vector<Save> all_saves;
 SDL_Process *diagnostic_process=nullptr;
 Uint8 repeat_button=255;
@@ -362,11 +364,11 @@ void menu_cursor(){
 }
 void filter_saves(){
     saves.clear();std::string query=save_search;std::transform(query.begin(),query.end(),query.begin(),[](unsigned char c){return std::tolower(c);});
-    for(const Save &entry:all_saves){if(entry.backup)continue;bool automatic=automatic_save(entry);if((save_filter==1&&automatic)||(save_filter==2&&!automatic)||(save_filter==3&&!entry.favourite))continue;
+    for(const Save &entry:all_saves){if(entry.backup&&!save_timeline)continue;bool automatic=automatic_save(entry);if((save_filter==1&&automatic)||(save_filter==2&&!automatic)||(save_filter==3&&!entry.favourite))continue;
         std::string haystack=entry.title+" "+entry.campaign+" "+std::to_string(entry.level);std::transform(haystack.begin(),haystack.end(),haystack.begin(),[](unsigned char c){return std::tolower(c);});if(haystack.find(query)!=std::string::npos)saves.push_back(entry);
     }
     // Orphaned backup groups remain recoverable if the current save was removed.
-    for(const Save &entry:all_saves)if(entry.backup){bool automatic=automatic_save(entry);if((save_filter==1&&automatic)||(save_filter==2&&!automatic)||(save_filter==3&&!entry.favourite))continue;std::string haystack=entry.title+" "+entry.campaign+" "+std::to_string(entry.level);std::transform(haystack.begin(),haystack.end(),haystack.begin(),[](unsigned char c){return std::tolower(c);});if(haystack.find(query)==std::string::npos)continue;bool grouped=false;for(const Save &current:all_saves)if(!current.backup&&current.slot==entry.slot)grouped=true;if(!grouped){bool duplicate=false;for(const Save &current:saves)if(current.slot==entry.slot)duplicate=true;if(!duplicate)saves.push_back(entry);}}
+    if(!save_timeline)for(const Save &entry:all_saves)if(entry.backup){bool automatic=automatic_save(entry);if((save_filter==1&&automatic)||(save_filter==2&&!automatic)||(save_filter==3&&!entry.favourite))continue;std::string haystack=entry.title+" "+entry.campaign+" "+std::to_string(entry.level);std::transform(haystack.begin(),haystack.end(),haystack.begin(),[](unsigned char c){return std::tolower(c);});if(haystack.find(query)==std::string::npos)continue;bool grouped=false;for(const Save &current:all_saves)if(!current.backup&&current.slot==entry.slot)grouped=true;if(!grouped){bool duplicate=false;for(const Save &current:saves)if(current.slot==entry.slot)duplicate=true;if(!duplicate)saves.push_back(entry);}}
     save_index=std::clamp(save_index,0,std::max(0,(int)saves.size()-1));backup_choice=0;
 }
 Save selected_save(){if(saves.empty())return {};Save current=saves[save_index];if(backup_choice)for(const Save &entry:all_saves)if(entry.slot==current.slot&&entry.backup==backup_choice)return entry;return current;}
@@ -573,6 +575,8 @@ void change(int row,int direction){
     persist();
     if(page==5 && row<2)notice="Choose Apply Display to use and save these display settings.";
 }
+std::string profiles_base();
+int find_cloud_slot(int,int);
 void activate(int action){
     if(action>=0)do_sound_menu_click();
     if(enhancement_action(action)||play_tools_action(action)||browser_action(action)||feature_action(action)||polish_action(action))return;
@@ -596,8 +600,41 @@ void activate(int action){
     if(action==501){if(!display_confirmation)return;if(SDL_GetTicks()>=display_deadline){display_confirmation=false;rollback_display=true;notice="Confirmation expired. Restoring the previous display.";return;}display_confirmation=false;saved_display_mode=display_mode;saved_resolution=resolution_index;persist();unlink(profile_file("display-startup.pending").c_str());notice="Display settings kept.";return;}
     if(action==502){display_confirmation=false;rollback_display=true;notice="Restoring previous display...";return;}
     if(action==307){preview_large=true;return;}
+    if((action==1007||action==1008)&&!saves.empty()){
+        if(game.game_kind!=GKind_Unset||network_is_active()){notice="Return to the main menu to recover a copy.";return;}
+        const auto entry=selected_save();
+        int slot=find_cloud_slot(0,1);
+        if(slot<0){notice="All local save slots are full.";return;}
+        char filename[32];snprintf(filename,sizeof(filename),"fx1g%04d.sav",slot);
+        const auto destination=path(filename);
+        if(!copy_exclusive(entry.path,destination)){notice="Could not copy the save.";return;}
+        for(const char *suffix:{".requirements",".json",".png"}){
+            if(access((entry.path+suffix).c_str(),R_OK)==0&&!copy_exclusive(entry.path+suffix,destination+suffix)){
+                for(const char *created:{"",".requirements",".json",".png"})unlink((destination+created).c_str());
+                notice="Could not copy the save details.";return;
+            }
+        }
+        if(action==1008&&!write_small_file(destination+".protected","1\n")){
+            for(const char *suffix:{"",".requirements",".json",".png"})unlink((destination+suffix).c_str());
+            notice="Could not pin the recovered copy.";return;
+        }
+        load_game_save_catalogue();
+        scan_saves();
+        if(page==12)page=2;
+        const auto fresh=std::find_if(saves.begin(),saves.end(),[slot](const Save &row){return row.slot==slot;});
+        if(fresh!=saves.end())save_index=static_cast<int>(fresh-saves.begin());
+        notice=action==1008?"Pinned a copy in a free slot.":"Copy recovered into a free slot.";
+        return;
+    }
+    if(action==899){
+        const int mode=(title_motion_mode+1)%3;
+        if(write_small_file(profiles_base()+"/title-motion.cfg",std::to_string(mode)+"\n"))title_motion_mode=mode;
+        else notice="Could not store the title preference.";
+        return;
+    }
     if(action==308){preview_large=false;return;}
     if(action==304){start_edit(1);return;}
+    if(action==312){save_timeline=!save_timeline;save_index=0;filter_saves();return;}
     if(action==305){save_filter=(save_filter+1)%4;save_index=0;filter_saves();return;}
     if(action==306){save_search.clear();save_index=0;filter_saves();return;}
     if(action>=320&&action<324&&!saves.empty()){save_index=std::min((int)saves.size()-1,(save_index/4)*4+action-320);backup_choice=0;page=12;return;}
@@ -696,7 +733,7 @@ void confirm_control(){
     else if(page==0||page==1||page==7)change(selected,1);
     else if(page==5){if(selected==3)activate(500);else change(selected,1);}
     else if(page==2)activate(saves.empty()&&has_named_player_profile()?310:309);
-    else if(page==12)activate(302);
+    else if(page==12)activate(save_timeline?1007:302);
     else if(page==9)activate(selected?815:600);
     else if(page==10)activate(601);
     else if(page==11)activate(selected?603:602);
@@ -707,7 +744,7 @@ void confirm_control(){
     else if(page==14)activate(selected?812:811);
     else if(page==15){const int actions[]={860,861,862,863,864,895,894,896};activate(actions[selected]);}
     else if(page==26)activate(selected?898:897);
-    else if(page==16)activate(selected<4?880+selected:selected==4?891:893);
+    else if(page==16)activate(selected<4?880+selected:selected==4?899:selected==5?891:893);
     else if(page==17){const int actions[]={1000,1001,1003,1004};activate(actions[selected]);}
     else if(page==18)activate(selected?1006:1005);
     else if(page==19){const int actions[]={1100,1102,1101};activate(actions[selected]);}
@@ -778,6 +815,7 @@ void delete_input(){
 #include "macos_feature_tools.inc"
 #include "macos_server_browser.inc"
 
+
 void captions_draw(){
     if(!kfx_mentor_captions||caption.empty()||SDL_GetTicks()>=caption_until||!winfont)return;
     int width=RendererScreenWidth();int saved_flags=RendererGetDrawFlags();
@@ -785,6 +823,8 @@ void captions_draw(){
     int units=std::max(16,(int)(24*kfx_caption_scale*16/std::max(1,(int)LbTextLineHeight())));LbTextDrawResized(0,0,units,caption.c_str());RendererSetDrawFlags(saved_flags);
 }
 }
+
+extern "C" int kfx_title_motion_preference(){return title_motion_mode;}
 
 int kfx_quick_game_key(long key){if(quick_key>=0&&SDL_GetTicks()>quick_key_until)quick_key=-1;if(quick_key!=key)return 0;quick_key=-1;return 1;}
 void kfx_save_feedback(int success,int automatic,const char *reason){
@@ -804,6 +844,11 @@ void kfx_options_initialize(void){
     // Movies follow the configured menu mode, then any saved in-game override.
     set_movies_vidmode(get_frontend_vidmode());
     feature_init();load_network_profile();browser_initialize();
+    if(FILE *motion=fopen((profiles_base()+"/title-motion.cfg").c_str(),"r")){
+        int mode=0;
+        if(fscanf(motion,"%d",&mode)==1&&mode>=0&&mode<=2)title_motion_mode=mode;
+        fclose(motion);
+    }
     for(int i=0;i<4;i++)if(start_params.num_fps_draw_main==caps[i])preset=i;
     actions.clear();for(int i=0;i<GAME_KEYS_COUNT;i++)if(game_key_settings[i].binding_menu_visibility!=BMV_Hidden && game_key_settings[i].binding_menu_visibility!=BMV_KeyMouseOnly)actions.push_back(i);
     FILE *file=fopen(path("macos-options.cfg").c_str(),"r");if(!file)return;
@@ -1066,10 +1111,19 @@ void kfx_options_draw(void){
     }else if(page==7){
         frame(24,90,592,256);row(0,"Menu / caption text",std::to_string((int)round(kfx_text_scale*100))+"%");row(1,"Cursor / hand size",std::to_string((int)round(kfx_cursor_scale*100))+"%");row(2,"Edge scrolling",kfx_edge_scroll?"On":"Off");row(3,"Scroll border",std::to_string(kfx_edge_border)+" pixels");row(4,"Mentor captions",kfx_mentor_captions?"On":"Off");button(24,350,284,"Presets",841,selected==5,40);button(332,350,284,"Comfort / Text",1530,selected==6,40);
     }else if(page==2){
-        small_line(24,78,autosave_status(),592);
+        small_line(24,78,save_timeline?"Recovery timeline / Newest first":autosave_status(),389);
+        button(425,75,191,save_timeline?"Grouped Saves":"Recovery Timeline",312,false,27);
         button(24,106,386,std::string("Search: ")+save_search+(editing==1?"|":""),304,editing==1,40);const char *filters[]={"All saves","Manual","Automatic","Favourites"};button(426,106,190,filters[save_filter],305,false,40);
         if(saves.empty())centered(212,"No matching saved games.",24);
-        int offset=(save_index/4)*4;for(int i=0;i<4&&offset+i<(int)saves.size();i++)button(24,156+i*50,592,(saves[offset+i].favourite?"* ":"")+saves[offset+i].title,320+i,offset+i==save_index,42);
+        const int offset=(save_index/4)*4;
+        for(int i=0;i<4&&offset+i<(int)saves.size();i++){
+            const auto &entry=saves[offset+i];
+            const std::string title=(entry.favourite?"* ":"")+entry.title;
+            if(save_timeline){
+                button(24,149+i*52,592,title,320+i,offset+i==save_index,31);
+                small_line(35,181+i*52,entry.date+" / "+entry.campaign+" / Map "+std::to_string(entry.level),568);
+            }else button(24,156+i*50,592,title,320+i,offset+i==save_index,42);
+        }
         button(24,366,160,"Previous",300);button(456,366,160,"Next",301);if(has_named_player_profile()){
             button(179,366,113,"Recovery",1550);
             button(299,366,149,"Import Old Saves",310);
@@ -1085,7 +1139,8 @@ void kfx_options_draw(void){
             const Save &group=saves[save_index];if(!group.backup)button(24,376,140,"Current",340,backup_choice==0,36);
             for(int number=1;number<=3;number++){bool exists=false;for(const Save &older:all_saves)if(older.slot==group.slot&&older.backup==number)exists=true;if(exists)button(24+number*148,376,140,"Backup "+std::to_string(number),340+number,entry.backup==number,36);}
             button(24,426,284,entry.backup?"Restore and Load":"Load Saved Game",302,false,42);button(332,426,284,"Return to Saves",901,false,42);
-            if(kfx_hub_has_session()&&!entry.backup&&!automatic_save(entry))button(434,340,182,"Back Up",2181,false,32);
+            if(save_timeline){button(273,340,165,"Pin Copy",1008,false,32);button(452,340,164,"Recover Copy",1007,false,32);}
+            else if(kfx_hub_has_session()&&!entry.backup&&!automatic_save(entry))button(434,340,182,"Back Up",2181,false,32);
         }
     }else if(page==3){
         if(!actions.empty()){

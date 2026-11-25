@@ -17,7 +17,8 @@ return <<<'SQL'
         CREATE TABLE IF NOT EXISTS servers(id TEXT PRIMARY KEY,name TEXT,endpoint TEXT,engine TEXT,map TEXT,mods TEXT,players INTEGER,capacity INTEGER,password INTEGER,region TEXT,kind TEXT,owner TEXT,secret TEXT,last_seen REAL,status TEXT,rotation TEXT);
         CREATE TABLE IF NOT EXISTS friends(a TEXT,b TEXT,status TEXT,PRIMARY KEY(a,b));
         CREATE TABLE IF NOT EXISTS matches(id TEXT PRIMARY KEY,server TEXT,started REAL,ended REAL DEFAULT 0,map TEXT,engine TEXT,status TEXT DEFAULT 'playing',winner TEXT DEFAULT '',verification TEXT DEFAULT 'casual');
-        CREATE TABLE IF NOT EXISTS participants(match TEXT,user TEXT,result TEXT DEFAULT '',PRIMARY KEY(match,user));
+        CREATE TABLE IF NOT EXISTS match_party_roster(match TEXT,user TEXT,party TEXT NOT NULL,PRIMARY KEY(match,user));
+CREATE TABLE IF NOT EXISTS participants(match TEXT,user TEXT,result TEXT DEFAULT '',PRIMARY KEY(match,user));
         CREATE TABLE IF NOT EXISTS events(id TEXT PRIMARY KEY,owner TEXT,title TEXT,kind TEXT,starts REAL,description TEXT);
         CREATE TABLE IF NOT EXISTS bracket(event TEXT,round INTEGER,position INTEGER,a TEXT,b TEXT,winner TEXT,match TEXT UNIQUE,status TEXT,PRIMARY KEY(event,round,position));
         CREATE TABLE IF NOT EXISTS entrants(event TEXT,user TEXT,PRIMARY KEY(event,user));
@@ -30,6 +31,12 @@ return <<<'SQL'
         
 CREATE TABLE IF NOT EXISTS game_presence(user TEXT PRIMARY KEY,seen REAL NOT NULL);
 CREATE TABLE IF NOT EXISTS game_activity(user TEXT PRIMARY KEY,activity TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS server_voting(server TEXT PRIMARY KEY);
+CREATE TABLE IF NOT EXISTS party_ballots(party TEXT PRIMARY KEY,server TEXT NOT NULL,winning TEXT NOT NULL,expires REAL NOT NULL);
+CREATE TABLE IF NOT EXISTS party_map_votes(party TEXT NOT NULL,user TEXT NOT NULL,map TEXT NOT NULL,PRIMARY KEY(party,user));
+CREATE TABLE IF NOT EXISTS lobby_epochs(server TEXT PRIMARY KEY,epoch TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS party_seat_holds(server TEXT NOT NULL,party TEXT NOT NULL,user TEXT NOT NULL,expires REAL NOT NULL,PRIMARY KEY(server,party,user));
+CREATE INDEX IF NOT EXISTS party_seat_holds_party ON party_seat_holds(party);
 CREATE TABLE IF NOT EXISTS party_rooms(id TEXT PRIMARY KEY,owner TEXT NOT NULL,server TEXT NOT NULL DEFAULT '',prompt TEXT NOT NULL DEFAULT '',prompt_expires REAL NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS party_joins(prompt TEXT NOT NULL,user TEXT NOT NULL,result TEXT NOT NULL,PRIMARY KEY(prompt,user));
 CREATE TABLE IF NOT EXISTS party_targets(party TEXT PRIMARY KEY,server TEXT NOT NULL,revision TEXT NOT NULL,signature TEXT NOT NULL);
