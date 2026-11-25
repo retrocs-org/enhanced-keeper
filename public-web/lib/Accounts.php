@@ -84,6 +84,7 @@ trait HubAccounts {
         $this->q('DELETE FROM party_invites WHERE recipient=?',[$uid]);
         $this->q('DELETE FROM party_messages WHERE sender=?',[$uid]);
         $this->q('DELETE FROM friend_messages WHERE sender=? OR recipient=?',[$uid,$uid]);
+        $this->q('DELETE FROM cloud_save_requirements WHERE id IN (SELECT id FROM cloud_saves WHERE user=?)',[$uid]);
         foreach(['cloud_saves','social_reads','game_activity','game_presence','sessions','devices','recovery','tickets','cloud_profiles','cloud_settings','cloud_email_changes','participants','identities','entrants','completions'] as $table)
             $this->q("DELETE FROM $table WHERE user=?",[$uid]);
         $this->q('DELETE FROM friends WHERE a=? OR b=?',[$uid,$uid]);
@@ -106,10 +107,20 @@ trait HubAccounts {
             demand(is_string($encoded)&&strlen($encoded)<=2796204,'Save backup exceeds 2 MiB',413);
             $raw=base64_decode($encoded,true);
             demand($raw!==false&&strlen($raw)>32&&strlen($raw)<=2097152,'Invalid save data');
+            $requirements=$data['requirements']??'';
+            demand(is_string($requirements)&&strlen($requirements)<=131072,'Invalid save requirements');
+            if($requirements!==''){
+                $manifest=base64_decode($requirements,true);
+                demand($manifest!==false&&str_starts_with($manifest,"KFXREQ2\n"),'Invalid save requirements');
+            }
             if($this->mysql)$this->one('SELECT id FROM users WHERE id=? FOR UPDATE',[$uid]);
             $existing=$this->rows('SELECT id FROM cloud_saves WHERE user=? ORDER BY created DESC,id DESC',[$uid]);
             $this->q('INSERT INTO cloud_saves VALUES(?,?,?,?,?,?)',[$id,$uid,$title,$device,$this->now,$encoded]);
-            foreach(array_slice($existing,7) as $backup)$this->q('DELETE FROM cloud_saves WHERE user=? AND id=?',[$uid,$backup['id']]);
+            if($requirements!=='')$this->q('INSERT INTO cloud_save_requirements VALUES(?,?)',[$id,$requirements]);
+            foreach(array_slice($existing,7) as $backup){
+                $this->q('DELETE FROM cloud_save_requirements WHERE id=?',[$backup['id']]);
+                $this->q('DELETE FROM cloud_saves WHERE user=? AND id=?',[$uid,$backup['id']]);
+            }
             return ['id'=>$id];
         }
         if($route==='/api/cloud/settings'){
@@ -175,6 +186,14 @@ trait HubAccounts {
                 $row=$byEmail
                     ?$this->one('SELECT u.* FROM users u JOIN cloud_profiles p ON p.user=u.id WHERE p.email=?',[strtolower($name)])
                     :$this->one('SELECT * FROM users WHERE name=?',[$name]);
+                if(!$row&&$cloudLogin&&function_exists('web_settings')&&kfx_smtp_ready()){
+                    $field=$byEmail?'email':'name';
+                    $pending=$this->one("SELECT * FROM cloud_signup WHERE $field=? AND expires>? ORDER BY expires DESC LIMIT 1",
+                        [$byEmail?strtolower($name):$name,$this->now-86400]);
+                    if($pending&&hash_equals($pending['password'],$this->passwordHash($password,$pending['salt']))){
+                        return ['pending_cloud_activation'=>$pending];
+                    }
+                }
                 $hash=$this->passwordHash($password,$row['salt']??str_repeat('00',16));
                 demand($row&&hash_equals($row['password'],$hash),$cloudLogin?'Username, email address or password is incorrect':'Name or password is incorrect',401);
                 $uid=$row['id'];

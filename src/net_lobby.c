@@ -147,7 +147,24 @@ TbError process_login_message(NetUserId source, char *read_pos, const char *end_
     if (dedicated) {
         const char *version = read_login_text(&read_pos, end_pos, 32);
         const char *feature = getenv("KFX_DEDICATED_COOP") ? read_login_text(&read_pos,end_pos,16) : NULL;
-        const TbBool coop_supported = !getenv("KFX_DEDICATED_COOP") || (feature && strcmp(feature,"coop-v1")==0);
+        const char *ai_style=getenv("KFX_DEDICATED_AI_STYLE");
+        const TbBool default_style=!ai_style||strcmp(ai_style,"defensive")==0;
+        const char *style_feature=feature&&!default_style?read_login_text(&read_pos,end_pos,16):NULL;
+        const TbBool coop_supported = !getenv("KFX_DEDICATED_COOP") ||
+            (feature&&strcmp(feature,"coop-v1")==0&&(default_style||
+                (style_feature&&strcmp(style_feature,"ai-style-v1")==0)));
+        if(getenv("KFX_DEDICATED_COOP")){
+            extern int autostart_multiplayer_users_expected;
+            int humans=0;
+            for(NetUserId id=1;id<netstate.max_users;++id){
+                if(netstate.users[id].progress==USER_LOGGEDIN)++humans;
+            }
+            if(humans>=autostart_multiplayer_users_expected-1){
+                NETMSG("All co-op human seats are occupied");
+                netstate.sp->drop_user(source);
+                return Lb_OK;
+            }
+        }
         if (!dedicated_client_allowed(version) || !coop_supported || !net_versions_match(&user->version, &net_current_version)) {
             NETMSG("Dedicated server refused an unsupported Keeper Enhanced client version");
             netstate.sp->drop_user(source);
@@ -235,7 +252,7 @@ TbError LbNetwork_ExchangeLogin(char *player_name)
     NETMSG("Logging in as %s", player_name);
     const char *ticket = kfx_hub_login_ticket();
     size_t ticket_size = ticket[0] ? strlen(ticket) + 1 : 0;
-    if (sizeof("coop-v1") + sizeof(KFX_APP_VERSION) + ticket_size + 1 + strlen(netstate.password) + 1 + strlen(player_name) + 1 + sizeof(net_current_version) >= sizeof(netstate.msg_buffer)) {
+    if (sizeof("coop-v1") + sizeof("ai-style-v1") + sizeof(KFX_APP_VERSION) + ticket_size + 1 + strlen(netstate.password) + 1 + strlen(player_name) + 1 + sizeof(net_current_version) >= sizeof(netstate.msg_buffer)) {
         ERRORLOG("Login credentials too long");
         return Lb_FAIL;
     }
@@ -254,6 +271,8 @@ TbError LbNetwork_ExchangeLogin(char *player_name)
     write_pos += sizeof(KFX_APP_VERSION);
     memcpy(write_pos,"coop-v1",sizeof("coop-v1"));
     write_pos += sizeof("coop-v1");
+    memcpy(write_pos,"ai-style-v1",sizeof("ai-style-v1"));
+    write_pos += sizeof("ai-style-v1");
     send_message_buffer(SERVER_ID, write_pos);
     TbClockMSec wait_start_time = LbTimerClock();
     while (LbTimerClock() - wait_start_time < TIMEOUT_JOIN_LOBBY + (ticket_size ? 6000 : 0)) {
@@ -337,17 +356,22 @@ TbError LbNetwork_Create(char *nsname_str, char *plyr_name, uint32_t *plyr_num, 
     return Lb_OK;
 }
 
+const char *kfx_join_failure_reason="";
+
 TbError LbNetwork_Join(struct TbNetworkSessionNameEntry *nsname, char *plyr_name, int32_t *plyr_num, void *optns)
 {
+    kfx_join_failure_reason="";
     if (!netstate.sp) {
         ERRORLOG("No network SP selected");
         return Lb_FAIL;
     }
     if (netstate.sp->join(nsname->text, optns) == Lb_FAIL) {
+        kfx_join_failure_reason="No UDP reply. Check the address and firewall, then retry.";
         return Lb_FAIL;
     }
     netstate.my_id = INVALID_USER_ID;
     if (LbNetwork_ExchangeLogin(plyr_name) == Lb_FAIL) {
+        kfx_join_failure_reason="Server reached, but lobby admission failed. Check password, slots, or client version.";
         return Lb_FAIL;
     }
     *plyr_num = netstate.my_id;

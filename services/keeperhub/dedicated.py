@@ -30,11 +30,14 @@ def supported_clients(engine):
     output = subprocess.check_output([str(engine), '--supported-client-versions'], text=True, timeout=5)
     return output.splitlines()
 
-def rpc(port):
+def rpc(port,action="get_network_info"):
     with socket.create_connection(('127.0.0.1',port),timeout=2) as c:
-        c.sendall(b'{"action":"get_network_info","ack":1}\n');raw=b''
-        while b'\n' not in raw and len(raw)<65536:raw+=c.recv(4096)
-        value=json.loads(raw.split(b'\n',1)[0]);return value.get('data',{}) if value.get('success') else {}
+        c.sendall((json.dumps({'action':action,'ack':1})+'\n').encode());raw=b''
+        while b'\n' not in raw and len(raw)<65536:
+            chunk=c.recv(4096)
+            if not chunk:break
+            raw+=chunk
+        value=json.loads(raw.split(b'\n',1)[0]);return (value.get('data') or {}) if action=='get_network_info' else bool(value.get('success'))
 
 class NatPmpMapping:
     """Maintain a UDP forwarding lease on the default IPv4 gateway."""
@@ -105,6 +108,8 @@ def validate(config):
     for field in ('engine_binary','user_data','name','rotation'):assert field in config,'Missing '+field
     engine=Path(config['engine_binary']).resolve();profile=Path(config['user_data']).resolve();assert engine.is_file() and os.access(engine,os.X_OK),'Engine is not executable';assert any((profile/'GameData'/n).is_file() for n in ('keeper-enhanced.cfg','keeperfx.cfg')),'Prepare a separate dedicated profile first';assert '.app/' not in str(profile),'User data must be outside the application';assert 1<=config.get('humans',1)<=3,'Dedicated mode supports 1–3 humans plus its AI';assert config['rotation'] and len(config['rotation'])<=32,'Choose 1–32 maps'
     for item in config['rotation']:assert re.fullmatch('[A-Za-z0-9_-]{1,63}',item['campaign']) and type(item['level'])==int and 0<item['level']<=99999,'Invalid map'
+    assert config.get('ai_style','defensive') in ('defensive','balanced','rush'),'Invalid AI style'
+    assert type(config.get('manual_start',False)) is bool,'manual_start must be true or false'
     assert type(config.get('cooperative', False)) is bool, 'cooperative must be true or false'
     assert config.get('visibility','public') in ('private','public'),'Visibility must be private or public'
     assert type(config.get('port',5556)) is int and 1<=config.get('port',5556)<=65535,'Invalid gameplay port'
@@ -116,15 +121,31 @@ def validate(config):
     assert config.get('hub_url','').startswith(('http://127.0.0.1:','http://localhost:','https://')),'Use local HTTP or HTTPS';return engine,profile
 
 class Host:
-    def __init__(self,config):self.config=config;self.engine,self.profile=validate(config);self.stop=False;self.next=False;self.process=None;self.index=0;self.status={};self.lock=threading.Lock()
+    def __init__(self,config):self.config=config;self.engine,self.profile=validate(config);self.stop=False;self.next=False;self.process=None;self.index=0;self.status={};self.lobby_override=None;self.api_port=None;self.lock=threading.Lock()
     def command(self,line):
         try:
-            command=json.loads(line).get('command')
+            data=json.loads(line)
+            command=data.get('command')
             if command=='stop':self.stop=True
             elif command=='next':self.next=True
+            elif command=='setup':
+                if not self.config.get('cooperative'):
+                    raise ValueError('Setup requires a co-op server')
+                map_index, humans, style = data.get('map'), data.get('humans'), data.get('ai_style')
+                if type(map_index) is not int or not 0 <= map_index < len(self.config['rotation']):
+                    raise ValueError('Choose a map index from the configured rotation')
+                if type(humans) is not int or not 1 <= humans <= 3 or style not in ('defensive','balanced','rush'):
+                    raise ValueError('Choose 1–3 human seats and defensive, balanced or rush AI')
+                with self.lock:
+                    self.lobby_override=(map_index,humans,style)
+                print('Co-op setup queued for the next lobby.',flush=True)
+            elif command=='start':
+                if not self.api_port or not rpc(self.api_port,'start_coop_lobby'):
+                    raise ValueError('Manual co-op needs at least one human in the lobby before starting')
+                print('Checking lobby readiness before starting.',flush=True)
             elif command=='status':print(json.dumps(self.status),flush=True)
-            else:print('Unknown command; use status, next or stop',file=sys.stderr)
-        except (ValueError,AttributeError):print('Expected a JSON command',file=sys.stderr)
+            else:print('Unknown command; use setup, status, next or stop',file=sys.stderr)
+        except (ValueError,AttributeError,OSError) as error:print('Invalid command:',error,file=sys.stderr)
     def finish_child(self):
         if self.process and self.process.poll() is None:
             self.process.terminate()
@@ -139,7 +160,7 @@ class Host:
             self._run_locked()
     def _run_locked(self):
         cfg=self.config;public=cfg.get('visibility','public')=='public';base=cfg.get('hub_url','').rstrip('/');key=os.environ.get('KFX_HUB_ADMIN_KEY','');state=self.profile/'dedicated';state.mkdir(mode=0o700,exist_ok=True)
-        stopfile=state/'stop.request';nextfile=state/'next.request';stopfile.unlink(missing_ok=True);nextfile.unlink(missing_ok=True)
+        startfile=state/'start.request';startfile.unlink(missing_ok=True);stopfile=state/'stop.request';nextfile=state/'next.request';stopfile.unlink(missing_ok=True);nextfile.unlink(missing_ok=True)
         version=server_version(self.engine) if public else ''
         clients=supported_clients(self.engine) if public else []
         endpoint=cfg.get('endpoint') or ''
@@ -148,7 +169,16 @@ class Host:
             if mapping:
                 mapping.refresh()
                 endpoint=mapping.endpoint
-            item=cfg['rotation'][self.index%len(cfg['rotation'])];self.index+=1;self.next=False
+            map_index=self.index%len(cfg['rotation'])
+            humans=cfg.get('humans',1)
+            ai_style=cfg.get('ai_style','defensive')
+            with self.lock:
+                if self.lobby_override is not None:
+                    map_index,humans,ai_style=self.lobby_override
+                    self.lobby_override=None
+            self.index=map_index+1
+            item=cfg['rotation'][map_index]
+            self.next=False
             with socket.socket() as sock:sock.bind(('127.0.0.1',0));api_port=sock.getsockname()[1]
             runtime=self.profile/'GameData';gamecfg=runtime/'keeper-enhanced.cfg';legacy=runtime/'keeperfx.cfg';text=(gamecfg if gamecfg.exists() else legacy).read_text();text=re.sub(r'(?mi)^\s*(?:API_ENABLED|API_PORT|RENDERER)\s*=.*\n?','',text);gamecfg.write_text(text+f'\nAPI_ENABLED=TRUE\nAPI_PORT={api_port}\nRENDERER=SOFTWARE\n')
             room={'id':secrets.token_hex(12),'secret':''}
@@ -160,6 +190,8 @@ class Host:
                     'rotation': [f"{v['campaign']}:{v['level']}" for v in cfg['rotation']],
                     'password': bool(os.environ.get('KFX_SERVER_PASSWORD')),
                 }
+                if cfg.get('cooperative'):
+                    registration['coop']={'humans':humans,'ai_style':ai_style}
                 if endpoint:
                     registration['endpoint'] = endpoint
                 if key:
@@ -177,10 +209,16 @@ class Host:
                 env['KFX_PUBLIC_DEDICATED']='1'
                 env.pop('KFX_HUB_ADMIN_KEY',None)
             env.pop('KFX_DEDICATED_COOP',None)
-            if cfg.get('cooperative'):env['KFX_DEDICATED_COOP']='1'
+            env.pop('KFX_DEDICATED_AI_STYLE',None)
+            env.pop('KFX_COOP_MANUAL_START',None)
+            if cfg.get('cooperative'):
+                env['KFX_DEDICATED_COOP']='1'
+                env['KFX_DEDICATED_AI_STYLE']=ai_style
+                if cfg.get('manual_start'):env['KFX_COOP_MANUAL_START']='1'
             if cfg.get('app_resources'):env['KFX_APP_RESOURCES']=cfg['app_resources']
-            replay=state/(room['id']+'.pck');port=int(cfg.get('port',5556));args=[str(runtime/'keeperfx'),'-nointro','-server',str(port),'-campaign',item['campaign'],'-level',str(item['level']),'-waitusers',str(cfg.get('humans',1)+1),'-nosound','-nick',cfg.get('ai_name','ServerAI'),'-packetsave',str(replay),'-log','dedicated.log']
+            replay=state/(room['id']+'.pck');port=int(cfg.get('port',5556));args=[str(runtime/'keeperfx'),'-nointro','-server',str(port),'-campaign',item['campaign'],'-level',str(item['level']),'-waitusers',str(humans+1),'-nosound','-nick',cfg.get('ai_name','ServerAI'),'-packetsave',str(replay),'-log','dedicated.log']
             log=open(state/'engine-output.log','ab');self.process=subprocess.Popen(args,executable=str(self.engine),cwd=runtime,env=env,stdout=log,stderr=subprocess.STDOUT);offset=0;had_game=False;failures=0;verified=False;stream_truncated=False
+            self.api_port=api_port
             print('Headless lobby ready:',cfg['name'],'map',item['campaign'],item['level'],flush=True)
             try:
                 while not self.stop and not self.next and self.process.poll() is None:
@@ -189,7 +227,10 @@ class Host:
                     try:
                         if stopfile.exists():self.stop=True;stopfile.unlink();break
                         if nextfile.exists():self.next=True;nextfile.unlink();break
-                        status=rpc(api_port);self.status={**status,'server_id':room['id'],'map':item};(state/'status.json').write_text(json.dumps(self.status));failures=0
+                        if startfile.exists():
+                            startfile.unlink()
+                            self.command('{"command":"start"}')
+                        status=rpc(api_port);self.status={**status,'server_id':room['id'],'map':item,'humans':humans,'ai_style':ai_style,'cooperative':bool(cfg.get('cooperative'))};(state/'status.json').write_text(json.dumps(self.status));failures=0
                         if status.get('turn',0)>0 and status.get('active'):had_game=True
                         if spectators and replay.exists() and not stream_truncated:
                             with replay.open('rb') as f:f.seek(offset);raw=f.read(32768)
@@ -207,7 +248,7 @@ class Host:
                         if failures>30:raise RuntimeError('Headless engine status unavailable for one minute')
                     time.sleep(1)
             finally:
-                self.finish_child();log.close()
+                self.api_port=None;self.finish_child();log.close()
                 if spectators and replay.exists() and not stream_truncated:
                     with replay.open('rb') as f:
                         f.seek(offset)
@@ -221,8 +262,26 @@ class Host:
                 except Exception:pass
             if self.process.returncode and not self.stop and not self.next:raise RuntimeError('Engine exited unexpectedly; inspect dedicated/engine-output.log')
 
+def lobby_setup(config):
+    print('Co-op lobby setup: Human keepers vs server AI')
+    for index, item in enumerate(config['rotation'], 1):
+        print(f"  {index}. {item['campaign']}:{item['level']}")
+    map_number=int(input('Map number: '))
+    humans=int(input('Human seats (1–3): '))
+    style=input('AI style (defensive, balanced, rush): ').strip().lower()
+    if not 1 <= map_number <= len(config['rotation']):
+        raise ValueError('Choose a map from the rotation')
+    if not 1 <= humans <= 3 or style not in ('defensive','balanced','rush'):
+        raise ValueError('Choose 1–3 human seats and defensive, balanced or rush AI')
+    return dict(config, cooperative=True, humans=humans, ai_style=style,
+                rotation=[config['rotation'][map_number-1]])
+
 def main():
-    p=argparse.ArgumentParser();p.add_argument('config',type=Path);p.add_argument('--check',action='store_true');a=p.parse_args();cfg=json.loads(a.config.read_text());validate(cfg)
+    p=argparse.ArgumentParser();p.add_argument('config',type=Path);p.add_argument('--check',action='store_true');p.add_argument('--setup',action='store_true');a=p.parse_args();cfg=json.loads(a.config.read_text())
+    if a.setup:
+        try:cfg=lobby_setup(cfg)
+        except (ValueError,EOFError) as error:p.error(str(error))
+    validate(cfg)
     if a.check:print('Dedicated configuration is valid');return
     host=Host(cfg);signal.signal(signal.SIGTERM,lambda *_:setattr(host,'stop',True));signal.signal(signal.SIGINT,lambda *_:setattr(host,'stop',True))
     def commands():

@@ -264,3 +264,21 @@ to the new address. Apply the additive schema migration before using these
 controls on MariaDB. Password changes revoke other sessions and old recovery
 codes. Account deletion removes the cloud profile and personal associations
 while keeping anonymized match records and local saves.
+
+
+Dedicated operators can run `python3 dedicated.py server.json --setup` to pick a
+map from the configured rotation, set the human seats, and select Defensive,
+Balanced, or Rush AI before starting the lobby. For unattended startup, set
+`cooperative`, `humans`, `rotation`, and `ai_style` in the JSON configuration.
+For a host running with an interactive command stream, send
+`{"command":"setup","map":0,"humans":2,"ai_style":"rush"}` to configure its next
+lobby. The command uses a zero-based map index. Older clients can still join
+Defensive co-op. Balanced and Rush require the updated client.
+
+
+Set `"manual_start": true` on a dedicated co-op server to keep its lobby open
+until the operator starts it. Once at least one human has joined, send
+`{"command":"start"}` on the interactive command stream or create the
+`dedicated/start.request` file in the server profile. The lobby checks the
+connected players' versions and content before starting. The server status
+includes the readiness report.

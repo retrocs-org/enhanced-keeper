@@ -33,7 +33,7 @@ for attempt in range(100):
 else:raise RuntimeError('Native PHP API did not start')
 processes=[];supervisor=None;hostthread=None
 
-app=Path(os.environ.get('KFX_TEST_APP','/Applications/Keeper-Enhanced.app'));launcher=app/'Contents/MacOS'/plistlib.loads((app/'Contents/Info.plist').read_bytes())['CFBundleExecutable'];engine=app/'Contents/Resources/game/keeper-enhanced'
+app=Path(os.environ.get('KFX_TEST_APP','/Applications/Keeper-Enhanced.app'));launcher=app/'Contents/MacOS'/plistlib.loads((app/'Contents/Info.plist').read_bytes())['CFBundleExecutable'];engine=Path(os.environ.get('KFX_TEST_CLIENT_ENGINE',str(app/'Contents/Resources/game/keeper-enhanced'))).resolve()
 def port(udp=False):
  with socket.socket(socket.AF_INET,socket.SOCK_DGRAM if udp else socket.SOCK_STREAM) as s:s.bind(('127.0.0.1',0));return s.getsockname()[1]
 def profile(name):
@@ -74,10 +74,11 @@ def launch(p,apiport,token=None,endpoint=None,client_engine=engine):
 coop_mode=os.environ.get('KFX_TEST_COOP')
 test_coop=coop_mode in ('1','3')
 coop_humans=3 if coop_mode=='3' else 2
+manual_start=os.getenv('KFX_TEST_MANUAL_COOP')=='1'
 test_party=test_coop or os.environ.get('KFX_TEST_PARTY')=='1'
 lobby_only=test_party or os.environ.get('KFX_TEST_LOBBY_ONLY')=='1'
 try:
- hostprofile=profile('host');hostport=port(True);cfg=dict(name='Local Dedicated QA',engine_binary=os.environ.get('KFX_TEST_SERVER_ENGINE',str(engine)),user_data=str(hostprofile),hub_url=base,endpoint='127.0.0.1:'+str(hostport),visibility='public',port=hostport,rotation=[{'campaign':'original','level':52}],humans=coop_humans if test_coop else 3 if test_party else 2 if lobby_only else 1,cooperative=test_coop,spectators=not lobby_only,app_resources=str(app/'Contents/Resources'));os.environ['KFX_HUB_ADMIN_KEY']=hub.admin_key;supervisor=ded.Host(cfg);hosterrors=[]
+ hostprofile=profile('host');hostport=port(True);cfg=dict(name='Local Dedicated QA',engine_binary=os.environ.get('KFX_TEST_SERVER_ENGINE',str(engine)),user_data=str(hostprofile),hub_url=base,endpoint='127.0.0.1:'+str(hostport),visibility='public',port=hostport,rotation=[{'campaign':'original','level':52}],manual_start=manual_start,humans=3 if manual_start else coop_humans if test_coop else 3 if test_party else 2 if lobby_only else 1,cooperative=test_coop,ai_style=os.getenv('KFX_TEST_AI_STYLE','defensive'),spectators=not lobby_only,app_resources=str(app/'Contents/Resources'));os.environ['KFX_HUB_ADMIN_KEY']=hub.admin_key;supervisor=ded.Host(cfg);hosterrors=[]
  def run_host():
   try:supervisor.run()
   except Exception:hosterrors.append(traceback.format_exc())
@@ -99,16 +100,19 @@ try:
   launch(buddy_profile,buddy_port,buddy['token'])
   until(lambda:rpc(clientport,'community_status')['party_members']==2)
   rpc(clientport,'community_action',command=2121)
+  until(lambda:rpc(clientport,'community_status').get('party_ready'))
+  rpc(clientport,'community_action',command=2135)
   until(lambda:rpc(buddy_port,'community_status')['party_prompt']==cfg['name'])
   rpc(buddy_port,'community_action',command=2120)
   rpc(buddy_port,'community_action',command=2128)
   until(lambda:rpc(buddy_port).get('active') and any(v.get('account')==member['id'] for v in supervisor.status.get('users',[])))
   def buddy_in_lobby():
    state=hub.handle('POST','/api/party',{'action':'state'},user['token'])
-   return next((friend for friend in state['friends'] if friend['id']==member['id'] and friend.get('status')=='lobby'),None)
+   return any(friend['id']==member['id'] and friend.get('status')=='lobby' for friend in state['friends']) and any(
+    row['id']==member['id'] and row.get('join')=='In Lobby' for row in state['members'])
   until(buddy_in_lobby,seconds=20)
   print('PASS: the invited client joins through the party prompt and friends see its lobby status',flush=True)
- rpc(clientport,'community_action',command=2040)
+ rpc(clientport,'community_action',command=2128 if test_party else 2040)
  if test_coop:
   ports=[clientport,buddy_port]
   if coop_humans==3:
@@ -121,8 +125,14 @@ try:
    rpc(third_port,'community_action',command=2010)
    rpc(third_port,'community_action',command=2040)
    ports.append(third_port)
+  if manual_start:
+   until(lambda:sum(bool(row.get('account')) for row in supervisor.status.get('users',[]))==2)
+   assert all(rpc(apiport).get('turn',0)==0 for apiport in ports)
+   supervisor.command('{"command":"start"}')
   until(lambda:all(rpc(apiport).get('turn',0)>20 for apiport in ports),seconds=75)
-  assert all(rpc(apiport)['coop_human_team'] for apiport in ports)
+  expected_style={'defensive':0,'balanced':1,'rush':2}[cfg['ai_style']]
+  assert all(rpc(apiport)['coop_human_team'] and
+             rpc(apiport)['dedicated_ai_style']==expected_style for apiport in ports)
   print(f'PASS: {coop_humans} humans play on one team against the dedicated AI',flush=True)
  elif lobby_only:
   until(lambda:rpc(clientport).get('active') and any(user.get('account') for user in supervisor.status.get('users',[])))

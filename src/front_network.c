@@ -572,15 +572,13 @@ void frontnet_send_campaign_change_message(const char* campaign_fname)
     send_network_chat_message(netstate.my_id, msg);
 }
 
+TbBool kfx_manual_coop_start_requested=false;
+
 void handle_autostart_multiplayer_messaging(void)
 {
     static int previous_enum_players = 0;
     TbBool player_joined = (net_number_of_enum_players > previous_enum_players);
     previous_enum_players = net_number_of_enum_players;
-
-    if (net_number_of_enum_players < autostart_multiplayer_users_expected) {
-        return;
-    }
 
     if (player_joined && network_is_host()) {
         frontnet_send_campaign_change_message(campaign.fname);
@@ -588,6 +586,9 @@ void handle_autostart_multiplayer_messaging(void)
     if (!network_is_host() || get_selected_level_number() > SINGLEPLAYER_NOTSTARTED) {
         return;
     }
+    const TbBool manual=getenv("KFX_DEDICATED_COOP")&&getenv("KFX_COOP_MANUAL_START");
+    if(manual ? (!kfx_manual_coop_start_requested||net_number_of_enum_players<2) :
+        net_number_of_enum_players<autostart_multiplayer_users_expected)return;
     if (autostart_multiplayer_campaign[0] == '\0' && autostart_multiplayer_level <= 0) {
         return;
     }
@@ -602,6 +603,7 @@ void handle_autostart_multiplayer_messaging(void)
     }
     snprintf(player->mp_message_text, PLAYER_MP_MESSAGE_LEN, "%s:%d", camp, level);
     lbInkey = KC_RETURN;
+    kfx_manual_coop_start_requested=false;
 }
 
 void frontnet_start_update(void)

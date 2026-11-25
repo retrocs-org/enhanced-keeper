@@ -21,6 +21,10 @@
 #include "frontend.h"
 #if defined(__APPLE__)
 #include "macos_game_options.h"
+#include <SDL3/SDL.h>
+#include <algorithm>
+#include <cmath>
+#include <vector>
 #endif
 
 #include <string.h>
@@ -3298,6 +3302,95 @@ void draw_debug_messages() {
  * Frontend drawing function.
  * @return Gives 0 if a movie has started, 1 if normal draw occured, 2 on error.
  */
+#if defined(__APPLE__)
+static bool draw_keeper_title()
+{
+    static bool attempted=false;
+    static SDL_Surface *title=nullptr;
+    static Uint64 deadline=0,last_frame=0;
+    static std::vector<unsigned char> pixels;
+    struct LightPixel { size_t offset; float phase; float strength; int layer; };
+    static std::vector<LightPixel> lights;
+    if(!attempted){
+        attempted=true;
+        const char *resources=getenv("KFX_APP_RESOURCES");
+        if(resources&&!getenv("KFX_HEADLESS")){
+            char filename[DISKPATH_SIZE];
+            int length=snprintf(filename,sizeof(filename),"%s/keeper-title.png",resources);
+            if(length>0&&length<(int)sizeof(filename)){
+                SDL_Surface *loaded=SDL_LoadPNG(filename);
+                if(loaded){
+                    title=SDL_ConvertSurface(loaded,SDL_PIXELFORMAT_RGBA32);
+                    SDL_DestroySurface(loaded);
+                }
+            }
+        }
+        if(title){
+            const auto *source=static_cast<const unsigned char *>(title->pixels);
+            pixels.assign(source,source+static_cast<size_t>(title->pitch)*title->h);
+            for(int y=0;y<title->h;++y)for(int x=0;x<title->w;++x){
+                const float nx=static_cast<float>(x)/title->w,ny=static_cast<float>(y)/title->h;
+                const size_t offset=static_cast<size_t>(y)*title->pitch+x*4;
+                const auto *rgb=source+offset;
+                const float ember=std::clamp((rgb[0]-rgb[2]-65)/140.f,0.f,1.f);
+                if(ny>.77f&&nx>.25f&&nx<.68f&&rgb[0]>145&&ember>.18f){
+                    lights.push_back({offset,67.f*ny+17.f*nx,ember,0});
+                }else{
+                    // Two local light pools around the braziers; the lettering is outside both.
+                    const float left=std::hypot(nx-.405f,(ny-.66f)*.72f);
+                    const float right=std::hypot(nx-.69f,(ny-.66f)*.72f);
+                    const float brightness=std::max(0.f,1.f-std::min(left,right)/.075f);
+                    if(brightness>.08f)lights.push_back({offset,0.f,brightness*brightness,left<right?1:2});
+                }
+            }
+        }
+        deadline=SDL_GetTicks()+4200;
+    }
+    if(!title)return false;
+    const Uint64 now=SDL_GetTicks();
+    if(now>=deadline||lbInkey!=KC_UNASSIGNED){
+        SDL_DestroySurface(title);
+        title=nullptr;
+        std::vector<unsigned char>().swap(pixels);
+        std::vector<LightPixel>().swap(lights);
+        return false;
+    }
+    if(now-last_frame>=33){
+        const float seconds=(now+4200-deadline)/1000.f;
+        const float fire[]={0.f,std::sin(seconds*11)+.35f*std::sin(seconds*23),
+            std::sin(seconds*9+1.f)+.3f*std::sin(seconds*19)};
+        const auto *source=static_cast<const unsigned char *>(title->pixels);
+        for(const auto &light:lights){
+            const float intensity=light.layer==0
+                ? 38.f*std::sin(light.phase-seconds*10.f)+12.f*std::sin(light.phase*.43f-seconds*5.f)
+                : 27.f*fire[light.layer];
+            const float delta=intensity*light.strength;
+            const float warmth[]={1.f,.64f,.25f};
+            for(size_t channel=0;channel<3;++channel){
+                const size_t index=light.offset+channel;
+                pixels[index]=static_cast<unsigned char>(std::clamp(source[index]+delta*warmth[channel],0.f,255.f));
+            }
+        }
+        last_frame=now;
+    }
+    const int width=RendererScreenWidth(),height=RendererScreenHeight();
+    RendererPresentImageDesc image={};
+    image.dst_w=std::min(width,height*title->w/title->h);
+    image.dst_h=image.dst_w*title->h/title->w;
+    image.dst_x=(width-image.dst_w)/2;
+    image.dst_y=(height-image.dst_h)/2;
+    image.src=pixels.data();
+    image.src_w=title->w;
+    image.src_h=title->h;
+    image.src_pitch=title->pitch;
+    image.format=PRESENT_FORMAT_RGBA8;
+    image.kind=PRESENT_KIND_OPAQUE;
+    image.filter=PRESENT_FILTER_NEAREST;
+    image.exclusive=1;
+    return RendererPresentImage(&image);
+}
+#endif
+
 short frontend_draw(void)
 {
     poll_inputs();
@@ -3328,6 +3421,10 @@ short frontend_draw(void)
     switch ( frontend_menu_state )
     {
     case FeSt_MAIN_MENU:
+#if defined(__APPLE__)
+        if (draw_keeper_title()) break;
+#endif
+        [[fallthrough]];
     case FeSt_FELOAD_GAME:
     case FeSt_NET_SERVICE:
     case FeSt_NET_SESSION:

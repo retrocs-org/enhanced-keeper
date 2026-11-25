@@ -23,6 +23,7 @@ DMG="$OUT/Keeper-Enhanced-$VERSION-macOS-Universal.dmg"
 [[ "$IDENTITY" == - ]] || "$ROOT/macos/signing-preflight.sh" "$IDENTITY"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 ditto "$GAME" "$APP/Contents/Resources/game"
+install -m 644 "$ROOT/macos/packaging/keeper-title.png" "$APP/Contents/Resources/keeper-title.png"
 install -m 644 "$ROOT/public-web/assets/avatars/presets.png" "$APP/Contents/Resources/avatar-presets.png"
 # A distributable package must not contain files imported from the owner's CD,
 # personal progress, generated caches, or previous executable signatures.

@@ -31,6 +31,7 @@ return <<<'SQL'
 CREATE TABLE IF NOT EXISTS game_presence(user TEXT PRIMARY KEY,seen REAL NOT NULL);
 CREATE TABLE IF NOT EXISTS game_activity(user TEXT PRIMARY KEY,activity TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS party_rooms(id TEXT PRIMARY KEY,owner TEXT NOT NULL,server TEXT NOT NULL DEFAULT '',prompt TEXT NOT NULL DEFAULT '',prompt_expires REAL NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS party_joins(prompt TEXT NOT NULL,user TEXT NOT NULL,result TEXT NOT NULL,PRIMARY KEY(prompt,user));
 CREATE TABLE IF NOT EXISTS party_targets(party TEXT PRIMARY KEY,server TEXT NOT NULL,revision TEXT NOT NULL,signature TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS party_checks(party TEXT NOT NULL,user TEXT NOT NULL,result TEXT NOT NULL,seen REAL NOT NULL,PRIMARY KEY(party,user));
 CREATE TABLE IF NOT EXISTS party_members(user TEXT PRIMARY KEY,party TEXT NOT NULL);
@@ -41,8 +42,10 @@ CREATE TABLE IF NOT EXISTS party_messages(id TEXT PRIMARY KEY,party TEXT NOT NUL
 CREATE INDEX IF NOT EXISTS party_messages_room ON party_messages(party,created,id);
 CREATE TABLE IF NOT EXISTS friend_messages(id TEXT PRIMARY KEY,sender TEXT NOT NULL,recipient TEXT NOT NULL,body TEXT NOT NULL,created REAL NOT NULL);
 CREATE INDEX IF NOT EXISTS friend_messages_thread ON friend_messages(sender,recipient,created,id);
+CREATE TABLE IF NOT EXISTS server_coop(server TEXT PRIMARY KEY,ai_style TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS server_compat(server TEXT PRIMARY KEY,versions TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS social_reads(user TEXT NOT NULL,thread TEXT NOT NULL,seen REAL NOT NULL,PRIMARY KEY(user,thread));
+CREATE TABLE IF NOT EXISTS cloud_save_requirements(id TEXT PRIMARY KEY,requirements TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS cloud_saves(id TEXT PRIMARY KEY,user TEXT NOT NULL,title TEXT NOT NULL,device TEXT NOT NULL,created REAL NOT NULL,data TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS cloud_saves_user ON cloud_saves(user,created);
 CREATE TABLE IF NOT EXISTS rate_limits(peer TEXT,bucket TEXT,start REAL,count INTEGER,PRIMARY KEY(peer,bucket));

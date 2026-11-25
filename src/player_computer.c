@@ -1606,7 +1606,11 @@ void setup_computer_players2(void)
         int maxSkirmishAI = comp_player_conf.skirmish_last;
 
         int skirmish_AI_type = GAME_RANDOM(maxSkirmishAI + 1 - minSkirmishAI) + minSkirmishAI;
-        if(i==kfx_dedicated_player)skirmish_AI_type=comp_player_conf.skirmish_first;
+        if(i==kfx_dedicated_player){
+            const int model_offset=kfx_dedicated_ai_style==2?3:kfx_dedicated_ai_style==1?2:0;
+            skirmish_AI_type=minSkirmishAI+model_offset;
+            if(skirmish_AI_type>maxSkirmishAI)skirmish_AI_type=maxSkirmishAI;
+        }
         else if (i == game.local_plyr_idx)
         {
             skirmish_AI_type = comp_player_conf.player_assist_default;

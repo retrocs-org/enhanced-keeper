@@ -10,6 +10,7 @@ trait HubParties {
     private function leaveParty(string $user, array|false $party): void {
         if(!$party)return;
         $id=$party['id'];
+        if($party['owner']===$user)$this->q('DELETE FROM party_joins WHERE prompt=?',[$party['prompt']]);
         if($party['owner']!==$user){
             $this->q('DELETE FROM party_members WHERE party=? AND user=?',[$id,$user]);
             $this->q('DELETE FROM party_checks WHERE party=? AND user=?',[$id,$user]);
@@ -97,7 +98,12 @@ trait HubParties {
                 $server['status']==='lobby'&&$this->partyServerSignature($server)===$selection['signature']){
                 $server=$this->one("SELECT id,name FROM servers WHERE id=? AND last_seen>? AND status='lobby'",
                     [$party['server'],$this->now-90]);
-                if($server)$prompt=$server+['idempotency_key'=>$party['prompt']];
+                if($server){
+                    $prompt=$server+['idempotency_key'=>$party['prompt']];
+                    $results=array_column($this->rows('SELECT user,result FROM party_joins WHERE prompt=?',[$party['prompt']]),'result','user');
+                    foreach($members as &$member)$member['join']=$results[$member['id']]??'Invited';
+                    unset($member);
+                }
             }
         }
         $direct=[];
@@ -177,6 +183,7 @@ trait HubParties {
                 demand((int)$this->one('SELECT COUNT(*) AS size FROM party_members WHERE party=?',[$id])['size']<4,'Party is full',409);
                 demand($this->q('INSERT OR IGNORE INTO party_members VALUES(?,?)',[$user,$id])->rowCount()===1,'Already in a party',409);
                 $this->q('DELETE FROM party_invites WHERE recipient=?',[$user]);
+                $this->q('DELETE FROM party_joins WHERE prompt=(SELECT prompt FROM party_rooms WHERE id=?)',[$id]);
                 $this->q("UPDATE party_rooms SET server='',prompt='',prompt_expires=0 WHERE id=?",[$id]);
             }
         }elseif($action==='leave'){
@@ -190,6 +197,12 @@ trait HubParties {
                 $this->q('INSERT INTO party_messages VALUES(?,?,?,?,?)',[bin2hex(random_bytes(16)),$id,$user,$body,$this->now]);
                 $recent=$this->rows('SELECT id FROM party_messages WHERE party=? ORDER BY created DESC,id DESC LIMIT 80',[$id]);
                 if(count($recent)===80)$this->q('DELETE FROM party_messages WHERE party=? AND id NOT IN ('.implode(',',array_fill(0,80,'?')).')',[$id,...array_column($recent,'id')]);
+            }elseif($action==='join-progress'){
+                $prompt=api_text($data['prompt']??null,24);
+                demand($prompt===$party['prompt']&&(float)$party['prompt_expires']>$this->now,'Join prompt expired',409);
+                $result=trim(api_text($data['message']??null,160));
+                $this->q('DELETE FROM party_joins WHERE prompt=? AND user=?',[$prompt,$user]);
+                $this->q('INSERT INTO party_joins VALUES(?,?,?)',[$prompt,$user,$result]);
             }elseif($action==='readiness'){
                 $revision=api_text($data['revision']??null,24);
                 $target=$this->one('SELECT revision FROM party_targets WHERE party=?',[$id]);
@@ -216,6 +229,7 @@ trait HubParties {
                         $this->q('DELETE FROM party_targets WHERE party=?',[$id]);
                         $this->q('DELETE FROM party_checks WHERE party=?',[$id]);
                         $this->q('INSERT INTO party_targets VALUES(?,?,?,?)',[$id,$server,bin2hex(random_bytes(12)),$signature]);
+                        $this->q('DELETE FROM party_joins WHERE prompt=?',[$party['prompt']]);
                         $this->q("UPDATE party_rooms SET server='',prompt='',prompt_expires=0 WHERE id=?",[$id]);
                     }else{
                         $target=$this->one('SELECT * FROM party_targets WHERE party=?',[$id]);
@@ -225,6 +239,7 @@ trait HubParties {
                             ON m.party=c.party AND m.user=c.user WHERE m.party=? AND c.result='Ready' AND c.seen>?",
                             [$id,$this->now-20])['size'];
                         demand($ready===$count,'Wait until everyone is ready',409);
+                        $this->q('DELETE FROM party_joins WHERE prompt=?',[$party['prompt']]);
                         $this->q('UPDATE party_rooms SET server=?,prompt=?,prompt_expires=? WHERE id=?',
                             [$server,bin2hex(random_bytes(12)),$this->now+90,$id]);
                     }

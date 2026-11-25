@@ -30,14 +30,22 @@ trait HubServers {
                 $this->q('DELETE FROM server_compat WHERE server NOT IN (SELECT id FROM servers WHERE last_seen>?)',[$this->now-86400]);
                 $this->q('INSERT INTO server_compat VALUES(?,?)',[$sid,json_encode(array_values(array_unique($clients)))]);
             }
+            if(isset($data['coop'])){
+                $coop=$data['coop'];
+                demand($kind!=='listen'&&is_array($coop)&&is_int($coop['humans']??null)&&
+                    $coop['humans']>=1&&$coop['humans']<=3&&in_array($coop['ai_style']??null,['defensive','balanced','rush'],true),'Invalid co-op lobby setup');
+                $this->q('UPDATE servers SET capacity=? WHERE id=?',[$coop['humans']+1,$sid]);
+                $this->q('DELETE FROM server_coop WHERE server NOT IN (SELECT id FROM servers WHERE last_seen>?)',[$this->now-86400]);
+                $this->q('INSERT INTO server_coop VALUES(?,?)',[$sid,$coop['ai_style']]);
+            }
             return ['id'=>$sid,'secret'=>$secret,'match_id'=>$mid,'endpoint'=>$address,'trusted'=>$trusted];
         }
         if(count($parts)<4||$parts[1]!=='servers')return null;$sid=$parts[2];$action=$parts[3];
         if($action==='join'){
             demand(empty($data['relay']),'Relay connections are not supported',400);
-            $row=$this->one('SELECT * FROM servers WHERE id=? AND last_seen>?',[$sid,$this->now-90]);demand($row,'Server is offline',404);demand($row['status']==='lobby'&&$row['players']<$row['capacity'],'Server is full or playing',409);demand(empty($data['engine'])||$data['engine']===$row['engine'],'Engine version differs',409);$fingerprint=$data['content']??'';demand(is_string($fingerprint)&&($fingerprint===''||preg_match('/^[0-9a-f]{64}$/D',$fingerprint)),'Invalid content fingerprint');demand($fingerprint===''||!preg_match('/^[0-9a-f]{64}$/D',$row['mods'])||hash_equals($row['mods'],$fingerprint),'Campaign/map or configuration/mod content differs',409);
+            $row=$this->one('SELECT * FROM servers WHERE id=? AND last_seen>?',[$sid,$this->now-90]);demand($row,'Server is offline',404);demand($row['status']==='lobby','Match already started. Choose an open lobby.',409);demand($row['players']<$row['capacity'],'Lobby is full. Choose another server.',409);demand(empty($data['engine'])||$data['engine']===$row['engine'],'Engine version differs',409);$fingerprint=$data['content']??'';demand(is_string($fingerprint)&&($fingerprint===''||preg_match('/^[0-9a-f]{64}$/D',$fingerprint)),'Invalid content fingerprint');demand($fingerprint===''||!preg_match('/^[0-9a-f]{64}$/D',$row['mods'])||hash_equals($row['mods'],$fingerprint),'Campaign/map or configuration/mod content differs',409);
             $requiresAccount=in_array($row['kind'],['dedicated','community'],true);
-            if($requiresAccount)demand($uid,'Sign in with a cloud account to join this public dedicated server',401);
+            if($requiresAccount)demand($uid,'Sign in again to join this public dedicated server',401);
             $match=$this->one('SELECT id FROM matches WHERE server=? AND ended=0 ORDER BY started DESC LIMIT 1',[$sid]);$answer=['endpoint'=>$row['endpoint'],'id'=>$sid,'match_id'=>$match['id']??''];if($requiresAccount){demand($match,'No active match',409);$answer['login_ticket_required']=true;}if($uid&&$match){$this->q('INSERT OR IGNORE INTO participants(match,user) VALUES(?,?)',[$match['id'],$uid]);$ticket=api_token();$this->q('INSERT INTO tickets(token,server,user,expires) VALUES(?,?,?,?)',[hash('sha256',$ticket),$sid,$uid,$this->now+($requiresAccount?60:600)]);$answer['identity_ticket']=$ticket;}return $answer;
         }
         $row=$this->hostCredential($sid,$token);

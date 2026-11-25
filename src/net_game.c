@@ -57,8 +57,11 @@ extern "C" {
 /******************************************************************************/
 int kfx_dedicated_player=-1;
 static TbBool dedicated_coop;
+int kfx_dedicated_ai_style;
 #define STARTUP_DEDICATED_AI 0x8000
 #define STARTUP_DEDICATED_COOP 0x4000
+#define STARTUP_AI_BALANCED 0x2000
+#define STARTUP_AI_RUSH 0x1000
 
 TbBool dedicated_coop_team_ready(void)
 {
@@ -301,7 +304,12 @@ static void build_local_startup_sync(void)
     if (FLEE_BUTTON_DEFAULT) {initial_tendencies |= CrTend_Flee;}
     if(network_is_host()&&getenv("KFX_HEADLESS")){
         initial_tendencies|=STARTUP_DEDICATED_AI;
-        if(getenv("KFX_DEDICATED_COOP"))initial_tendencies|=STARTUP_DEDICATED_COOP;
+        if(getenv("KFX_DEDICATED_COOP")){
+            initial_tendencies|=STARTUP_DEDICATED_COOP;
+            const char *style=getenv("KFX_DEDICATED_AI_STYLE");
+            if(style&&strcmp(style,"balanced")==0)initial_tendencies|=STARTUP_AI_BALANCED;
+            if(style&&strcmp(style,"rush")==0)initial_tendencies|=STARTUP_AI_RUSH;
+        }
     }
     s_local_startup_sync.initial_tendencies = initial_tendencies;
     s_local_startup_sync.isometric_view_zoom_level = settings.isometric_view_zoom_level;
@@ -343,6 +351,8 @@ static TbBool net_startup_sync_exchange_and_apply(void)
     frontview_zoom_distance_setting = host_sync->frontview_zoom_distance_setting;
     setup_players_from_startup_packets(s_startup_sync_packets);
     dedicated_coop=(host_sync->initial_tendencies&STARTUP_DEDICATED_COOP)!=0;
+    kfx_dedicated_ai_style=(host_sync->initial_tendencies&STARTUP_AI_RUSH)?2:
+        (host_sync->initial_tendencies&STARTUP_AI_BALANCED)?1:0;
     return true;
 }
 

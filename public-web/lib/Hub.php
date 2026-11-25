@@ -87,8 +87,14 @@ final class KeeperHub {
             foreach(['sessions','devices','tickets'] as $table)$this->q("DELETE FROM $table WHERE expires<?",[$this->now]);
             if($method==='GET')$answer=$this->read($route,$parts,$query,$session,$uid);
             else $answer=$this->partyWrite($route,$data,$uid)??$this->accountWrite($route,$data,$token,$uid)??$this->serverWrite($route,$parts,$data,$token,$uid,$peer)??$this->communityWrite($route,$parts,$data,$token,$uid);
-            demand(is_array($answer),'Not found',404);$this->db->commit();return $answer;
+            demand(is_array($answer),'Not found',404);$this->db->commit();
         }catch(Throwable $e){if($this->db->inTransaction())$this->db->rollBack();throw $e;}
+        if($route==='/api/cloud/login'&&isset($answer['pending_cloud_activation'])){
+            $pending=$answer['pending_cloud_activation'];
+            $this->limit(hash('sha256',$pending['email']),'cloud-email',3,900);
+            return $this->sendActivation($pending)+['verification_required'=>true];
+        }
+        return $answer;
     }
     private function read(string $route,array $parts,array $query,array|false $session,?string $uid): array {
         if($route==='/api/health'){ return ['ok'=>true,'protocol'=>1,'relay'=>false,'authority'=>'client-simulated','http_backend'=>'php'];}
@@ -106,7 +112,7 @@ final class KeeperHub {
         }
         if(count($parts)===4&&$parts[1]==='cloud'&&$parts[2]==='saves'){
             demand($uid,'Sign in first',401);
-            $backup=$this->one('SELECT data FROM cloud_saves WHERE user=? AND id=?',[$uid,$parts[3]]);
+            $backup=$this->one("SELECT s.data,COALESCE(r.requirements,'') AS requirements FROM cloud_saves s LEFT JOIN cloud_save_requirements r ON r.id=s.id WHERE s.user=? AND s.id=?",[$uid,$parts[3]]);
             demand($backup,'Save backup not found',404);
             return $backup;
         }
@@ -116,7 +122,7 @@ final class KeeperHub {
             return $row?['revision'=>(int)$row['revision'],'settings'=>$row['settings']]:['revision'=>0,'settings'=>''];
         }
         if($route==='/api/me'){demand($uid,'Sign in first',401);return $this->one('SELECT u.id,u.name,u.public,p.email,COALESCE(p.avatar,1) AS avatar FROM users u LEFT JOIN cloud_profiles p ON p.user=u.id WHERE u.id=?',[$uid]);}
-        if($route==='/api/servers'){$this->q("UPDATE matches SET ended=?,status=CASE WHEN status='lobby' THEN 'cancelled' ELSE 'abandoned' END WHERE ended=0 AND server IN (SELECT id FROM servers WHERE last_seen<?)",[$this->now,$this->now-90]);$servers=$this->rows('SELECT s.id,s.name,s.endpoint,s.engine,s.map,s.mods,s.players,s.capacity,s.password,s.region,s.kind,s.status,c.versions FROM servers s LEFT JOIN server_compat c ON c.server=s.id WHERE s.last_seen>? ORDER BY s.name LIMIT 128',[$this->now-90]);
+        if($route==='/api/servers'){$this->q("UPDATE matches SET ended=?,status=CASE WHEN status='lobby' THEN 'cancelled' ELSE 'abandoned' END WHERE ended=0 AND server IN (SELECT id FROM servers WHERE last_seen<?)",[$this->now,$this->now-90]);$servers=$this->rows('SELECT s.id,s.name,s.endpoint,s.engine,s.map,s.mods,s.players,s.capacity,s.password,s.region,s.kind,s.status,c.versions,o.ai_style FROM servers s LEFT JOIN server_compat c ON c.server=s.id LEFT JOIN server_coop o ON o.server=s.id WHERE s.last_seen>? ORDER BY s.name LIMIT 128',[$this->now-90]);
             foreach($servers as &$server){$server['client_versions']=json_decode($server['versions']??'[]',true)?:[];unset($server['versions']);}
             unset($server);
             return ['servers'=>$servers];}

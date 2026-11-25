@@ -263,12 +263,15 @@ class PHPWebsiteTests(unittest.TestCase):
         owner = {'Authorization': 'Bearer ' + login('SaveOwner')}
         other = {'Authorization': 'Bearer ' + login('SaveOther')}
         encoded = base64.b64encode(b'save test fixture'*8).decode()
-        ids = [json.load(self.request(upload, {'title': 'Map 52', 'device': 'Test Mac', 'data': encoded}, owner))['id']
+        requirements = base64.b64encode(b'KFXREQ2\nengine=1.4.0.0\n').decode()
+        ids = [json.load(self.request(upload, {'title': 'Map 52', 'device': 'Test Mac', 'data': encoded,
+                                              'requirements': requirements}, owner))['id']
                for index in range(9)]
         backups = json.load(self.request(upload, headers=owner))['saves']
         self.assertEqual([item['id'] for item in backups], ids[:0:-1])
         self.assertNotIn('data', backups[0])
-        self.assertEqual(json.load(self.request(upload+'/'+ids[-1], headers=owner))['data'], encoded)
+        self.assertEqual(json.load(self.request(upload+'/'+ids[-1], headers=owner)),
+                         {'data': encoded, 'requirements': requirements})
         self.assertEqual(json.load(self.request(upload, headers=other))['saves'], [])
         for identifier, headers in [(ids[-1], other), (ids[0], owner)]:
             with self.assertRaises(urllib.error.HTTPError) as missing:
@@ -336,9 +339,11 @@ class PHPWebsiteTests(unittest.TestCase):
 
         server = call('/api/servers/register', {'name': 'Party server', 'endpoint': '127.0.0.1:5556',
                                                'engine': '0.1.0', 'kind': 'dedicated',
-                                               'client_versions': ['0.1.0', '0.1.1']})
+                                               'client_versions': ['0.1.0', '0.1.1'],
+                                               'coop': {'humans': 2, 'ai_style': 'rush'}})
         listing = json.load(self.request('/api/servers'))['servers']
         self.assertEqual(listing[0]['client_versions'], ['0.1.0', '0.1.1'])
+        self.assertEqual((listing[0]['capacity'], listing[0]['ai_style']), (3, 'rush'))
         for action, values in [('select-server', {'server': server['id']}),
                                ('prompt', {'server': server['id']}), ('kick', {'user': owner['id']})]:
             with self.assertRaises(urllib.error.HTTPError) as error:
@@ -368,7 +373,17 @@ class PHPWebsiteTests(unittest.TestCase):
         with self.assertRaises(urllib.error.HTTPError) as error:
             party(owner, 'prompt', server=server['id'])
         self.assertEqual(error.exception.code, 409)
-        self.assertEqual(party(friend)['prompt']['id'], server['id'])
+        invited=party(friend)
+        self.assertEqual(invited['prompt']['id'], server['id'])
+        prompt=invited['prompt']['idempotency_key']
+        self.assertEqual({p['join'] for p in invited['members']}, {'Invited'})
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            party(stranger, 'join-progress', prompt=prompt, message='In Lobby')
+        self.assertEqual(error.exception.code, 403)
+        party(friend, 'join-progress', prompt=prompt, message='Joining')
+        party(friend, 'join-progress', prompt=prompt, message='In Lobby')
+        self.assertEqual({p['id']:p['join'] for p in party(owner)['members']},
+                         {owner['id']:'Invited', friend['id']:'In Lobby'})
         self.assertIsNone(party(stranger)['prompt'])
         call('/api/servers/'+server['id']+'/heartbeat', {'map': 'classic:52'}, server['secret'])
         changed = party(friend)

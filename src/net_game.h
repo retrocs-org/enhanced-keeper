@@ -28,6 +28,7 @@ extern "C" {
 #endif
 
 extern int kfx_dedicated_player;
+extern int kfx_dedicated_ai_style;
 void apply_dedicated_coop_alliances(void);
 TbBool dedicated_coop_team_ready(void);
 

@@ -1,6 +1,6 @@
 // Account-scoped friends, party chat and server prompts.
 struct PartyPlayer {
-    std::string id, name, status, readiness;
+    std::string id, name, status, readiness, join;
     bool online = false;
     int unread = 0;
 };
@@ -21,6 +21,37 @@ bool mute_social_in_match=false;
 std::future<std::pair<bool,std::string>> party_scan;
 std::string party_scan_key;
 Uint64 party_check_at=0;
+std::string joining_prompt, pending_party_progress;
+bool party_join_connecting=false;
+std::string party_match_room,party_match_address,party_match_result;
+std::array<bool,MAX_NET_USERS> party_match_departed{};
+bool party_match_active=false,party_rematch_pending=false;
+
+void party_match_tick()
+{
+    const bool playing=network_is_active()&&game.game_kind==GKind_MultiGame&&get_gameturn()>0;
+    if(playing&&party.id==party_match_room&&!party_match_room.empty()){
+        party_match_active=true;
+        for(int i=0;i<MAX_NET_USERS;++i)
+            party_match_departed[i]|=kfx_hub_peer_departed(i)!=0;
+        const auto result=get_my_player()->victory_state;
+        if(result==VicS_WonLevel)party_match_result="Victory";
+        if(result==VicS_LostLevel)party_match_result="Defeat";
+    }else if(party_match_active&&frontend_menu_state==FeSt_MAIN_MENU){
+        party_match_active=false;
+        if(party.id!=party_match_room){party_match_result.clear();return;}
+        if(party_match_result.empty())party_match_result="Match ended without a local result";
+        if(!kfx_controller_guide_visible){party_tab=5;open_panel(38);}
+    }
+}
+
+void party_join_result(const std::string &result)
+{
+    if(joining_prompt.empty())return;
+    pending_party_progress=result;
+    party_notice=result;
+    party_join_connecting=false;
+}
 
 bool party_all_ready()
 {
@@ -114,7 +145,7 @@ std::vector<PartyPlayer> party_players(const VALUE &root, const char *key)
     for (size_t i = 0; i < value_array_size(rows); ++i) {
         const VALUE *row = value_array_get(rows, i);
         const VALUE *online = value_dict_get(row, "online");
-        result.push_back({hub_field(row, "id"), hub_field(row, "name"), hub_field(row, "status"), hub_field(row, "readiness"),
+        result.push_back({hub_field(row, "id"), hub_field(row, "name"), hub_field(row, "status"), hub_field(row, "readiness"), hub_field(row,"join"),
             online && value_type(online) == VALUE_BOOL && value_bool(online), hub_integer(row,"unread")});
     }
     return result;
@@ -163,6 +194,12 @@ void party_reply(const std::string &tag, const VALUE &root, const std::string &e
     party.server = hub_field(prompt, "id");
     party.server_name = hub_field(prompt, "name");
     party.prompt = hub_field(prompt, "idempotency_key");
+    if(party.prompt!=joining_prompt){
+        party_join_server.clear();
+        joining_prompt.clear();
+        pending_party_progress.clear();
+        party_join_connecting=false;
+    }
     const VALUE *target = value_dict_get(&root,"target");
     if (target && value_type(target)!=VALUE_DICT) target=nullptr;
     const auto revision=hub_field(target,"revision");
@@ -172,7 +209,7 @@ void party_reply(const std::string &tag, const VALUE &root, const std::string &e
     const VALUE *listing=target?value_dict_get(target,"server"):nullptr;
     party.target=listing&&value_type(listing)==VALUE_DICT?browser_server_from_json(listing):BrowserServer{};
     party.target.id=hub_field(target,"id");
-    if (!poll && tag != prefix + "readiness") {
+    if (!poll && tag != prefix + "readiness" && tag != prefix + "join-progress") {
         party_notice = tag == prefix + "prompt" ? "Join prompt sent to the party." :
             tag == prefix + "invite" ? "Party invitation sent." : "";
         if (tag == prefix + "accept") { party_tab = 1; party_offset = 0; }
@@ -239,12 +276,22 @@ void party_tick()
         direct_name.clear();
         shown_party_prompt.clear();
         party_join_server.clear();
+        joining_prompt.clear();
+        pending_party_progress.clear();
+        party_join_connecting=false;
         party_poll_at = 0;
         party_last_input = SDL_GetTicks();
         social_toast_until = 0;
         mute_social_in_match=access(social_prefs_path().c_str(),F_OK)==0;
         party_offset = 0;
         party_check_at = 0;
+        party_match_room.clear();party_match_result.clear();party_match_active=false;party_rematch_pending=false;
+    }
+    party_match_tick();
+    if (!account.empty() && !kfx_hub_busy() && !pending_party_progress.empty()){
+        if(party_request("join-progress","prompt",joining_prompt,short_text(pending_party_progress,145)))
+            pending_party_progress.clear();
+        return;
     }
     if (!account.empty() && !kfx_hub_busy() && party_check_target())return;
     if (!account.empty() && !kfx_hub_busy() && SDL_GetTicks() >= party_poll_at)
@@ -255,7 +302,7 @@ bool party_action(int action)
 {
     if (action == 2120) {
         party_message.clear();
-        party_tab = 0;
+        party_tab = party.id==party_match_room&&!party_match_result.empty()&&!party_match_active?5:0;
         party_offset = 0;
         party_poll_at = 0;
         open_panel(38);
@@ -273,6 +320,14 @@ bool party_action(int action)
         return true;
     }
     if (page != 38) return false;
+    if(action==2136){
+        if(party_owner()&&party.id==party_match_room&&kfx_hub_request("servers","/api/servers",nullptr,0)){
+            party_rematch_pending=true;
+            party_notice="Looking for the next lobby...";
+        }
+        return true;
+    }
+    if(action==2137){browser_tab=0;open_panel(20);browser_refresh();return true;}
     if(action==2135){
         if(party_owner()&&party_all_ready()&&party.prompt.empty())
             party_request("prompt","server",party.target.id);
@@ -305,11 +360,15 @@ bool party_action(int action)
     } else if (action == 2128) {
         if (network_is_active() || game.game_kind == GKind_LocalGame)
             party_notice = "Return to the main menu before joining.";
-        else if (!party.server.empty()) {
-            if (kfx_hub_request("servers", "/api/servers", nullptr, 0)) {
-                party_join_server = party.server;
-                party_notice = "Finding the party server...";
-            } else party_notice = "Please try again in a moment.";
+        else if (!party.server.empty()&&!party_join_connecting) {
+            if(party_request("join-progress","prompt",party.prompt,"Joining")){
+                joining_prompt=party.prompt;
+                party_join_connecting=true;
+                party_notice="Joining "+party.server_name+"...";
+                if(kfx_hub_request("servers","/api/servers",nullptr,0))
+                    party_join_server=party.server;
+                else party_join_result("Server request queue is full. Try again.");
+            }
         }
     } else if (action == 2129) {
         party_offset = std::max(0, party_offset - 1);
@@ -384,6 +443,20 @@ void party_draw()
         return;
     }
 
+    if(party_tab==5&&party.id==party_match_room){
+        centered(154,party_match_result,24);
+        const auto count=std::count(party_match_departed.begin(),party_match_departed.end(),true);
+        small_line(96,216,std::to_string(count)+(count==1?" disconnect recorded":" disconnects recorded"),450);
+        if(party_owner()){
+            control(48,285,260,"Play Again",2136,40);
+            control(329,285,263,"Choose Another Map",2137,40);
+        }else small_line(96,278,"Your party leader can choose the next lobby.",450);
+        if(!party_notice.empty())small_line(48,388,party_notice,544);
+        return;
+    }
+    const auto self=std::find_if(party.members.begin(),party.members.end(),[](const PartyPlayer &p){return p.id==party.account;});
+    const bool can_join=!party.prompt.empty()&&!network_is_active()&&!party_join_connecting;
+    const bool can_retry=can_join&&self!=party.members.end()&&!self->join.empty()&&self->join!="Invited";
     const bool showing_friends=party_tab==0||party_tab==4;
     const bool showing_invites=party_tab==2;
     const auto &rows=showing_friends?party.friends:showing_invites?party.invites:party.members;
@@ -405,8 +478,11 @@ void party_draw()
             small_line(53,y+28,party_status_label(player),180);
         }else{
             small_line(38,y+6,name+(player.id==party.owner?" / Owner":""),195);
-            if(!showing_invites&&!player.readiness.empty())
-                small_line(38,y+27,player.readiness,202);
+            if(!showing_invites&&!player.readiness.empty()){
+                const bool retry_row=party_tab==1&&can_retry&&player.id==party.account;
+                small_line(38,y+27,player.join.empty()?player.readiness:player.join,retry_row?125:202);
+                if(retry_row)control(166,y+21,76,"Retry",2128,25);
+            }
             if(showing_invites){
                 party_targets[2140+i]=player;
                 party_targets[2150+i]=player;
@@ -446,8 +522,13 @@ void party_draw()
             draw_party_chat(party.chat,175,4);
             control(275,276,243,party_message.empty()?"Write a party message":short_text(party_message,25),2125);
             control(530,276,74,"Send",2126);
-            if(!party.prompt.empty())control(275,310,329,"Join "+short_text(party.server_name,25),2128);
-            else if(!party.target_revision.empty()){
+            if(party_notice.rfind("Cloud session expired",0)==0)
+                control(275,310,329,"Sign In Again",2113);
+            else if(party_notice.rfind("Lobby is full",0)==0&&party_owner())
+                control(275,310,329,"Choose Another Server",2137);
+            else if(can_join&&!can_retry)
+                control(275,310,329,"Join "+short_text(party.server_name,25),2128);
+            else if(party.prompt.empty()&&!party.target_revision.empty()){
                 if(party_owner()&&party_all_ready())control(275,310,329,"Send Join Prompt",2135);
                 else small_line(276,320,party.target_blocker.empty()
                     ? "Checking for "+party.target.name : party.target_blocker,320);

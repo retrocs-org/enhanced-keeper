@@ -131,7 +131,9 @@ Uint8 repeat_button=255;
 Uint64 repeat_at=0;
 std::string caption;
 Uint64 caption_until=0;
+extern "C" const char *kfx_join_failure_reason;
 bool pending_join=false;
+std::string browser_join_id;
 std::string pending_login_ticket;
 std::map<const unsigned char*,SDL_Surface*> skin_cache;
 TbSpriteSheet *options_font=nullptr,*options_accent_font=nullptr,*options_buttons=nullptr;
@@ -607,7 +609,7 @@ void activate(int action){
     if(action==705){guide_section=(guide_section+1)%3;guide_more=guide_section!=0;return;}
     if(action==601){start_edit(2);return;}
     if(action==602){start_edit(3);return;}
-    if(action==603){if(network_is_active()||game.game_kind==GKind_LocalGame){notice="Return to the main menu before joining another game.";return;}pending_join=true;return;}
+    if(action==603){if(network_is_active()||game.game_kind==GKind_LocalGame){notice="Return to the main menu before joining another game.";return;}browser_join_id.clear();pending_join=true;return;}
     if(action==500){if(display_confirmation)return;pending_display=true;notice="Applying display settings...";return;}
     if(action==900){close_panel();return;}
     if(action>=200 && action<212){int row=(action-200)/2;change(row,(action%2)?1:-1);return;}
@@ -647,7 +649,7 @@ std::string normalized_version(const std::string &value){
 void backup_step(int direction);
 void navigate(int direction){
     mouse_navigation=false;focus_action=-1;
-    if(page==38||page==39){if(!hits.empty()){const int count=static_cast<int>(hits.size());selected=(std::min(selected,count-1)+direction+count)%count;}return;}
+    if(page==21||page==38||page==39){if(!hits.empty()){const int count=static_cast<int>(hits.size());selected=(std::min(selected,count-1)+direction+count)%count;}return;}
     if(page==8){selected=(selected+direction+12)%12;return;}
     if(page==36){if(!hits.empty()){const int count=static_cast<int>(hits.size());selected=(std::min(selected,count-1)+direction+count)%count;}return;}
     if(page>=30){int count=enhancement_count();selected=(selected+direction+count)%count;return;}
@@ -658,7 +660,7 @@ void navigate(int direction){
     if(page==9){report_offset=std::max(0,report_offset+direction);return;}
     if(page==10)return;
     if(page==26){selected=(selected+direction+2)%2;return;}
-    if(page>=20){int count=page==20?14:page==21?(party_owner()&&browser_tab!=1?6:5):page==22?cloud_account_options_count():page==23?5:page==24?5:2;selected=(selected+direction+count)%count;return;}
+    if(page>=20){int count=page==20?14:page==22?cloud_account_options_count():page==23?5:page==24?5:2;selected=(selected+direction+count)%count;return;}
     if(page>=15){int count=page==15?8:page==16?6:page==17?4:page==18?2:3;selected=(selected+direction+count)%count;return;}
     if(page==13){selected=(selected+direction+6)%6;return;}
     if(page==14){selected=(selected+direction+2)%2;return;}
@@ -676,7 +678,7 @@ void backup_step(int direction){
 }
 void confirm_control(){
     mouse_navigation=false;
-    if(page==38||page==39){if(!hits.empty())activate(hits[std::min(selected,static_cast<int>(hits.size())-1)].action);return;}
+    if(page==21||page==38||page==39){if(!hits.empty())activate(hits[std::min(selected,static_cast<int>(hits.size())-1)].action);return;}
     if(page==8){const int sections[]={5,0,1,2,3,4,6,7};const int extra[]={1200,1300,800,901};activate(selected<8?100+sections[selected]:extra[selected-8]);return;}
     if(page>=30&&page<=35){enhancement_confirm();return;}
     if(page==27&&choosing_local_profile){const int count=local_profile_count();
@@ -710,7 +712,6 @@ void confirm_control(){
     else if(page==18)activate(selected?1006:1005);
     else if(page==19){const int actions[]={1100,1102,1101};activate(actions[selected]);}
     else if(page==20){const int actions[]={2010,2011,2012,2030,2031,2020,2022,2023,2024,2025,2021,2027,2026,2120};activate(actions[selected]);}
-    else if(page==21){const int actions[]={2044,2040,2042,2043,2045,2121};activate(actions[selected]);}
     else if(page==22){const int actions[]={2050,2051,2052,2053,2113,2114,2115};activate(actions[cloud_account_options_count()==2?selected+5:selected]);}
     else if(page==23){const int actions[]={2060,2061,2063,2064,2062};activate(actions[selected]);}
     else if(page==24){const int actions[]={2080,2081,2083,2082,2084};activate(actions[selected]);}
@@ -794,11 +795,11 @@ void kfx_save_feedback(int success,int automatic,const char *reason){
 void kfx_save_display_label(long slot,const char *fallback,char *buffer,unsigned int size){if(!buffer||!size)return;char name[40];snprintf(name,sizeof(name),"fx1g%04ld.sav",slot);std::string alias=slot>=0&&slot<SAVE_SLOTS_LIMIT?read_save_alias(path(name)):"";snprintf(buffer,size,"%s",alias.empty()?(fallback?fallback:""):alias.c_str());}
 int kfx_options_select_replay(const char *file){if(!file||!*file||strlen(file)>=sizeof(game.packet_fname)||network_is_active()||game.game_kind!=GKind_Unset)return 0;std::lock_guard<std::mutex> lock(replay_selection_lock);replay_selection=file;return 1;}
 int kfx_options_community_action(int action){
-    if((action<2000||action>2084)&&action!=2120&&action!=2121&&action!=2128)return 0;
+    if((action<2000||action>2084)&&action!=2120&&action!=2121&&action!=2128&&action!=2135)return 0;
     if(!kfx_controller_guide_visible)open_panel(20);
     return browser_action(action);
 }
-const char *kfx_options_community_status(void){static std::string output;output="{\"page\":"+std::to_string(page)+",\"servers\":"+std::to_string(browser_servers.size())+",\"party_members\":"+std::to_string(party.members.size())+",\"party_prompt\":"+hub_quote(party.server_name)+",\"status\":"+hub_quote(hub_message)+",\"account\":"+hub_quote(kfx_hub_account_name())+",\"busy\":"+(kfx_hub_busy()?"true":"false")+"}";return output.c_str();}
+const char *kfx_options_community_status(void){static std::string output;output="{\"page\":"+std::to_string(page)+",\"servers\":"+std::to_string(browser_servers.size())+",\"party_members\":"+std::to_string(party.members.size())+",\"party_prompt\":"+hub_quote(party.server_name)+",\"party_ready\":"+(party_all_ready()?"true":"false")+",\"status\":"+hub_quote(hub_message)+",\"account\":"+hub_quote(kfx_hub_account_name())+",\"busy\":"+(kfx_hub_busy()?"true":"false")+"}";return output.c_str();}
 void kfx_options_initialize(void){
     // Movies follow the configured menu mode, then any saved in-game override.
     set_movies_vidmode(get_frontend_vidmode());
@@ -866,7 +867,16 @@ void process_network(){
         kfx_hub_set_login_ticket(login_ticket.c_str());
         frontnet_session_join(nullptr);
         kfx_hub_set_login_ticket(nullptr);
-        if(frontend_menu_state!=FeSt_NET_START){if(browser_join_failed())return;open_panel(6);notice="Could not join. Check the host address, UDP port, firewall and matching game version.";}
+        if(frontend_menu_state==FeSt_NET_START){
+            if(party_join_connecting){
+                party_match_room=party.id;
+                party_match_address=endpoint;
+                party_match_result.clear();
+                party_match_departed={};
+            }
+            party_join_result("In Lobby");
+        }
+        else {if(browser_join_failed())return;open_panel(6);notice="Could not join. Check the host address, UDP port, firewall and matching game version.";}
     }
 }
 void kfx_caption_speech(int sample){
@@ -1033,7 +1043,7 @@ bool kfx_options_event(const SDL_Event *event){
 void kfx_options_draw(void){
     enhancement_sample();
     if(wheel_open){wheel_draw();return;}
-    if(!kfx_controller_guide_visible){captions_draw();save_feedback_draw();performance_draw();recovery_status_draw();party_notification_draw();return;}
+    if(!kfx_controller_guide_visible){captions_draw();save_feedback_draw();performance_draw();recovery_status_draw();party_notification_draw();coop_lobby_draw();return;}
     if(repeat_button!=255&&!editing&&!capturing&&!display_confirmation&&SDL_GetTicks()>=repeat_at){if(repeat_button==SDL_GAMEPAD_BUTTON_DPAD_LEFT||repeat_button==SDL_GAMEPAD_BUTTON_DPAD_RIGHT)direction_control(repeat_button==SDL_GAMEPAD_BUTTON_DPAD_LEFT?-1:1);else navigate(repeat_button==SDL_GAMEPAD_BUTTON_DPAD_UP?-1:1);repeat_at=SDL_GetTicks()+90;}
     if(!canvas)canvas=SDL_CreateSurface(WIDTH,HEIGHT,SDL_PIXELFORMAT_RGBA32);if(!canvas)return;
     if(label_model<0){int model=controller_device_model();if(model>=0)kfx_controller_guide_ps5=model;}else kfx_controller_guide_ps5=label_model;
