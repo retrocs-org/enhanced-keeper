@@ -13,6 +13,8 @@ class ImportReuseTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "macos").mkdir()
+            (root / "scripts").mkdir()
+            (root / "scripts/repair-sound-banks.py").write_text("pass")
             shutil.copyfile(ROOT / "macos/build-local-client.sh", root / "macos/build-local-client.sh")
             game = root / ".local/imported-client"
             game.mkdir(parents=True)

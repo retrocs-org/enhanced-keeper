@@ -51,6 +51,21 @@ def tools(jobs,offline):
         run(['cmake','--build',build/'libpng','--parallel',jobs]);run(['cmake','--install',build/'libpng'])
     for name in ('pngpal2raw','png2bestpal','po2ngdat','sndbanker','rnctools'):
         source=checkout(name,offline)
+        if name == 'sndbanker':
+            # The on-disk format is 32-bit, including on LP64 macOS/Linux.
+            header = source/'src/prog_options.h'
+            text = header.read_text()
+            start = text.index('#pragma pack(1)')
+            end = text.index('#pragma pack()', start)
+            packed = text[start:end].replace('unsigned long ', 'uint32_t ').replace('size_t ', 'uint32_t ').replace('long ', 'int32_t ')
+            text = text[:start] + packed + text[end:]
+            if 'static_assert(sizeof(SoundBankSample)' not in text:
+                text += '\nstatic_assert(sizeof(SoundBankSample) == 32, "SoundBankSample disk layout");\nstatic_assert(sizeof(SoundBankHead) == 18, "SoundBankHead disk layout");\nstatic_assert(sizeof(SoundBankEntry) == 16, "SoundBankEntry disk layout");\nstatic_assert(sizeof(SoundBankFoot) == 76, "SoundBankFoot disk layout");\n'
+            if '#include <cstdint>' not in text:
+                text = '#include <cstdint>\n' + text
+            if header.read_text() != text:
+                header.write_text(text)
+                for obj in (source/'obj').glob('*.o'): obj.unlink()
         (source/'obj').mkdir(exist_ok=True);(source/'bin').mkdir(exist_ok=True)
         link=(str(native/'lib/libpng16.a')+' '+str(native/'lib/libz.a')+' -lm') if name.startswith('png') else '-lm'
         compiler='cc -fgnu89-inline' if name=='rnctools' else 'cc'

@@ -359,8 +359,8 @@ function(kfx_link_dependencies TARGET)
         target_link_libraries(${TARGET} PRIVATE
             kfx_sdl3 ffmpeg_mac openal_mac lua_mac
             spng_mac minizip_mac
-            astronomy_static centijson_static enet6_static curl_mac
-            centitoml miniupnpc_mac natpmp_mac z "-framework CoreText" "-framework CoreGraphics")
+            astronomy_static enet6_static curl_mac
+            centitoml miniupnpc_mac natpmp_mac "-framework CoreText" "-framework CoreGraphics")
     else()
         target_link_libraries(${TARGET} PRIVATE
             kfx_sdl3

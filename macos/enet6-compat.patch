@@ -1,0 +1,104 @@
+diff --git a/src/peer.c b/src/peer.c
+index 971a5a9..bfbe0e1 100644
+--- a/src/peer.c
++++ b/src/peer.c
+@@ -262,6 +262,7 @@ enet_peer_receive (ENetPeer * peer, enet_uint8 * channelID)
+ static void
+ enet_peer_reset_outgoing_commands (ENetPeer * peer, ENetList * queue)
+ {
++    (void) peer;
+     ENetOutgoingCommand * outgoingCommand;
+ 
+     while (! enet_list_empty (queue))
+@@ -283,6 +284,7 @@ enet_peer_reset_outgoing_commands (ENetPeer * peer, ENetList * queue)
+ static void
+ enet_peer_remove_incoming_commands (ENetPeer * peer, ENetList * queue, ENetListIterator startCommand, ENetListIterator endCommand, ENetIncomingCommand * excludeCommand)
+ {
++    (void) queue;
+     ENetListIterator currentCommand;    
+     
+     for (currentCommand = startCommand; currentCommand != endCommand; )
+diff --git a/src/protocol.c b/src/protocol.c
+index 074de4d..238fd7d 100644
+--- a/src/protocol.c
++++ b/src/protocol.c
+@@ -35,6 +35,7 @@ enet_protocol_command_size (enet_uint8 commandNumber)
+ static void
+ enet_protocol_change_state (ENetHost * host, ENetPeer * peer, ENetPeerState state)
+ {
++    (void) host;
+     if (state == ENET_PEER_STATE_CONNECTED || state == ENET_PEER_STATE_DISCONNECT_LATER)
+       enet_peer_on_connect (peer);
+     else
+@@ -326,6 +327,7 @@ enet_protocol_remove_sent_reliable_command (ENetPeer * peer, enet_uint16 reliabl
+ static ENetPeer *
+ enet_protocol_handle_connect (ENetHost * host, ENetProtocolHeader * header, ENetProtocol * command)
+ {
++    (void) header;
+     enet_uint8 incomingSessionID, outgoingSessionID;
+     enet_uint32 mtu, windowSize;
+     ENetChannel * channel;
+@@ -799,6 +801,8 @@ enet_protocol_handle_send_unreliable_fragment (ENetHost * host, ENetPeer * peer,
+ static int
+ enet_protocol_handle_ping (ENetHost * host, ENetPeer * peer, const ENetProtocol * command)
+ {
++    (void) host;
++    (void) command;
+     if (peer -> state != ENET_PEER_STATE_CONNECTED && peer -> state != ENET_PEER_STATE_DISCONNECT_LATER)
+       return -1;
+ 
+@@ -842,6 +846,7 @@ enet_protocol_handle_bandwidth_limit (ENetHost * host, ENetPeer * peer, const EN
+ static int
+ enet_protocol_handle_throttle_configure (ENetHost * host, ENetPeer * peer, const ENetProtocol * command)
+ {
++    (void) host;
+     if (peer -> state != ENET_PEER_STATE_CONNECTED && peer -> state != ENET_PEER_STATE_DISCONNECT_LATER)
+       return -1;
+ 
+diff --git a/src/unix.c b/src/unix.c
+index a13bcee..fabea40 100644
+--- a/src/unix.c
++++ b/src/unix.c
+@@ -63,11 +63,13 @@ typedef int socklen_t;
+ 
+ static enet_uint32 timeBase = 0;
+ 
++#ifndef HAS_GETNAMEINFO
+ static int addressFamily[] = {
+     AF_UNSPEC, /* ENET_ADDRESS_TYPE_ANY */
+     AF_INET,   /* ENET_ADDRESS_TYPE_IPV4 */
+     AF_INET6   /* ENET_ADDRESS_TYPE_IPV6 */
+ };
++#endif
+ 
+ static int 
+ enet_address_from_sock_addr4(ENetAddress * address, const struct sockaddr_in* sockAddr)
+@@ -364,7 +366,7 @@ int
+ enet_socket_get_address (ENetSocket socket, ENetAddress * address)
+ {
+     unsigned char sockAddrBuf[sizeof(struct sockaddr_in6)] = { 0 };
+-    int bufferLength;
++    socklen_t bufferLength = sizeof(sockAddrBuf);
+ 
+     if (getsockname(socket, (struct sockaddr *) sockAddrBuf, &bufferLength) == -1)
+         return -1;
+@@ -492,7 +494,7 @@ enet_socket_accept (ENetSocket socket, ENetAddress * address)
+ {
+     int result;
+     unsigned char sockAddrBuf[sizeof(struct sockaddr_in6)] = { 0 };
+-    int socketAddressLen = sizeof(sockAddrBuf);
++    socklen_t socketAddressLen = sizeof(sockAddrBuf);
+ 
+     result = accept (socket, 
+                      address != NULL ? (struct sockaddr*) sockAddrBuf : NULL,
+@@ -567,9 +569,8 @@ enet_socket_receive (ENetSocket socket,
+                      size_t bufferCount)
+ {
+     unsigned char sockAddrBuf[sizeof(struct sockaddr_in6)] = { 0 };
+-    int socketAddressLen = sizeof(sockAddrBuf);
++    socklen_t socketAddressLen = sizeof(sockAddrBuf);
+     struct msghdr msgHdr;
+-    struct sockaddr_in sin;
+     int recvLength;
+ 
+     memset (& msgHdr, 0, sizeof (struct msghdr));

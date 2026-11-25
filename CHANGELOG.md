@@ -8,6 +8,13 @@ packages have already been published.
 
 ## 0.1.0
 
+### Build and audio fixes
+- Fix macOS ENet socket lengths and remove unused declarations and duplicate library links.
+- Avoid excessive Mach-O common-symbol alignment for packed C globals.
+- Generate sound banks with fixed-width disk fields on 64-bit hosts; repair existing
+  local imports before macOS packaging so sound effects, speech and intro audio work.
+- Reuse completed client imports when packaging the macOS app.
+
 ### Features
 - Vendor credited GPLv3 FXGraphics/FXsounds source assets and preserve their licenses.
 - Generate runtime assets locally using native tools and import original BIN/CUE

@@ -25,11 +25,13 @@ function(apply_keeperfx_warnings TARGET)
             -march=x86-64 -fno-omit-frame-pointer -fmessage-length=0 -O3
             $<$<COMPILE_LANGUAGE:C>:-Wimplicit>)
     elseif(APPLE)
+        # Packed tentative globals otherwise get size-inferred common alignment
+        # from ld (up to 32 KiB), exceeding the Mach-O segment page alignment.
         target_compile_options(${TARGET} PRIVATE
             -Wall -Wextra -Werror -Wno-unused-parameter -Wno-unknown-pragmas
             -Wno-format-truncation -Wno-sign-compare
             -g -O3
-            $<$<COMPILE_LANGUAGE:C>:-Wno-absolute-value>)
+            $<$<COMPILE_LANGUAGE:C>:-Wno-absolute-value;-fno-common>)
     else()
         target_compile_options(${TARGET} PRIVATE
             -Wall -Wextra -Werror -Wno-unused-parameter -Wno-unknown-pragmas

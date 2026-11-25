@@ -17,6 +17,7 @@ else
     python3 "$ROOT/macos/import-local-data.py" "$@" --base "$BASE" \
         --import-dir "$ROOT/import" --output "$GAME"
 fi
+python3 "$ROOT/scripts/repair-sound-banks.py" --game "$GAME"
 "$ROOT/macos/build-universal.sh"
 KFX_GAME_DIR="$GAME" KFX_PACKAGE_DIR="$OUT" KFX_INCLUDE_LOCAL_DATA=1 \
     KFX_SIGN_IDENTITY=- "$ROOT/macos/package-app.sh"

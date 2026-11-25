@@ -25,6 +25,8 @@ def main():
         args=[sys.executable,str(ROOT/'scripts/build-asset-runtime.py'),'--output',str(a.base)]
         if os.environ.get('KFX_ASSET_OFFLINE')=='1':args.append('--offline')
         subprocess.run(args,check=True)
+    if a.kind == 'client':
+        subprocess.run([sys.executable, str(ROOT/'scripts/repair-sound-banks.py'), '--game', str(a.base)], check=True)
     image=Path(a.image) if a.image else None
     directory=image.parent if image and image.is_absolute() else a.import_dir
     def client_args(destination):
