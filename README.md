@@ -340,11 +340,10 @@ starts without an import prompt. CD audio tracks are imported losslessly as 44.1
 Both multi-BIN and single-BIN CUE layouts preserve track order and omit pregaps.
 Plain ISO files contain no CD audio; use CUE/BIN to include the soundtrack.
 
-The base Enhanced runtime must already exist at `.local/keeperfx`; override with
-`KFX_GAME_DIR=/path/to/prepared/runtime`. A CD supplies the original files, not
-the additional Enhanced assets. The runtime has been prepared locally in this
-checkout from the previous packaged app and your disc. On a fresh clone supply
-that base separately. `macos/build-universal.sh` remains a compile-only entry.
+A missing default runtime base at `.local/keeperfx` is bootstrapped automatically
+from the checksum-pinned upstream asset bundle. You can instead provide a matching
+prepared base with `KFX_GAME_DIR=/path/to/runtime`. The original files and music
+still come from your own disc. `macos/build-universal.sh` is compile-only.
 
 `import/`, `.local/` and `outputs/` are Git-ignored. Source export/push policy also
 rejects the entire import directory. Imported packages are for local use; public
@@ -370,8 +369,8 @@ music in `.local/imported-client`. `make import-server` reduces the prepared
 runtime to `.local/linux-server-import/GameData`. It skips CD audio extraction
 when an IMAGE is supplied and excludes standalone music and movies.
 
-`IMPORT_BASE` defaults to `.local/keeperfx`; a matching prepared Enhanced runtime
-is required in addition to an original disc. `IMPORT_DIR` defaults to `import/`;
+`IMPORT_BASE` defaults to `.local/keeperfx`, bootstrapped automatically when missing.
+A custom `IMPORT_BASE` must already contain a matching prepared runtime. `IMPORT_DIR` defaults to `import/`;
 absolute IMAGE paths can point to discs elsewhere. Choose a fresh `IMPORT_OUTPUT`
 to change the destination. Existing destinations are never overwritten. Imports
 stay local and do not install services or transfer files to a server. For normal local app builds, `KFX_IMPORT_IMAGE="Dungeon Keeper.cue" make client-macos`
@@ -408,5 +407,16 @@ Original discs in `import/`, tracked CMake source in `build/`, Git history,
 third-party source checkouts and installed profiles are retained. Custom output
 paths outside these standard directories are not removed. Local imports that
 contain saves or recordings stop cleanup rather than lose personal data.
-After cleaning, supply a prepared base runtime again via `IMPORT_BASE` if it
-previously lived in `.local/keeperfx`, then rerun `make import`.
+After cleaning, rerun `make import`; the default base runtime is bootstrapped again automatically.
+
+### Fresh-checkout import
+
+`make import` automatically downloads the pinned KeeperFX 1.4.0 runtime asset
+bundle into an ignored local cache when the default `.local/keeperfx` base is
+missing. It verifies the archive size and SHA-256, extracts data only (no Windows
+executables are installed), then overlays the original files and soundtrack from
+your local BIN/CUE. The same bootstrap is used by local macOS app builds.
+Install `7z` or `7zz` first; on openSUSE Leap use `zypper install 7zip` (older
+releases may provide the command through p7zip). A custom `IMPORT_BASE` is never
+overwritten or silently downloaded into. The roughly 375 MB archive and generated
+assets are ignored by Git and removed by `make clean`.

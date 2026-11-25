@@ -19,7 +19,9 @@ def main():
     output=Path(a.output) if a.output else ROOT/'.local'/('imported-client' if a.kind=='client' else 'linux-server-import')
     if output.exists():p.error(f'{output} already exists; choose a new IMPORT_OUTPUT (nothing overwritten)')
     if not any((a.base/n).is_file() for n in ('keeper-enhanced.cfg','keeperfx.cfg')):
-        p.error('IMPORT_BASE must point to a prepared matching runtime. Original discs do not contain Enhanced maps/configuration.')
+        if a.base.resolve() != (ROOT/'.local/keeperfx').resolve():
+            p.error('Custom IMPORT_BASE has no runtime configuration; choose a prepared runtime or omit IMPORT_BASE to bootstrap automatically')
+        subprocess.run([sys.executable,str(ROOT/'scripts/bootstrap-runtime.py'),'--output',str(a.base)],check=True)
     image=Path(a.image) if a.image else None
     directory=image.parent if image and image.is_absolute() else a.import_dir
     def client_args(destination):

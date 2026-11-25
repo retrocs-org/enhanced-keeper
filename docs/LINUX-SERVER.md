@@ -8,6 +8,24 @@ publishes no server listing or spectator stream, and needs no community key.
 
 Source: https://github.com/retrocs-org/KeeperFX-E (existing repository URL).
 
+## Import from an original BIN/CUE disc
+
+A fresh checkout no longer requires a manually prepared runtime:
+
+```sh
+zypper install --no-recommends 7zip
+make import
+make server-linux JOBS=4
+```
+
+Place the BIN/CUE files in `import/` before running these commands. If there are
+multiple CUE/ISO images, select one with `IMAGE="Dungeon Keeper.cue"`.
+The missing default runtime asset base is downloaded from the pinned KeeperFX
+1.4.0 complete bundle with size/SHA-256 verification. Only runtime data is copied;
+no downloaded Windows executable is installed. Your CD supplies original data,
+movies and music. Dedicated-server staging excludes standalone music and movies.
+All imported and downloaded assets remain local and Git-ignored.
+
 ## Build and import
 
 The dedicated target excludes SDL_image/mixer, OpenAL, FFmpeg, OpenGL, desktop

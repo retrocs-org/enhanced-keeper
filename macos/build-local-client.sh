@@ -4,6 +4,9 @@ set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 BASE=${KFX_GAME_DIR:-$ROOT/.local/keeperfx}
 OUT=${KFX_PACKAGE_DIR:-$ROOT/outputs/local-client-$(date +%Y%m%d-%H%M%S)}
+if [ ! -f "$BASE/keeper-enhanced.cfg" ] && [ ! -f "$BASE/keeperfx.cfg" ]; then
+    python3 "$ROOT/scripts/bootstrap-runtime.py" --output "$BASE"
+fi
 set --
 if [ -n "${KFX_IMPORT_IMAGE:-}" ]; then set -- --image "$KFX_IMPORT_IMAGE"; fi
 python3 "$ROOT/macos/import-local-data.py" "$@" --base "$BASE" \
