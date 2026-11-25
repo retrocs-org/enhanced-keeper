@@ -701,8 +701,14 @@ void frontnet_service_setup(void)
 {
     net_number_of_services = 0;
     memset(net_service, 0, sizeof(net_service));
+#if defined(__APPLE__)
+    snprintf(net_service[net_number_of_services++], NET_SERVICE_LEN, "Public Server Browser");
+    snprintf(net_service[net_number_of_services++], NET_SERVICE_LEN, "Direct Connection to Private Server");
+    snprintf(net_service[net_number_of_services++], NET_SERVICE_LEN, "Local Area Network");
+#else
     snprintf(net_service[net_number_of_services++], NET_SERVICE_LEN, "%s", get_string(GUIStr_NetOnline));
     snprintf(net_service[net_number_of_services++], NET_SERVICE_LEN, "%s", get_string(GUIStr_NetLan));
+#endif
     // Create skirmish option if it should be enabled
     if ((game.system_flags & GSF_AllowOnePlayer) != 0)
     {

@@ -395,6 +395,18 @@ void feature_tick();
 void wheel_draw();
 bool polish_action(int action);
 void save_feedback_draw();
+std::string cloud_name,cloud_email,cloud_password,cloud_code,cloud_ticket;
+int cloud_avatar=1;
+bool cloud_create=false, choosing_local_profile=false;
+std::string *cloud_input(int field){
+    switch(field){
+    case 14:return &cloud_name;
+    case 15:return &cloud_email;
+    case 16:return &cloud_password;
+    case 17:return &cloud_code;
+    default:return nullptr;
+    }
+}
 void finish_edit();
 void load_network_profile();
 std::string autosave_status();
@@ -433,6 +445,10 @@ void activate(int action){
     if(action>=0)do_sound_menu_click();
     if(enhancement_action(action)||play_tools_action(action)||browser_action(action)||feature_action(action)||polish_action(action))return;
     focus_action=action;
+    if(action==901&&page==36){cloud_password.clear();cloud_ticket.clear();cloud_code.clear();open_panel(37);return;}
+    if(action==901&&page==37)return;
+    if(action==901&&page==27&&choosing_local_profile){choosing_local_profile=false;open_panel(37);return;}
+    if(action==901&&(page==11||page==20)&&frontend_menu_state==FeSt_NET_SERVICE){close_panel();return;}
     if(action==901){if(page==8)close_panel();else{int previous=page;if(previous==19)kfx_readiness_cancel();page=previous==30?28:previous==31||previous==32?13:previous==33?7:previous==34?1:previous==35?2:previous==29?12:previous>=27?8:previous==26?15:previous>=21&&previous<=24?20:previous==25?22:previous==20?6:previous==15?0:previous==16?7:previous==17?12:previous==18?17:previous==19?6:previous==14?help_parent:previous==12?2:(previous>=9&&previous<=11?6:8);selected=0;
         if(page==8){const int order[]={5,0,1,2,3,4,6,7,13};for(int i=0;i<9;i++)if(order[i]==previous)selected=i;
             if(previous==27)selected=8;else if(previous==28)selected=9;else if(previous==13)selected=10;}
@@ -495,6 +511,7 @@ void backup_step(int direction);
 void navigate(int direction){
     mouse_navigation=false;focus_action=-1;
     if(page==8){selected=(selected+direction+12)%12;return;}
+    if(page>=36){int count=page==36?(cloud_ticket.empty()?(cloud_create?5:3):2):4;selected=(selected+direction+count)%count;return;}
     if(page>=30){int count=enhancement_count();selected=(selected+direction+count)%count;return;}
     if(page>=27&&page<=29){int count=page==27?6:page==28?7:requirements_state>=0?2:1;selected=(selected+direction+count)%count;return;}
     if(page==9){report_offset=std::max(0,report_offset+direction);return;}
@@ -519,10 +536,17 @@ void backup_step(int direction){
 void confirm_control(){
     mouse_navigation=false;
     if(page==8){const int sections[]={5,0,1,2,3,4,6,7};const int extra[]={1200,1300,800,901};activate(selected<8?100+sections[selected]:extra[selected-8]);return;}
-    if(page>=30){enhancement_confirm();return;}
+    if(page>=30&&page<=35){enhancement_confirm();return;}
     if(page==27){const int choices[]={1201,1202,1203,1204,1205,1206};activate(choices[selected]);return;}
     if(page==28){activate(selected==6?1500:selected==5?1306:1301+selected);return;}
     if(page==29){activate(selected?1401:1402);return;}
+    if(page==36){
+        const int signup[]={2101,2102,2103,2104,2105};
+        const int signin[]={2101,2103,2105};
+        activate(cloud_ticket.empty()?(cloud_create?signup[selected]:signin[selected]):selected?2105:2107);
+        return;
+    }
+    if(page==37){const int profile[]={2110,2111,2112,2113};activate(profile[selected]);return;}
     if(page==1&&selected==4){activate(1540);return;}
     if(page==7&&selected==6){activate(1530);return;}
     if((page==0||page==7)&&selected==5)activate(page==0?840:841);
@@ -554,7 +578,7 @@ void confirm_control(){
 void direction_control(int direction){
     mouse_navigation=false;if(page!=3)focus_action=-1;
     if(page>=30){navigate(direction);return;}
-    if(page==20){activate(2001+(browser_tab+direction+4)%4);return;}
+    if(page==20){activate(direction<0?2030:2031);return;}
     if(page==9){selected=selected?0:1;return;}
     if(page==8){if(selected<8)selected=(selected+direction*4+8)%8;else selected=8+(selected-8+direction+4)%4;return;}
     if(page==2){save_filter=(save_filter+direction+4)%4;save_index=0;filter_saves();}
@@ -566,6 +590,12 @@ void direction_control(int direction){
     else if(page==16&&selected>=4)activate(selected==4?(direction<0?890:891):(direction<0?892:893));
 }
 void append_input(std::string value){
+    if(auto *input=cloud_input(editing)){
+        if(edit_selected){input->clear();edit_selected=false;}
+        const size_t limit=editing==14?24:editing==15?254:editing==16?128:6;
+        for(unsigned char c:value)if(c>=32&&c<127&&input->size()<limit)input->push_back(c);
+        return;
+    }
     std::string *target=editing==1?&save_search:editing==2?&peer_version:editing==4?&network_name:editing==5?&save_alias:editing==6?&browser_search:editing==7?&host_title:editing==8?&host_address:editing==9?&hub_edit:editing==10?&server_password:editing==13?&host_map:editing==12?&replay_title:editing==11?&new_profile:&join_ip;size_t limit=editing==1?64:editing==2?24:editing==4?19:editing==5?63:editing==6?64:editing==7?64:editing==8?120:editing==9?240:editing==10?31:editing==13?88:editing==12?63:editing==11?32:120;
     if(edit_selected){target->clear();edit_selected=false;}
     std::string clean;for(unsigned char c:value)if(c>=32&&c!=127&&(editing!=4||c<128))clean.push_back(c);
@@ -573,6 +603,11 @@ void append_input(std::string value){
     if(editing==1){save_index=0;filter_saves();}if(editing==6)browser_filter();
 }
 void delete_input(){
+    if(auto *input=cloud_input(editing)){
+        if(edit_selected){input->clear();edit_selected=false;}
+        else if(!input->empty())input->pop_back();
+        return;
+    }
     std::string *target=editing==1?&save_search:editing==2?&peer_version:editing==4?&network_name:editing==5?&save_alias:editing==6?&browser_search:editing==7?&host_title:editing==8?&host_address:editing==9?&hub_edit:editing==10?&server_password:editing==13?&host_map:editing==12?&replay_title:editing==11?&new_profile:&join_ip;
     if(edit_selected){target->clear();edit_selected=false;}
     else if(!target->empty()){size_t index=target->size()-1;while(index>0&&(((unsigned char)(*target)[index]&0xc0)==0x80))index--;target->erase(index);}
@@ -715,7 +750,7 @@ void kfx_options_display(struct GuiButton *button){(void)button;open_panel(5);}
 void kfx_options_hide(void){if(kfx_controller_guide_visible)close_panel();}
 void kfx_options_open(struct GuiButton *button){(void)button;open_panel(8);}
 void kfx_options_preview(int number){capture_preview=true;kfx_options_show_page(number);}
-void kfx_options_show_page(int number){open_panel(std::clamp(number,0,35));if(page==2||page==12||page==17||page==18)scan_saves();if(page==20){browser_filter();browser_refresh();}if(page==25)hub_edit=kfx_hub_url();if(page==24)community_request();}
+void kfx_options_show_page(int number){open_panel(std::clamp(number,0,37));if(page==2||page==12||page==17||page==18)scan_saves();if(page==20){browser_filter();browser_refresh();}if(page==25)hub_edit=kfx_hub_url();if(page==24)community_request();}
 void kfx_options_button(struct GuiButton *button){
     if(frontend_menu_state==FeSt_FEOPTIONS)frontend_draw_button(button,1,"More Options",Lb_TEXT_HALIGN_CENTER);
     else{
@@ -802,8 +837,8 @@ void kfx_options_draw(void){
     if(!canvas)canvas=SDL_CreateSurface(WIDTH,HEIGHT,SDL_PIXELFORMAT_RGBA32);if(!canvas)return;
     if(label_model<0){int model=controller_device_model();if(model>=0)kfx_controller_guide_ps5=model;}else kfx_controller_guide_ps5=label_model;
     update_hover();hits.clear();background();
-    const char *names[]={"Controller Options","Performance","Saved Games","Remap Controller","Controller Guide","Display Options","Network Options","Accessibility","More Options","Connection Test","Game Versions","Join by IP","Saved Game","About & Diagnostics","Saving Help","Connected Controllers","Accessibility Presets","Manage Saved Game","Delete Saved Game","Multiplayer Readiness","Server Browser","Server Details","Community Account","Host Public Game","Community","Community Service","Controller Test","Content Profiles","Replay Controls","Save Requirements","Replay Library","Personal Data Tools","Setup Guide","Comfort and Readability","Performance Capture","Save Recovery"};
-    title(names[std::clamp(page,0,35)]);
+    const char *names[]={"Controller Options","Performance","Saved Games","Remap Controller","Controller Guide","Display Options","Network Options","Accessibility","More Options","Connection Test","Game Versions","Join by IP","Saved Game","About & Diagnostics","Saving Help","Connected Controllers","Accessibility Presets","Manage Saved Game","Delete Saved Game","Multiplayer Readiness","Server Browser","Server Details","Community Account","Host Public Game","Community","Community Service","Controller Test","Content Profiles","Replay Controls","Save Requirements","Replay Library","Personal Data Tools","Setup Guide","Comfort and Readability","Performance Capture","Save Recovery","Cloud Profile","Choose Profile"};
+    title(names[std::clamp(page,0,37)]);
     if(page==8){
         const char *sections[]={"Display","Controller","Performance","Saved Games","Remap","Controller Guide","Network","Accessibility"};const int pages[]={5,0,1,2,3,4,6,7};
         for(int i=0;i<8;i++)button(i<4?50:338,104+(i%4)*72,252,sections[i],100+pages[i],selected==i,46);
@@ -870,10 +905,10 @@ void kfx_options_draw(void){
         centered(104,std::string("Your version: ")+VER_STRING,26);button(95,160,450,"Friend: "+peer_version+(editing==2?"|":""),601,true,46);
         frame(50,235,540,100);std::string peer=normalized_version(peer_version),ours=normalized_version(VER_STRING);centered(258,peer_version.empty()?"Enter your friend's version.":peer.empty()?"Use a version such as 1.4.0.0.":peer==ours?"Game versions match.":"Game versions are different.",24);centered(358,"Compare selected mods as well.",22);
     }else if(page==11){
-        centered(106,"Hostname / IP address and UDP port",24);button(64,163,512,join_ip+(editing==3?"|":""),602,selected==0||editing==3,46);button(134,250,372,"Join Game",603,selected==1,46);centered(330,"Example: 192.168.1.20:5556",22);centered(368,"The host must have a LAN lobby open.",20);
+        centered(106,"Hostname / IP address and UDP port",24);button(64,163,512,join_ip+(editing==3?"|":""),602,selected==0||editing==3,46);button(134,250,372,"Join Game",603,selected==1,46);centered(330,"Example: 192.168.1.20:5556",22);centered(368,"Enter the address supplied by the host.",20);
     }
     polish_draw_page();feature_draw();browser_draw();play_tools_draw();enhancement_draw();
-    if(page!=8&&page!=12)button(134,426,372,page==29?"Return to Saved Game":page==26?"Return to Devices":page==25?"Return to Account":page>=21&&page<=24?"Return to Browser":page==20?"Return to Network":page==15?"Return to Controller":page==16?"Return to Accessibility":page==17?"Return to Save":page==18?"Return to Management":page==19?"Return to Network":page==14?(help_parent==13?"Return to About":"Return to Saves"):page>=9&&page<=11?"Return to Network":"Return to Sections",901,false,42);
+    if(page!=8&&page!=12&&page!=37)button(134,426,372,page==36||(page==27&&choosing_local_profile)?"Return to Profiles":page==29?"Return to Saved Game":page==26?"Return to Devices":page==25?"Return to Account":page>=21&&page<=24?"Return to Browser":page==20?(frontend_menu_state==FeSt_NET_SERVICE?"Return to Multiplayer":"Return to Network"):page==15?"Return to Controller":page==16?"Return to Accessibility":page==17?"Return to Save":page==18?"Return to Management":page==19?"Return to Network":page==14?(help_parent==13?"Return to About":"Return to Saves"):page>=9&&page<=11?"Return to Network":"Return to Sections",901,false,42);
     if(!notice.empty()&&page<20&&page!=8&&page!=12&&page!=4&&page!=16&&page!=19)status_line(notice);
     if(preview_large&&page==12&&!saves.empty()){
         hits.clear();background();frame(18,82,604,328);if(preview){double scale=std::min(592.0/preview->w,316.0/preview->h);SDL_Rect to={24+(592-(int)(preview->w*scale))/2,88+(316-(int)(preview->h*scale))/2,(int)(preview->w*scale),(int)(preview->h*scale)};SDL_BlitSurfaceScaled(preview,nullptr,canvas,&to,SDL_SCALEMODE_LINEAR);}else centered(225,"No preview available",26);button(134,426,372,"Return to Saved Game",308,false,42);

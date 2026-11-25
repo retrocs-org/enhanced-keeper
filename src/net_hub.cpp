@@ -21,7 +21,7 @@ namespace {
 std::string identity_ticket;std::array<std::string,4> identities;
 bool initializing=false;
 bool host_started=false;
-std::string base="https://keeperfx-e.retrocs.org",folder,account,name,account_id,server_id,server_secret,match_id,last_tag,last_body;
+std::string base="https://keeper-enhanced.retrocs.org",folder,account,name,account_id,server_id,server_secret,match_id,last_tag,last_body;
 struct Registration{std::string host,token,role;int port;};std::vector<Registration> registrations;
 struct Reply{std::string tag,body;long status=0;};std::future<Reply> job;Uint64 heartbeat_at=0;
 struct Request{std::string tag,route,body,token;};std::deque<Request> queue;
@@ -60,7 +60,9 @@ extern "C" int kfx_hub_request(const char *tag,const char *route,const char *bod
 namespace {std::string advertised_content;}
 extern "C" void kfx_hub_content(const char *value){advertised_content=value?value:"";}
 extern "C" int kfx_hub_tick(int hosting,int players,int playing,const char *map){
- int ready=0;if(job.valid()&&job.wait_for(std::chrono::seconds(0))==std::future_status::ready){Reply r=job.get();last_tag=r.tag;last_body=r.body;Document d(r.body);std::string token=field(&d.root,"token");if(r.tag=="pair-poll"&&!token.empty()){account=token;name=field(&d.root,"name");save_token();}
+ int ready=0;if(job.valid()&&job.wait_for(std::chrono::seconds(0))==std::future_status::ready){Reply r=job.get();last_tag=r.tag;last_body=r.body;Document d(r.body);std::string token=field(&d.root,"token");if((r.tag=="pair-poll"||r.tag=="cloud-verify"||r.tag=="cloud-login")&&!token.empty()){
+     account=token;name=field(&d.root,"name");account_id=field(&d.root,"id");save_token();
+ }
  if(r.tag=="me"&&!field(&d.root,"id").empty()){account_id=field(&d.root,"id");name=field(&d.root,"name");save_token();}
  if((r.tag=="publish"||r.tag=="join")&&!field(&d.root,"match_id").empty())match_id=field(&d.root,"match_id");
  if(r.tag=="publish"&&!field(&d.root,"secret").empty()){server_id=field(&d.root,"id");server_secret=field(&d.root,"secret");heartbeat_at=0;}

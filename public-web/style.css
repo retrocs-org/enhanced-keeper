@@ -43,3 +43,12 @@ details { margin-top: 25px; }
 summary { color: #d6c198; cursor: pointer; }
 #service-summary, #service-status { color: #c8c39d; }
 @media(max-width:800px) { .portal-main .service-grid, .api-workbench { grid-template-columns: 1fr; } .portal-main { padding-top: 36px; } .portal-main section { padding-block: 23px; } th, td { padding: 12px; min-width: 120px; } .section-title { flex-wrap: wrap; align-items: flex-start; } }
+
+.profile-avatar {
+    width: 3rem;
+    height: 3rem;
+    flex: 0 0 3rem;
+    border-radius: .25rem;
+    background-image: url('/assets/avatars/presets.png');
+    background-size: 500% 300%;
+}

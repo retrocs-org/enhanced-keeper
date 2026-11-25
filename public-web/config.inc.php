@@ -22,6 +22,12 @@ return [
     // Comma-separated exact peer IPs that have a static UDP forward on this WAN address.
     'local_public_address' => '',
     'local_public_peers' => '',
+    'smtp' => [
+        'host' => '', 'port' => 587, 'encryption' => 'starttls',
+        'from' => '', 'from_name' => 'Keeper Enhanced',
+        'username' => '', 'password' => '',
+        'ehlo' => 'localhost', 'bind' => '', 'timeout' => 10,
+    ],
     'admin_key' => '',
     'admin_key_file' => '/var/lib/keeperfx-e/admin.key',
     'release_manifest' => '/var/lib/keeperfx-e/releases.json',

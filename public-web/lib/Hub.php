@@ -2,6 +2,7 @@
 declare(strict_types=1);
 if (!defined('KFX_API_INTERNAL')) { http_response_code(404); exit; }
 require_once __DIR__.'/Accounts.php';
+require_once __DIR__.'/smtp.php';
 require_once __DIR__.'/Servers.php';
 require_once __DIR__.'/Community.php';
 final class ApiProblem extends RuntimeException { public function __construct(public int $status,string $message){parent::__construct($message);} }
@@ -56,14 +57,26 @@ final class KeeperHub {
         $route=parse_url($uri,PHP_URL_PATH);$parts=explode('/',trim((string)$route,'/'));parse_str((string)(parse_url($uri,PHP_URL_QUERY)??''),$query);
         demand(in_array($method,['GET','POST'],true),'Unsupported method',405);
         if($method==='POST')$this->limit($peer,$route==='/api/connectivity'?'connectivity':'requests',$route==='/api/connectivity'?5:360);
+        if($route==='/api/cloud/signup'&&$method==='POST'){
+            $this->limit($peer,'cloud-signup',5,900);
+            $email=$data['email']??null;
+            demand(is_string($email)&&strlen($email)<=254&&filter_var($email,FILTER_VALIDATE_EMAIL),'Enter a valid email address');
+            $this->limit(hash('sha256',strtolower($email)),'cloud-email',3,900);
+        }
+        if($route==='/api/cloud/verify'&&$method==='POST'){
+            $ticket=api_text($data['ticket']??null,64);
+            $this->limit(hash('sha256',$ticket),'cloud-verify',8,900);
+        }
         if($route==='/api/servers/register'&&$method==='POST')$this->limit($peer,'server-register',15);
-        if(in_array($route,['/api/login','/api/register'],true)&&$method==='POST')$this->limit($peer,'login',10);
+        if(in_array($route,['/api/login','/api/register','/api/cloud/login'],true)&&$method==='POST')$this->limit($peer,'login',10);
         if($route==='/api/recovery/reset'&&$method==='POST')$this->limit($peer,'recovery',5,3600);
         $session=$token!==''?$this->one('SELECT s.*,u.name FROM sessions s JOIN users u ON u.id=s.user WHERE token=? AND expires>?',[hash('sha256',$token),$this->now]):false;$uid=$session['user']??null;
         if($cookie&&$method==='POST')demand($session&&hash_equals($session['csrf'],$csrf),'Reload the page before submitting',403);
         if($route==='/api/recovery/codes'&&$method==='POST'){demand($uid,'Sign in first',401);$this->limit($uid,'recovery-issue',3,3600);}
         if($route==='/api/device/start'&&$method==='POST')$this->limit($peer,'device',10);
         if($route==='/api/connectivity'&&$method==='POST')return $this->probe($data,$peer)+['relay_available'=>$this->relayAvailable(),'relay_path_verified'=>false];
+        // The SMTP transaction can take seconds. Keep it outside the database transaction.
+        if($route==='/api/cloud/signup'&&$method==='POST')return $this->accountWrite($route,$data,$token,$uid);
         $this->db->beginTransaction();try{
             foreach(['sessions','devices','tickets'] as $table)$this->q("DELETE FROM $table WHERE expires<?",[$this->now]);
             if($method==='GET')$answer=$this->read($route,$parts,$query,$session,$uid);
@@ -74,7 +87,7 @@ final class KeeperHub {
     private function read(string $route,array $parts,array $query,array|false $session,?string $uid): array {
         if($route==='/api/health'){ return ['ok'=>true,'protocol'=>1,'relay'=>false,'authority'=>'client-simulated','http_backend'=>'php'];}
         if($route==='/api/session')return ['signed_in'=>(bool)$session,'name'=>$session['name']??'','csrf'=>$session['csrf']??''];
-        if($route==='/api/me'){demand($uid,'Sign in first',401);return $this->one('SELECT id,name,public FROM users WHERE id=?',[$uid]);}
+        if($route==='/api/me'){demand($uid,'Sign in first',401);return $this->one('SELECT u.id,u.name,u.public,COALESCE(p.avatar,1) AS avatar FROM users u LEFT JOIN cloud_profiles p ON p.user=u.id WHERE u.id=?',[$uid]);}
         if($route==='/api/servers'){$this->q("UPDATE matches SET ended=?,status=CASE WHEN status='lobby' THEN 'cancelled' ELSE 'abandoned' END WHERE ended=0 AND server IN (SELECT id FROM servers WHERE last_seen<?)",[$this->now,$this->now-90]);return ['servers'=>$this->rows('SELECT id,name,endpoint,engine,map,mods,players,capacity,password,region,kind,status FROM servers WHERE last_seen>? ORDER BY name LIMIT 128',[$this->now-90])];}
         if($route==='/api/friends'){demand($uid,'Sign in first',401);return ['friends'=>$this->rows('SELECT u.id,u.name,f.status,f.a AS requester FROM friends f JOIN users u ON u.id=CASE WHEN f.a=? THEN f.b ELSE f.a END WHERE f.a=? OR f.b=?',[$uid,$uid,$uid])];}
         if($route==='/api/matches'){demand($uid,'Sign in first',401);return ['matches'=>$this->rows("SELECT m.* FROM matches m JOIN participants p ON p.match=m.id WHERE p.user=? AND m.status NOT IN ('lobby','cancelled') ORDER BY started DESC LIMIT 50",[$uid])];}

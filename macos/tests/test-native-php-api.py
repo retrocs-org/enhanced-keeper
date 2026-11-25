@@ -31,6 +31,14 @@ class PHPHub:
 class NativePHPContracts(suite.HubTests):
  def setUp(self):
   self.tmp=tempfile.TemporaryDirectory();self.clock=[time.time()];self.relay=Relay();self.hub=PHPHub(Path(self.tmp.name)/'test.sqlite3',self.relay,'admin-'+'x'*30,lambda:self.clock[0]);self.a=self.post('/api/register',{'name':'KeeperOne','password':'a long password 123'});self.b=self.post('/api/register',{'name':'KeeperTwo','password':'a long password 456'});self.me=self.get('/api/me',self.a['token']);self.other=self.get('/api/me',self.b['token'])
+ def test_no_dedicated_impersonation(self):
+  server=self.server(kind='dedicated')
+  self.assertFalse(server['trusted'])
+  with self.assertRaises(suite.h.Problem) as error:
+   self.post('/api/servers/'+server['id']+'/result',{},server['secret'])
+  self.assertEqual(error.exception.status,403)
+  trusted=self.server(kind='dedicated',admin_key=self.hub.admin_key)
+  self.assertTrue(trusted['trusted'])
  def test_relay_auth_and_bidirectional_data(self):
   server=self.server()
   with self.assertRaises(suite.h.Problem) as error:self.post('/api/servers/'+server['id']+'/join',{'relay':True})

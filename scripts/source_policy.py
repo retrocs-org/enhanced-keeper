@@ -21,6 +21,8 @@ def excluded(name):
         '.png', '.raw', '.tab', '.toml', '.txt',
     }:
         return False
+    if str(path) == 'public-web/assets/avatars/presets.png':
+        return False
     # These are the controller-guide assets supplied for this project's UI.
     if str(path.parent) == 'macos/packaging/controllers' and path.suffix in {'.svg', '.png'}:
         return False

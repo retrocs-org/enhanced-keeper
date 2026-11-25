@@ -340,10 +340,14 @@ starts without an import prompt. CD audio tracks are imported losslessly as 44.1
 Both multi-BIN and single-BIN CUE layouts preserve track order and omit pregaps.
 Plain ISO files contain no CD audio; use CUE/BIN to include the soundtrack.
 
-A missing default runtime base at `.local/generated-runtime` is generated
-automatically from the vendored assets and pinned source inputs. You can instead provide a matching
-prepared base with `KFX_GAME_DIR=/path/to/runtime`. The original files and music
-still come from your own disc. `macos/build-universal.sh` is compile-only.
+Fresh macOS imports use the prebuilt open runtime in `assets/runtime/`.
+The Git checkout supplies it, so the build skips asset downloads and conversion.
+Your own disc supplies the original data and music. A plain `make client-macos`
+reuses `.local/imported-client` when available. Set `KFX_IMPORT_IMAGE` to force
+a fresh disc import, or `KFX_GAME_DIR=/path/to/runtime` to choose a different
+prepared base. If the checked-in runtime is missing, the importer can generate
+a fallback under `.local/generated-runtime`. `macos/build-universal.sh` is
+compile-only.
 
 `import/`, `.local/` and `outputs/` are Git-ignored. Source export/push policy also
 rejects the entire import directory. Imported packages are for local use; public
@@ -369,7 +373,7 @@ music in `.local/imported-client`. `make import-server` reduces the prepared
 runtime to `.local/linux-server-import/GameData`. It skips CD audio extraction
 when an IMAGE is supplied and excludes standalone music and movies.
 
-`IMPORT_BASE` defaults to `.local/generated-runtime`, generated automatically when missing.
+`IMPORT_BASE` defaults to `assets/runtime/`, with local generation as a fallback.
 A custom `IMPORT_BASE` must already contain a matching prepared runtime. `IMPORT_DIR` defaults to `import/`;
 absolute IMAGE paths can point to discs elsewhere. Choose a fresh `IMPORT_OUTPUT`
 to change the destination. Existing destinations are never overwritten. Imports

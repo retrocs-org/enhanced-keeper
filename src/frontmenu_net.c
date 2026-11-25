@@ -725,6 +725,13 @@ void frontnet_service_select(struct GuiButton *gbtn)
 {
   int srvidx;
   srvidx = gbtn->content.lval + net_service_scroll_offset - 45;
+#if defined(__APPLE__)
+  if (srvidx == 0 || srvidx == 1)
+  {
+      kfx_options_show_page(srvidx == 0 ? 20 : 11);
+      return;
+  }
+#endif
   if ( ((game.system_flags & GSF_AllowOnePlayer) != 0)
      && (srvidx+1 >= net_number_of_services) )
   {
@@ -738,7 +745,11 @@ void frontnet_service_select(struct GuiButton *gbtn)
       frontend_set_state(FeSt_NET_SERVICE);
   } else
   {
+#if defined(__APPLE__)
+      setup_network_service(FrontendNetSvc_LAN);
+#else
       setup_network_service(srvidx);
+#endif
   }
 }
 

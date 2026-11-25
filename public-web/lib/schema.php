@@ -4,6 +4,9 @@ return <<<'SQL'
 
         PRAGMA journal_mode=WAL;
         CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY,name TEXT UNIQUE COLLATE NOCASE,salt TEXT,password TEXT,public INTEGER DEFAULT 0,created REAL);
+        CREATE TABLE IF NOT EXISTS cloud_profiles(user TEXT PRIMARY KEY,email TEXT UNIQUE,avatar INTEGER NOT NULL);
+        CREATE TABLE IF NOT EXISTS cloud_signup(ticket TEXT PRIMARY KEY,name TEXT,email TEXT,salt TEXT,password TEXT,avatar INTEGER,code TEXT,expires REAL);
+        CREATE INDEX IF NOT EXISTS cloud_signup_expiry ON cloud_signup(expires);
         CREATE TABLE IF NOT EXISTS recovery(user TEXT,code TEXT UNIQUE,PRIMARY KEY(user,code));
         CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY,user TEXT,csrf TEXT,expires REAL);
         CREATE INDEX IF NOT EXISTS session_expiry ON sessions(expires);

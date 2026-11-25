@@ -16,7 +16,7 @@ function serve_php_api(string $origin,string $uri,string $method): never {
         $hub=new KeeperHub($db,$key,'','',null,$connection);
         $value=$hub->handle($method,$uri,$data,$bearer?:$cookie,$_SERVER['REMOTE_ADDR']??'local',$_SERVER['HTTP_X_CSRF_TOKEN']??'',$cookie!==''&&$bearer==='');
         $route=parse_url($uri,PHP_URL_PATH);
-        if(in_array($route,['/api/login','/api/register'],true)&&isset($value['token'])){setcookie('kfx_session',$value['token'],['expires'=>time()+2592000,'path'=>'/','secure'=>str_starts_with($origin,'https://'),'httponly'=>true,'samesite'=>'Strict']);unset($value['token']);}
+        if((in_array($route,['/api/login','/api/register'],true)||($route==='/api/cloud/verify'&&($data['browser']??false)===true))&&isset($value['token'])){setcookie('kfx_session',$value['token'],['expires'=>time()+2592000,'path'=>'/','secure'=>str_starts_with($origin,'https://'),'httponly'=>true,'samesite'=>'Strict']);unset($value['token']);}
         if($route==='/api/logout')setcookie('kfx_session','',['expires'=>1,'path'=>'/','secure'=>str_starts_with($origin,'https://'),'httponly'=>true,'samesite'=>'Strict']);
         header('Content-Type: application/json; charset=utf-8');echo json_encode($value,JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES);exit;
     }catch(ApiProblem $e){problem($e->status,$e->getMessage());}catch(JsonException|TypeError|ValueError $e){problem(400,'Malformed request');}catch(Throwable $e){problem(503,'Service is unavailable. Please try again.');}

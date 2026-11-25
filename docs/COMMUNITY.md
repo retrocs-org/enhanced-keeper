@@ -195,3 +195,22 @@ can resume a reserved player slot after an unclean timeout using an in-memory
 session key. Clean departures, expired reservations and application restarts
 still require a lobby join. See [recovery and local tools](POLISH-TOOLS.md) for
 the bounded grace period and tested limits.
+
+
+### Cloud profiles and email verification
+
+New in-game cloud profiles use the same KeeperHub account as the website. The
+macOS startup chooser lets you continue with the active profile, manage local
+profiles, create a cloud account, or sign into an existing account. A local
+content-profile switch takes effect on the next launch. Cloud sign-in stores
+the account session in the selected local profile. Saves remain local.
+
+Before enabling email signup on MariaDB, back up the database and apply the
+additive changes from `public-web/lib/mariadb.sql` with the existing
+`lib/bin/migrate.php` procedure in [MariaDB deployment](MARIADB-DEPLOYMENT.md).
+SQLite adds the tables when it loads the schema. In the deployed
+`config.inc.php`, add the `smtp` settings from the sample configuration.
+Set the relay hostname, port, sender and TLS mode. The transport supports
+STARTTLS, implicit TLS and unauthenticated plaintext relays. SMTP credentials
+require TLS. The game sends the verification request to KeeperHub over HTTPS
+and the relay sends a six-digit, single-use code that expires after 15 minutes.
