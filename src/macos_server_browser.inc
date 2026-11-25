@@ -43,7 +43,14 @@ void browser_tick(){
     if(page==36)close_panel();
    }
   }
-  else if(tag=="join"){join_ip=hub_field(&d.root,"endpoint");pending_join=true;}
+  else if(tag=="join"){
+   const VALUE *required=value_dict_get(&d.root,"login_ticket_required");
+   if(required&&value_type(required)==VALUE_BOOL&&value_bool(required)){
+    pending_login_ticket=hub_field(&d.root,"identity_ticket");
+    if(pending_login_ticket.empty()){hub_message="Sign in with a cloud account before joining.";return;}
+   }
+   join_ip=hub_field(&d.root,"endpoint");pending_join=true;
+  }
   else if(tag=="spectate-start"){std::string id=hub_field(&d.root,"stream_id");if(normalized_version(hub_field(&d.root,"engine"))!=normalized_version(VER_STRING)){hub_message="Spectator engine version differs.";return;}if(!id.empty()){kfx_hub_spectator_start(id.c_str());hub_message="Buffering a read-only spectator replay...";}}
   else if(tag=="publish")hub_message="Public lobby registered. Players can join directly.";
   else if(tag=="community"){community_text.clear();const char *keys[]={"events","friends","matches","challenges","replays"};const VALUE *rows=value_dict_get(&d.root,keys[community_tab]);for(size_t i=0;rows&&i<std::min(value_array_size(rows),(size_t)50);i++){const VALUE *r=value_array_get(rows,i);std::string title=hub_field(r,community_tab==0||community_tab==3?"title":community_tab==1?"name":community_tab==2?"map":"id");community_text+=title+"\n";std::string detail=hub_field(r,community_tab==0?"kind":community_tab==1?"status":community_tab==2?"verification":community_tab==3?"description":"sha");community_text+=detail+"\n\n";}if(community_text.empty())community_text="Nothing here yet. Create events and manage your profile on the website.";}

@@ -29,11 +29,31 @@ trait HubServers {
         if($action==='join'){
             demand(empty($data['relay']),'Relay connections are not supported',400);
             $row=$this->one('SELECT * FROM servers WHERE id=? AND last_seen>?',[$sid,$this->now-90]);demand($row,'Server is offline',404);demand($row['status']==='lobby'&&$row['players']<$row['capacity'],'Server is full or playing',409);demand(empty($data['engine'])||$data['engine']===$row['engine'],'Engine version differs',409);$fingerprint=$data['content']??'';demand(is_string($fingerprint)&&($fingerprint===''||preg_match('/^[0-9a-f]{64}$/D',$fingerprint)),'Invalid content fingerprint');demand($fingerprint===''||!preg_match('/^[0-9a-f]{64}$/D',$row['mods'])||hash_equals($row['mods'],$fingerprint),'Campaign/map or configuration/mod content differs',409);
-            $match=$this->one('SELECT id FROM matches WHERE server=? AND ended=0 ORDER BY started DESC LIMIT 1',[$sid]);$answer=['endpoint'=>$row['endpoint'],'id'=>$sid,'match_id'=>$match['id']??''];if($uid&&$match){$this->q('INSERT OR IGNORE INTO participants(match,user) VALUES(?,?)',[$match['id'],$uid]);$ticket=api_token();$this->q('INSERT INTO tickets(token,server,user,expires) VALUES(?,?,?,?)',[hash('sha256',$ticket),$sid,$uid,$this->now+600]);$answer['identity_ticket']=$ticket;}return $answer;
+            $requiresAccount=in_array($row['kind'],['dedicated','community'],true);
+            if($requiresAccount)demand($uid,'Sign in with a cloud account to join this public dedicated server',401);
+            $match=$this->one('SELECT id FROM matches WHERE server=? AND ended=0 ORDER BY started DESC LIMIT 1',[$sid]);$answer=['endpoint'=>$row['endpoint'],'id'=>$sid,'match_id'=>$match['id']??''];if($requiresAccount){demand($match,'No active match',409);$answer['login_ticket_required']=true;}if($uid&&$match){$this->q('INSERT OR IGNORE INTO participants(match,user) VALUES(?,?)',[$match['id'],$uid]);$ticket=api_token();$this->q('INSERT INTO tickets(token,server,user,expires) VALUES(?,?,?,?)',[hash('sha256',$ticket),$sid,$uid,$this->now+($requiresAccount?60:600)]);$answer['identity_ticket']=$ticket;}return $answer;
         }
         $row=$this->hostCredential($sid,$token);
         if($action==='heartbeat'){
             $players=$data['players']??1;$status=$data['status']??'lobby';demand(is_int($players)&&$players>=0&&$players<=4,'Invalid player count');demand(in_array($status,['lobby','playing','offline'],true),'Invalid server status');$map=mb_substr((string)($data['map']??$row['map']),0,80);$this->q('UPDATE servers SET last_seen=?,players=?,status=?,map=?,mods=? WHERE id=?',[$this->now,$players,$status,$map,mb_substr((string)($data['mods']??$row['mods']),0,64),$sid]);if($status==='offline')$this->q("UPDATE matches SET ended=?,status=CASE WHEN status='lobby' THEN 'cancelled' ELSE 'abandoned' END WHERE server=? AND ended=0",[$this->now,$sid]);if($status==='playing')$this->q("UPDATE matches SET status='playing',map=? WHERE server=? AND status='lobby' AND ended=0",[$map,$sid]);return ['ok'=>true];
+        }
+        if($action==='admit'){
+            demand(in_array($row['kind'],['dedicated','community'],true)&&$row['status']==='lobby','Dedicated lobby unavailable',409);
+            $peer=$data['peer']??null;
+            $occupied=$data['occupied']??null;
+            demand(is_int($peer)&&$peer>=1&&$peer<4&&is_int($occupied)&&$occupied>=0&&$occupied<16,'Invalid lobby slots');
+            $digest=hash('sha256',api_text($data['ticket']??null,100));
+            $ticket=$this->one('SELECT user FROM tickets WHERE token=? AND server=? AND expires>? AND peer=-1',[$digest,$sid,$this->now]);
+            demand($ticket,'Identity ticket rejected',403);
+            $match=$this->one("SELECT id FROM matches WHERE server=? AND ended=0 AND status='lobby' ORDER BY started DESC LIMIT 1",[$sid]);
+            demand($match,'No active lobby',409);
+            foreach($this->rows('SELECT peer FROM identities WHERE match=? AND (peer=? OR user=?)',[$match['id'],$peer,$ticket['user']]) as $identity){
+                demand(!($occupied&(1<<(int)$identity['peer'])),'Account already connected',409);
+            }
+            demand($this->q('DELETE FROM tickets WHERE token=? AND server=? AND peer=-1',[$digest,$sid])->rowCount()===1,'Identity ticket already used',403);
+            $this->q('DELETE FROM identities WHERE match=? AND (peer=? OR user=?)',[$match['id'],$peer,$ticket['user']]);
+            $this->q('INSERT INTO identities VALUES(?,?,?)',[$match['id'],$peer,$ticket['user']]);
+            return ['user'=>$ticket['user']];
         }
         if($action==='identity'){
             $ticket=$this->one('SELECT * FROM tickets WHERE token=? AND server=? AND expires>?',[hash('sha256',api_text($data['ticket']??null,100)),$sid,$this->now]);$peer=$data['peer']??null;demand(is_int($peer)&&$peer>=1&&$peer<4,'Invalid peer');demand($ticket&&in_array($ticket['peer'],[-1,$peer],true),'Identity ticket rejected',403);$mid=$this->one('SELECT id FROM matches WHERE server=? AND ended=0 ORDER BY started DESC LIMIT 1',[$sid]);demand($mid,'No active match',409);$old=$this->one('SELECT user FROM identities WHERE match=? AND peer=?',[$mid['id'],$peer]);demand(!$old||$old['user']===$ticket['user'],'Peer identity is already bound',409);$other=$this->one('SELECT peer FROM identities WHERE match=? AND user=?',[$mid['id'],$ticket['user']]);demand(!$other||$other['peer']===$peer,'Account already occupies a peer',409);$this->q('INSERT OR IGNORE INTO identities VALUES(?,?,?)',[$mid['id'],$peer,$ticket['user']]);$this->q('UPDATE tickets SET peer=? WHERE token=?',[$peer,$ticket['token']]);return ['user'=>$ticket['user'],'peer'=>$peer];

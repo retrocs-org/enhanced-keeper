@@ -18,7 +18,7 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 namespace {
-std::string identity_ticket;std::array<std::string,4> identities;
+std::string identity_ticket, login_ticket;std::array<std::string,4> identities;
 bool initializing=false;
 bool host_started=false;
 std::string base="https://keeper-enhanced.retrocs.org",folder,account,name,account_id,server_id,server_secret,match_id,last_tag,last_body;
@@ -66,7 +66,10 @@ extern "C" int kfx_hub_tick(int hosting,int players,int playing,const char *map)
  if(r.tag=="me"&&!field(&d.root,"id").empty()){account_id=field(&d.root,"id");name=field(&d.root,"name");save_token();}
  if((r.tag=="publish"||r.tag=="join")&&!field(&d.root,"match_id").empty())match_id=field(&d.root,"match_id");
  if(r.tag=="publish"&&!field(&d.root,"secret").empty()){server_id=field(&d.root,"id");server_secret=field(&d.root,"secret");heartbeat_at=0;}
- if(r.tag=="join")identity_ticket=field(&d.root,"identity_ticket");
+ if(r.tag=="join"){
+     const VALUE *required=value_dict_get(&d.root,"login_ticket_required");
+     identity_ticket=required&&value_type(required)==VALUE_BOOL&&value_bool(required)?"":field(&d.root,"identity_ticket");
+ }
  if(r.tag.rfind("identity:",0)==0){int peer=atoi(r.tag.c_str()+9);if(peer>0&&peer<4)identities[peer]=field(&d.root,"user");}
  if(r.tag=="stream")live_reply(&d.root);
  if(r.tag=="heartbeat")apply_channels(&d.root);ready=1;}
@@ -86,8 +89,25 @@ extern "C" void kfx_hub_client_relay(const char *,int,const char *){registration
 extern "C" int kfx_hub_relay_registration(int,char *,int,int *,char *,int){return 0;}
 extern "C" void kfx_hub_outcome(const char *result){if(account.empty()||match_id.empty())return;std::string body="{\"result\":"+quote(result?result:"disconnected")+"}";kfx_hub_request("result",("/api/matches/"+match_id+"/result").c_str(),body.c_str(),1);match_id.clear();}
 
+extern "C" void kfx_hub_set_login_ticket(const char *ticket){login_ticket=ticket?ticket:"";}
+extern "C" const char *kfx_hub_login_ticket(){return login_ticket.c_str();}
+extern "C" int kfx_hub_requires_login_ticket(){return getenv("KFX_PUBLIC_DEDICATED")!=nullptr;}
+extern "C" int kfx_hub_admit_peer(int peer,unsigned occupied,const char *ticket)
+{
+    if(peer<1||peer>=4||server_id.empty()||server_secret.empty()||strlen(ticket)!=43||
+       strspn(ticket,"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-")!=43)return 0;
+    const std::string body="{\"peer\":"+std::to_string(peer)+",\"occupied\":"+std::to_string(occupied)+",\"ticket\":"+quote(ticket)+"}";
+    const Reply reply=http(base,"admit","/api/servers/"+server_id+"/admit",body,server_secret);
+    if(reply.status!=200)return 0;
+    const Document result(reply.body);
+    const std::string user=field(&result.root,"user");
+    if(user.empty())return 0;
+    identities[peer]=user;
+    return 1;
+}
+
 extern "C" const char *kfx_hub_identity_claim(){return identity_ticket.c_str();}
-extern "C" void kfx_hub_receive_identity(int peer,const char *ticket){if(peer<1||peer>3||server_id.empty()||!ticket||strlen(ticket)>100)return;std::string body="{\"peer\":"+std::to_string(peer)+",\"ticket\":"+quote(ticket)+"}";kfx_hub_request(("identity:"+std::to_string(peer)).c_str(),("/api/servers/"+server_id+"/identity").c_str(),body.c_str(),2);}
+extern "C" void kfx_hub_receive_identity(int peer,const char *ticket){if(kfx_hub_requires_login_ticket()||peer<1||peer>3||server_id.empty()||!ticket||strlen(ticket)>100)return;std::string body="{\"peer\":"+std::to_string(peer)+",\"ticket\":"+quote(ticket)+"}";kfx_hub_request(("identity:"+std::to_string(peer)).c_str(),("/api/servers/"+server_id+"/identity").c_str(),body.c_str(),2);}
 extern "C" const char *kfx_hub_peer_account(int peer){return peer>=0&&peer<4?identities[peer].c_str():"";}
 // Spectator streams append only authenticated service data to a private replay file.
 namespace {

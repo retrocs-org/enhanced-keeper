@@ -78,8 +78,14 @@ KFX_USER_DATA_DIR="$PWD/.local/dedicated-user" \
   "/Applications/Keeper-Enhanced.app/Contents/MacOS/KeeperFXE" --prepare-only
 ```
 
-Set `visibility` to `private` (no directory or key) or `public` (listed, with
-an administrator key). Either mode accepts an optional `KFX_SERVER_PASSWORD`.
+Set `visibility` to `private` for direct connections by address using local or
+cloud profiles. Set it to `public` to list the server in the Public Server
+Browser. Public dedicated servers require players to sign in with a cloud
+account and join from the browser, which requests a short-lived, one-use
+admission ticket. The website, dedicated engine, and joining clients all
+need a version that supports admission tickets. A public server can register
+without an administrator key. Either mode accepts an optional
+`KFX_SERVER_PASSWORD`.
 Copy `examples/dedicated-local.json` to an ignored local file and adjust paths.
 Choose maps with enough player positions. The example runs Classic map 52 with
 one human and the AI host. The engine binary and GameData must have matching

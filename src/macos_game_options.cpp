@@ -130,6 +130,7 @@ Uint64 repeat_at=0;
 std::string caption;
 Uint64 caption_until=0;
 bool pending_join=false;
+std::string pending_login_ticket;
 std::map<const unsigned char*,SDL_Surface*> skin_cache;
 TbSpriteSheet *options_font=nullptr,*options_accent_font=nullptr,*options_buttons=nullptr;
 SDL_Surface *options_background=nullptr;
@@ -686,7 +687,10 @@ void process_network(){
         }
     }
     if(pending_join){
-        pending_join=false;std::string endpoint;
+        pending_join=false;
+        std::string login_ticket;
+        login_ticket.swap(pending_login_ticket);
+        std::string endpoint;
         if(!valid_endpoint(join_ip,endpoint)){notice="Enter a hostname, IPv4 or bracketed IPv6 address and UDP port.";return;}
         if(network_is_active()||game.game_kind==GKind_LocalGame){notice="Return to the main menu before joining another game.";return;}
         persist_endpoint(endpoint);
@@ -696,7 +700,9 @@ void process_network(){
         frontnet_service_setup();frontnet_session_setup();snprintf(netstate.password,sizeof(netstate.password),"%s",server_password.c_str());
         static TbNetworkSessionNameEntry direct={};memset(&direct,0,sizeof(direct));direct.in_use=1;direct.joinable=1;
         snprintf(direct.text,sizeof(direct.text),"%s",endpoint.c_str());snprintf(direct.join_address,sizeof(direct.join_address),"LAN:%s",endpoint.c_str());net_session[0]=&direct;net_number_of_sessions=1;net_session_index_active=0;
+        kfx_hub_set_login_ticket(login_ticket.c_str());
         frontnet_session_join(nullptr);
+        kfx_hub_set_login_ticket(nullptr);
         if(frontend_menu_state!=FeSt_NET_START){if(browser_join_failed())return;open_panel(6);notice="Could not join. Check the host address, UDP port, firewall and matching game version.";}
     }
 }

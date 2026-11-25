@@ -285,9 +285,14 @@ TbError process_network_message(NetUserId source, void *server_buf, size_t frame
     char *read_pos = netstate.msg_buffer;
     enum NetMessageType message_type = (enum NetMessageType)read_pos[0];
     read_pos += 1;
+    if (netstate.my_id == SERVER_ID && source != SERVER_ID &&
+        kfx_hub_requires_login_ticket() && netstate.users[source].progress != USER_LOGGEDIN &&
+        message_type != NETMSG_LOGIN) {
+        return Lb_OK;
+    }
     switch (message_type) {
     case NETMSG_LOGIN:
-        return process_login_message(source, read_pos);
+        return process_login_message(source, read_pos, netstate.msg_buffer + message_size);
     case NETMSG_USERUPDATE:
         return process_user_update_message(source, read_pos, netstate.msg_buffer + message_size);
     case NETMSG_FRONTEND:

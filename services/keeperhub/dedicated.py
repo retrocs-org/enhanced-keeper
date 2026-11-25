@@ -157,9 +157,11 @@ class Host:
             env=dict(os.environ,KFX_USER_DATA_DIR=str(self.profile),KFX_HEADLESS='1',KFX_LOCAL_NETWORK_ONLY='1',SDL_VIDEODRIVER='dummy',SDL_RENDER_DRIVER='software',SDL_AUDIODRIVER='dummy',ALSOFT_DRIVERS='null',KFX_HUB_URL=base,KFX_HUB_SERVER_ID=room['id'],KFX_HUB_SERVER_SECRET=room['secret'])
             if not public:
                 env['KFX_PRIVATE_SERVER']='1'
+                env.pop('KFX_PUBLIC_DEDICATED',None)
                 for name in ('KFX_HUB_URL','KFX_HUB_SERVER_ID','KFX_HUB_SERVER_SECRET','KFX_HUB_ADMIN_KEY'):env.pop(name,None)
             else:
                 env.pop('KFX_PRIVATE_SERVER',None)
+                env['KFX_PUBLIC_DEDICATED']='1'
                 env.pop('KFX_HUB_ADMIN_KEY',None)
             if cfg.get('app_resources'):env['KFX_APP_RESOURCES']=cfg['app_resources']
             replay=state/(room['id']+'.pck');port=int(cfg.get('port',5556));args=[str(runtime/'keeperfx'),'-nointro','-server',str(port),'-campaign',item['campaign'],'-level',str(item['level']),'-waitusers',str(cfg.get('humans',1)+1),'-nosound','-nick',cfg.get('ai_name','ServerAI'),'-packetsave',str(replay),'-log','dedicated.log']

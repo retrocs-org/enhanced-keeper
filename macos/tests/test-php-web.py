@@ -213,6 +213,42 @@ class PHPWebsiteTests(unittest.TestCase):
         host=json.load(self.request('/api/servers/register',{'name':'PHP Game Host','endpoint':'127.0.0.1:5556','engine':'1.4.0.0','password':False},{'Authorization':'Bearer '+game['token']}))
         self.assertIn('secret',host)
 
+    def test_public_dedicated_admission_requires_one_use_account_ticket(self):
+        host = json.load(self.request('/api/servers/register', {
+            'name': 'Public Keeper', 'endpoint': '127.0.0.1:5556',
+            'engine': '1.4.0.0', 'kind': 'dedicated',
+        }))
+        server = '/api/servers/' + host['id']
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            self.request(server + '/join', {})
+        self.assertEqual(error.exception.code, 401)
+
+        account = json.load(self.request('/api/register', {
+            'name': 'CloudKeeper', 'password': 'a long password for admission',
+        }))
+        csrf = {'X-CSRF-Token': account['csrf']}
+        join = json.load(self.request(server + '/join', {}, csrf))
+        self.assertTrue(join['login_ticket_required'])
+        admit = {'peer': 1, 'occupied': 0, 'ticket': join['identity_ticket']}
+        # Server bearer requests carry no browser cookies.
+        def admit_peer(data):
+            return urllib.request.urlopen(urllib.request.Request(
+                self.origin + server + '/admit', data=json.dumps(data).encode(),
+                headers={'Content-Type': 'application/json', 'Authorization': 'Bearer ' + host['secret']},
+            ), timeout=4)
+        with admit_peer(admit) as reply:
+            self.assertTrue(json.load(reply)['user'])
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            admit_peer(admit)
+        self.assertEqual(error.exception.code, 403)
+
+        fresh = json.load(self.request(server + '/join', {}, csrf))
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            admit_peer({'peer': 2, 'occupied': 2, 'ticket': fresh['identity_ticket']})
+        self.assertEqual(error.exception.code, 409)
+        with admit_peer({'peer': 2, 'occupied': 0, 'ticket': fresh['identity_ticket']}) as reply:
+            self.assertTrue(json.load(reply)['user'])
+
     def test_relay_is_disabled_even_with_legacy_configuration(self):
         health=json.load(self.request('/api/health'))
         self.assertTrue(health['ok'])

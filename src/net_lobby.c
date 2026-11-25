@@ -27,6 +27,7 @@
 #include "front_landview.h"
 #include "front_network.h"
 #include "net_lan.h"
+#include "net_hub.h"
 #include "net_matchmaking.h"
 #include "packets.h"
 #include "player_data.h"
@@ -63,9 +64,24 @@ void LbNetwork_SetServerPort(int port)
     server_port = port;
 }
 
-TbError process_login_message(NetUserId source, char *read_pos)
+static const char *read_login_text(char **position, const char *end, size_t max_length)
+{
+    const char *text = *position;
+    const char *terminator = memchr(text, '\0', end - text);
+    if (terminator == NULL || (size_t)(terminator - text) > max_length) {
+        return NULL;
+    }
+    *position += terminator - text + 1;
+    return text;
+}
+
+TbError process_login_message(NetUserId source, char *read_pos, const char *end_pos)
 {
     if (source == SERVER_ID) {
+        if ((size_t)(end_pos - read_pos) < 1 + sizeof(net_current_version) ||
+            (unsigned char)read_pos[0] >= netstate.max_users) {
+            return Lb_FAIL;
+        }
         netstate.my_id = (NetUserId)read_pos[0];
         read_pos += 1;
         netstate.users[netstate.my_id].version = net_current_version;
@@ -78,8 +94,8 @@ TbError process_login_message(NetUserId source, char *read_pos)
         NETMSG("Peer was not in connected state");
         return Lb_OK;
     }
-    const char *password;
-    if (!read_network_message_text(&read_pos, &password, sizeof(netstate.password))) {
+    const char *password = read_login_text(&read_pos, end_pos, sizeof(netstate.password));
+    if (password == NULL) {
         NETDBG(6, "Connected peer sent invalid password");
         netstate.sp->drop_user(source);
         return Lb_OK;
@@ -89,8 +105,8 @@ TbError process_login_message(NetUserId source, char *read_pos)
         return Lb_OK;
     }
 
-    const char *name;
-    if (!read_network_message_text(&read_pos, &name, sizeof(user->name) - 1) || name[0] == '\0') {
+    const char *name = read_login_text(&read_pos, end_pos, sizeof(user->name) - 1);
+    if (name == NULL || name[0] == '\0') {
         NETDBG(6, "Connected peer sent invalid name");
         netstate.sp->drop_user(source);
         return Lb_OK;
@@ -101,8 +117,24 @@ TbError process_login_message(NetUserId source, char *read_pos)
         netstate.sp->drop_user(source);
         return Lb_OK;
     }
-    const struct GameVersionPacket *user_version = (const struct GameVersionPacket *)read_pos;
-    user->version = *user_version;
+    if ((size_t)(end_pos - read_pos) < sizeof(user->version)) {
+        netstate.sp->drop_user(source);
+        return Lb_OK;
+    }
+    memcpy(&user->version, read_pos, sizeof(user->version));
+    read_pos += sizeof(user->version);
+    if (kfx_hub_requires_login_ticket()) {
+        const char *ticket = read_login_text(&read_pos, end_pos, 43);
+        unsigned occupied = 0;
+        for (NetUserId id = 1; id < netstate.max_users; ++id) {
+            if (netstate.users[id].progress == USER_LOGGEDIN) occupied |= 1u << id;
+        }
+        if (ticket == NULL || !kfx_hub_admit_peer(source, occupied, ticket)) {
+            NETMSG("Public dedicated lobby refused an unauthenticated login");
+            netstate.sp->drop_user(source);
+            return Lb_OK;
+        }
+    }
     NETMSG("User %s successfully logged in", user->name);
     user->progress = USER_LOGGEDIN;
     play_non_3d_sample(snd_spell_stars);
@@ -171,7 +203,9 @@ void LbNetwork_InitSessionsFromCmdLine(const char *str)
 TbError LbNetwork_ExchangeLogin(char *player_name)
 {
     NETMSG("Logging in as %s", player_name);
-    if (1 + strlen(netstate.password) + 1 + strlen(player_name) + 1 + sizeof(net_current_version) >= sizeof(netstate.msg_buffer)) {
+    const char *ticket = kfx_hub_login_ticket();
+    size_t ticket_size = ticket[0] ? strlen(ticket) + 1 : 0;
+    if (ticket_size + 1 + strlen(netstate.password) + 1 + strlen(player_name) + 1 + sizeof(net_current_version) >= sizeof(netstate.msg_buffer)) {
         ERRORLOG("Login credentials too long");
         return Lb_FAIL;
     }
@@ -182,9 +216,13 @@ TbError LbNetwork_ExchangeLogin(char *player_name)
     write_pos += strlen(player_name) + 1;
     memcpy(write_pos, &net_current_version, sizeof(net_current_version));
     write_pos += sizeof(net_current_version);
+    if (ticket_size != 0) {
+        memcpy(write_pos, ticket, ticket_size);
+        write_pos += ticket_size;
+    }
     send_message_buffer(SERVER_ID, write_pos);
     TbClockMSec wait_start_time = LbTimerClock();
-    while (LbTimerClock() - wait_start_time < TIMEOUT_JOIN_LOBBY) {
+    while (LbTimerClock() - wait_start_time < TIMEOUT_JOIN_LOBBY + (ticket_size ? 6000 : 0)) {
         if (!netstate.sp->msgready(SERVER_ID, 0)) {
             netstate.sp->update(NULL);
             if (!netstate.sp->msgready(SERVER_ID, 0)) {
@@ -247,7 +285,8 @@ TbError LbNetwork_Create(char *nsname_str, char *plyr_name, uint32_t *plyr_num, 
         ipv4_port = external_ipv4_port;
     }
     const uint16_t ipv6_port = enet_get_bound_ipv6_port();
-    if (frontnet_service_selected(FrontendNetSvc_LAN)) {
+    if (frontnet_service_selected(FrontendNetSvc_LAN) &&
+        !getenv("KFX_PRIVATE_SERVER") && !kfx_hub_requires_login_ticket()) {
         lan_host_start(plyr_name, local_port);
     }
     if (frontnet_service_selected(FrontendNetSvc_Online) && matchmaking_create(plyr_name, ipv4_port, ipv6_port) != 0) {
