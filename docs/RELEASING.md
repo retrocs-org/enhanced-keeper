@@ -15,7 +15,7 @@ and remote repositories are not renamed by packaging.
 ## Configure once
 
 Copy `examples/release-config.json` outside the checkout to
-`~/Development/tools/git-release/projects/keeperfx-e.json`, or select a
+`~/Development/tools/git-release/projects/keeper-enhanced.json`, or select a
 file with `--config` / `KFX_RELEASE_CONFIG`. Set the Developer ID identity and
 saved `xcrun notarytool` profile under `env`. The profile name is a keychain
 selector, never a password. `KFX_GAME_DIR` optionally selects the assembled
@@ -104,7 +104,7 @@ change the engine/save format. Original Dungeon Keeper data is still required.
 
 See `scripts/BEAM68-LICENSE.txt` for the reused release infrastructure licence.
 
-Canonical project destinations: https://keeperfx-e.retrocs.org, https://github.com/retrocs-org/KeeperFX-E. The website domain is reserved for deployment; existing local community-service preferences are retained.
+Canonical project destinations: https://keeperfx-e.retrocs.org, https://github.com/retrocs-org/keeper-enhanced. The website domain is reserved for deployment; existing local community-service preferences are retained.
 
 ### Source initialization and release notes
 

@@ -6,7 +6,7 @@ leaving up to three humans; this is a lockstep host, not a new authoritative
 network protocol. No relay is used. Private mode makes no community HTTP calls,
 publishes no server listing or spectator stream, and needs no community key.
 
-Source: https://github.com/retrocs-org/KeeperFX-E (existing repository URL).
+Source: https://github.com/retrocs-org/keeper-enhanced (existing repository URL).
 
 ## Import from an original BIN/CUE disc
 
@@ -136,7 +136,7 @@ Earlier build directories remain untouched. Set `KFX_JOBS=4` to control parallel
 The staged binary must pass `--version` before the running service is stopped.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/retrocs-org/KeeperFX-E/main/scripts/refresh-keeper-enhanced.sh \
+curl -fsSL https://raw.githubusercontent.com/retrocs-org/keeper-enhanced/main/scripts/refresh-keeper-enhanced.sh \
   -o /root/refresh-keeper-enhanced.sh
 chmod 700 /root/refresh-keeper-enhanced.sh
 /root/refresh-keeper-enhanced.sh

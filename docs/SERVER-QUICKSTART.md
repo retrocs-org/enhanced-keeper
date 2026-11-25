@@ -11,7 +11,7 @@ If the homepage works but every clean URL returns Apache's 404, load the routing
 overlay into Apache's existing conf.d includes. No new VirtualHost is needed:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/retrocs-org/KeeperFX-E/main/docs/apache-keeperfx-e.conf \
+curl -fsSL https://raw.githubusercontent.com/retrocs-org/keeper-enhanced/main/docs/apache-keeperfx-e.conf \
   -o /etc/apache2/conf.d/keeperfx-e-routing.conf
 APACHECTL=$(command -v apache2ctl || command -v apachectl)
 "$APACHECTL" configtest && systemctl reload apache2
@@ -50,7 +50,7 @@ instead of rerunning CREATE USER or changing its password accidentally.
 Install the application tables on that same database server:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/retrocs-org/KeeperFX-E/main/public-web/lib/mariadb.sql \
+curl -fsSL https://raw.githubusercontent.com/retrocs-org/keeper-enhanced/main/public-web/lib/mariadb.sql \
   -o /tmp/keeperfx-e-schema.sql
 mariadb --defaults-extra-file="$HOME/.my.cnf" keeperfx_e < /tmp/keeperfx-e-schema.sql
 ```

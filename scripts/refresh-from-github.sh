@@ -4,7 +4,7 @@ set -eu
 APP=keeperfx-e
 PARENT=/srv/www/vhosts
 SITE="$PARENT/$APP.retrocs.org"
-REPOSITORY=https://github.com/retrocs-org/KeeperFX-E.git
+REPOSITORY=https://github.com/retrocs-org/keeper-enhanced.git
 
 [ "$(id -u)" -eq 0 ] || { echo 'Run as root.' >&2; exit 1; }
 for program in git php getent flock; do

@@ -1,6 +1,6 @@
 # Keeper-Enhanced
 
-[In-game tools](docs/POLISH-TOOLS.md) · [Website](https://keeperfx-e.retrocs.org) · [GitHub](https://github.com/retrocs-org/KeeperFX-E)
+[In-game tools](docs/POLISH-TOOLS.md) · [Website](https://keeperfx-e.retrocs.org) · [GitHub](https://github.com/retrocs-org/keeper-enhanced)
 
 > **This repository is the native macOS fork of KeeperFX.**
 > It carries the Apple Silicon + Intel macOS port, Universal build work,

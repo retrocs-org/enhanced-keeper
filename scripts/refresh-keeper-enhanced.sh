@@ -3,7 +3,7 @@
 set -Eeuo pipefail
 umask 077
 SOURCE=${KFX_SERVER_SOURCE:-/root/keeper-enhanced}
-REPOSITORY=https://github.com/retrocs-org/KeeperFX-E.git
+REPOSITORY=https://github.com/retrocs-org/keeper-enhanced.git
 # Same CMake build directory as make server-linux; old caches remain untouched.
 BUILD="$SOURCE/out/server-linux"
 DEST=/opt/keeper-enhanced-server

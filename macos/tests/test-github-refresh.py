@@ -55,7 +55,7 @@ os.execv(os.environ['TEST_REAL_MV'],[os.environ['TEST_REAL_MV'],*sys.argv[1:]])
             self.assertEqual(stat.S_IMODE(p.stat().st_mode),0o750 if p.is_dir() else 0o640)
         self.assertNotIn('private-test-value',result.stdout+result.stderr)
         self.assertIn('wwwrun:wwwrun',(self.root/'chown.log').read_text())
-        self.assertIn('https://github.com/retrocs-org/KeeperFX-E.git',(self.root/'git.log').read_text())
+        self.assertIn('https://github.com/retrocs-org/keeper-enhanced.git',(self.root/'git.log').read_text())
         self.assertEqual([p for p in self.parent.glob('.refresh-keeperfx-e.*') if not p.name.endswith('.lock')],[])
     def test_invalid_live_config_leaves_site_untouched_without_leaking_values(self):
         self.old_site("<?php return ['password'=>'private-test-value' broken;\n")

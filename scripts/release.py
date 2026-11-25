@@ -812,7 +812,7 @@ class Release:
 def main(argv=None):
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('command',choices=['plan','source','build','check','prepare','publish','release'])
-    p.add_argument('--config',type=Path,default=Path(os.environ.get('KFX_RELEASE_CONFIG',str(Path.home()/'Development/tools/git-release/projects/keeperfx-e.json'))))
+    p.add_argument('--config',type=Path,default=Path(os.environ.get('KFX_RELEASE_CONFIG',str(Path.home()/'Development/tools/git-release/projects/keeper-enhanced.json'))))
     p.add_argument('--output',type=Path);p.add_argument('--notes',type=Path,default=ROOT/'docs/RELEASE-NOTES.md')
     p.add_argument('--to',default='');p.add_argument('--confirm-publish',action='store_true');p.add_argument('--confirm-push',action='store_true');p.add_argument('--dry-run',action='store_true')
     p.add_argument('--init',action='store_true',help='Initialize a new public source checkout')

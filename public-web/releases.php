@@ -8,7 +8,7 @@ function current_release(): ?array {
     if (!is_array($release['assets'] ?? null) || count($release['assets']) !== 2) return null;
     foreach ($release['assets'] as $asset) {
         if (!is_array($asset) || !is_string($asset['sha256'] ?? null) || !is_string($asset['url'] ?? null) || !is_string($asset['type'] ?? null) || !preg_match('/^[a-f0-9]{64}$/D', $asset['sha256'] ?? '')
-            || !preg_match('~^https://github\.com/retrocs-org/KeeperFX-E/releases/download/[^/]+/KeeperFX-E-[0-9.]+-macOS-Universal\.(?:dmg|zip)$~D', $asset['url'] ?? '')
+            || !preg_match('~^https://github\.com/retrocs-org/keeper-enhanced/releases/download/[^/]+/KeeperFX-E-[0-9.]+-macOS-Universal\.(?:dmg|zip)$~D', $asset['url'] ?? '')
             || !in_array($asset['type'] ?? '', ['dmg', 'zip'], true)) return null;
     }
     return $release;

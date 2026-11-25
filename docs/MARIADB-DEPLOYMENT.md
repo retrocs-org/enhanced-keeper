@@ -212,7 +212,7 @@ On **sth-ts-web003**, as root, for the existing document root
 `/srv/www/vhosts/keeperfx-e.retrocs.org`:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/retrocs-org/KeeperFX-E/main/docs/apache-keeperfx-e.conf \
+curl -fsSL https://raw.githubusercontent.com/retrocs-org/keeper-enhanced/main/docs/apache-keeperfx-e.conf \
   -o /etc/apache2/conf.d/keeperfx-e-routing.conf
 APACHECTL=$(command -v apache2ctl || command -v apachectl)
 "$APACHECTL" configtest && systemctl reload apache2

@@ -9,8 +9,8 @@ import urllib.error
 from urllib.parse import quote
 from release_support import atomic_json
 
-REPO = 'https://github.com/retrocs-org/KeeperFX-E'
-API = 'https://api.github.com/repos/retrocs-org/KeeperFX-E/releases/latest'
+REPO = 'https://github.com/retrocs-org/keeper-enhanced'
+API = 'https://api.github.com/repos/retrocs-org/keeper-enhanced/releases/latest'
 
 
 def download(url, limit=32768):
