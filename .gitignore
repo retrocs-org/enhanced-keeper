@@ -98,3 +98,6 @@ __pycache__/
 
 # Owner-supplied disc images never belong in source control.
 /import/
+
+# Downloaded/built external helpers and tool archives.
+/tools/local/

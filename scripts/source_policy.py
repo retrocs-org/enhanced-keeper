@@ -12,14 +12,20 @@ CONTENT_SUFFIXES = {'.dat', '.fon', '.sbk', '.smk', '.raw', '.pal', '.wav', '.og
 
 def excluded(name):
     path = PurePosixPath(name)
+    # Explicitly authorized GPL source asset trees; original disc imports stay excluded.
+    if str(path).startswith(('assets/upstream/fxgraphics/', 'assets/upstream/fxsounds/')) and path.suffix.lower() not in {'.iso','.cue','.bin','.exe','.dll'}:
+        return False
     # These are the controller-guide assets supplied for this project's UI.
     if str(path.parent) == 'macos/packaging/controllers' and path.suffix in {'.svg', '.png'}:
         return False
     return (bool(path.parts) and path.parts[0] in CONTENT_ROOTS
             or path.suffix.lower() in CONTENT_SUFFIXES
-            or str(path).startswith('docs/assets/'))
+            or str(path).startswith(('docs/assets/', 'tools/local/')))
 
 def validate_history(root, git):
+    import importlib.util
+    spec=importlib.util.spec_from_file_location('asset_provenance', __import__('pathlib').Path(__file__).with_name('check-asset-sources.py'))
+    module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module);module.verify(root)
     # Branch pushes include ancestors: deleting or ignoring an asset is insufficient.
     paths = git(root, 'log', '--format=', '--name-only', '-z', '--full-history', '--no-renames', '--root', 'HEAD')
     for name in paths.split('\0'):

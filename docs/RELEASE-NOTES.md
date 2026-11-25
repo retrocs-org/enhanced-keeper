@@ -1,4 +1,7 @@
 ## Features
+- Vendor credited GPLv3 FXGraphics/FXsounds source assets and preserve their licenses.
+- Generate runtime assets locally using native tools and import original BIN/CUE
+  game data, movies and lossless CD music.
 - Native macOS application and Universal build workflow for Apple Silicon and Intel.
 - In-game sections for display, controller, performance, save and network settings.
 - Xbox and DualSense remapping, stick calibration, illustrated controller guides,
@@ -8,6 +11,9 @@
 - Text/cursor sizing, captions, reduced damage flashes and performance diagnostics.
 
 ## Fixes
+- Start at the main menu with soundtrack playback instead of forcing the Setup Guide.
+- Keep intro playback in the selected display mode; migrate the main configuration
+  to keeper-enhanced.cfg while preserving legacy settings.
 - Improve save locations, backup browsing, compatibility checks and nondestructive
   restoration into a free save slot.
 - Restore readable menu layouts, original-style highlights and pointer visibility.

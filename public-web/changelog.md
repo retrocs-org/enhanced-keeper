@@ -7,6 +7,9 @@ recorded separately in the repository's root `CHANGELOG.md`.
 
 ### Website
 
+- Add a public credits page acknowledging KeeperFX, FXGraphics and FXsounds,
+  with pinned upstream license links and repository credits.
+
 - Introduce a standalone PHP website for Keeper Enhanced, a fork of KeeperFX.
 - Add Overview, Features, Network, Servers, Leaderboard, Downloads and account pages.
 - Group server listings, events and replays under Network with subpage navigation.

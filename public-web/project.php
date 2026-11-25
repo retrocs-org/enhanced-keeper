@@ -1,6 +1,6 @@
 <?php
 if (!defined('KFX_WEB_PAGE')) { http_response_code(404); exit; }
-$titles=['/features'=>'Features','/leaderboard'=>'Leaderboard','/downloads'=>'Downloads'];
+$titles=['/features'=>'Features','/leaderboard'=>'Leaderboard','/downloads'=>'Downloads','/credits'=>'Credits'];
 ?>
 <!doctype html><html lang="en"><head><meta charset="utf-8"><script src="/routes.js"></script><meta name="viewport" content="width=device-width,initial-scale=1"><title><?= web_escape($titles[$path]) ?> · Keeper-Enhanced</title><link rel="icon" type="image/svg+xml" href="/assets/keeper-mask.svg"><link rel="stylesheet" href="/site.css"><link rel="stylesheet" href="/style.css"><?php if($path==='/leaderboard'): ?><script src="/community-pages.js" defer></script><?php endif; ?></head><body>
 <?php site_header($path); ?>
@@ -8,7 +8,7 @@ $titles=['/features'=>'Features','/leaderboard'=>'Leaderboard','/downloads'=>'Do
 <main id="main"><?php require __DIR__.'/features-page.php'; ?></main>
 <?php else: ?>
 <main id="main" class="wrap portal-main">
-<?php if($path==='/leaderboard'): ?>
+<?php if($path==='/credits'): require __DIR__.'/credits-page.php'; elseif($path==='/leaderboard'): ?>
 <p class="eyebrow">Keeper records</p><h1>Names from the depths.</h1><p class="lead">Public Keepers ranked by verified wins, then verified matches played. Casual results and private profiles are excluded.</p>
 <p id="leaderboard-state" role="status" aria-live="polite">Loading verified records…</p>
 <div class="table-wrap" id="leaderboard-table" hidden><table><thead><tr><th>Rank</th><th>Keeper</th><th>Verified wins</th><th>Verified matches</th></tr></thead><tbody id="leaderboard-players"></tbody></table></div>

@@ -8,3 +8,6 @@
 *.cpp text
 *.h text
 *.sh text eol=lf
+
+# Preserve byte-identical upstream sources and their provenance hashes.
+assets/upstream/** -text

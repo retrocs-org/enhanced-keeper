@@ -13,17 +13,18 @@ Source: https://github.com/retrocs-org/KeeperFX-E (existing repository URL).
 A fresh checkout no longer requires a manually prepared runtime:
 
 ```sh
-zypper install --no-recommends 7zip
 make import
 make server-linux JOBS=4
 ```
 
 Place the BIN/CUE files in `import/` before running these commands. If there are
 multiple CUE/ISO images, select one with `IMAGE="Dungeon Keeper.cue"`.
-The missing default runtime asset base is downloaded from the pinned KeeperFX
-1.4.0 complete bundle with size/SHA-256 verification. Only runtime data is copied;
-no downloaded Windows executable is installed. Your CD supplies original data,
+The missing default runtime base is generated locally from the vendored GPL
+asset sources and pinned KeeperFX configuration/map/translation sources. Native
+conversion tools and their PNG/zlib dependencies are built under `tools/local/`;
+no prebuilt runtime bundle or Windows executable is downloaded. Your CD supplies original data,
 movies and music. Dedicated-server staging excludes standalone music and movies.
+All required conversion tools are built automatically under `tools/local/`.
 All imported and downloaded assets remain local and Git-ignored.
 
 ## Build and import
@@ -174,3 +175,9 @@ python3 linux/import-data.py /path/to/prepared/GameData /path/to/server-profile
 This is a conservative media reduction, not a data-free server. Minimal imports
 have fixture coverage; a full dedicated multiplayer match with reduced data is
 still pending validation.
+
+Source-generated runtimes import original map layouts from the disc. They keep
+the original campaign and original multiplayer maps; optional community packs
+without supplied layout data are omitted from the menus. The server template
+uses the original multiplayer pack, map 52. Existing configurations are preserved;
+select a pack/map actually present in your imported runtime.

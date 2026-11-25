@@ -72,7 +72,20 @@ class Disc:
             with target.open('wb') as output:
                 while size:
                     count = min(size,1024*1024); output.write(self.read(offset,count)); offset += count; size -= count
-        return len(names)
+        # Original campaign/PvP layouts are disc data, not present in the asset repos.
+        maps=[n for n in self.files if n.startswith(prefix+'levels/') and re.fullmatch(r'map\d{5}\.(apt|clm|dat|flg|inf|lgt|lif|own|slb|tng|wib|wlb|tmn|slx|txt)',n.rsplit('/',1)[-1])]
+        copied=0
+        for source in maps:
+            filename=source.rsplit('/',1)[-1];number=int(filename[3:8])
+            folders=['campgns/keeporig'] if number<=20 or 100<=number<=105 else ['multiplayer/original']
+            for folder in folders:
+                target=destination/folder/filename
+                # Keep Enhanced scripts/configuration and any supplied matching layouts.
+                if target.exists():continue
+                target.parent.mkdir(parents=True,exist_ok=True)
+                offset,size=self.files[source]
+                target.write_bytes(self.read(offset,size));copied+=1
+        return len(names)+copied
 
 
 def cue_audio_tracks(cue):
@@ -193,8 +206,17 @@ def main():
         try: count=disc.extract(stage)
         finally: disc.stream.close()
         audio_count=0 if a.no_audio else import_audio(image, stage)
+        if (stage/'asset-build.json').exists():
+            # Source-generated bases lack optional community layouts; don't advertise broken packs.
+            for category in ('campgns','levels','multiplayer'):
+                for cfg in (stage/category).glob('*.cfg'):
+                    match=re.search(r'(?mi)^LEVELS_LOCATION\s*=\s*([^;\r\n]+)',cfg.read_text(errors='replace'))
+                    if not match:continue
+                    relative=Path(match[1].strip())
+                    if relative.is_absolute() or '..' in relative.parts:raise ValueError('Unsafe map location in generated configuration')
+                    if not any((stage/relative).glob('map*.slb')):cfg.unlink()
         stage.rename(a.output)
-    print(f'Imported {count} original game/movie files and {audio_count} lossless CD audio tracks into {a.output}.')
+    print(f'Imported {count} original data/movie/map files and {audio_count} lossless CD audio tracks into {a.output}.')
     if image.suffix.lower()=='.iso': print('ISO images contain no CD-audio tracks; use the CUE/BIN source to import music.')
 
 if __name__ == '__main__':

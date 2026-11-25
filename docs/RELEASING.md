@@ -189,3 +189,12 @@ unlock keychains with stored passwords or disable signing verification.
 Hosted CI workflows and runner configuration are not supplied. Build, test and release commands remain manual;
 CI and runner provisioning are deferred. The local release command invokes the
 native and service checks directly, without registering or contacting a runner.
+
+## Explicitly vendored GPL source assets
+
+The pinned `assets/upstream/fxgraphics/` and `assets/upstream/fxsounds/` trees
+are an explicit user-authorized exception to the earlier source-only asset
+policy. Their original GPLv3 files and notices are retained; `credits.md` records
+attribution and revisions. Source push validates every file against the original
+Git blob hashes in `assets/upstream/asset-sources.json`. Original CD images,
+disc-derived content, generated runtimes and tool installations remain excluded.

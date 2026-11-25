@@ -25,5 +25,5 @@ function site_header(string $current = '/'): void {
     }
 }
 function site_footer(): void {
-    echo '<footer class="site-footer wrap"><div><a class="brand" href="/">Keeper-Enhanced</a><p>Keeper-Enhanced is an independent fork of <a href="https://github.com/dkfans/keeperfx">KeeperFX</a>. Original game assets are imported from your own copy.</p></div><nav aria-label="Project links"><a href="/index.php?route=%2Fdevice" data-auth-only hidden>Connect game</a><a href="/index.php?route=%2Fnetwork%2Fchallenges">Challenges</a><a href="https://github.com/retrocs-org/KeeperFX-E">GitHub</a></nav></footer>';
+    echo '<footer class="site-footer wrap"><div><a class="brand" href="/">Keeper-Enhanced</a><p>Keeper-Enhanced is an independent fork of <a href="https://github.com/dkfans/keeperfx">KeeperFX</a>. Original game assets are imported from your own copy.</p></div><nav aria-label="Project links"><a href="/index.php?route=%2Fcredits">Credits</a><a href="/index.php?route=%2Fdevice" data-auth-only hidden>Connect game</a><a href="/index.php?route=%2Fnetwork%2Fchallenges">Challenges</a><a href="https://github.com/retrocs-org/KeeperFX-E">GitHub</a></nav></footer>';
 }

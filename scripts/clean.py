@@ -9,8 +9,8 @@ ROOT=Path(__file__).resolve().parents[1]
 
 def clean(root, dry_run=False):
     tracked=subprocess.check_output(['git','-C',str(root),'ls-files','-z'],text=True).split('\0')
-    names={'out','outputs','bin','obj','pkg','sdl','gfx','sfx',
-           '.local/imported-client','.local/linux-server-import','.local/keeperfx','.local/runtime-cache'}
+    names={'tools/local','out','outputs','bin','obj','pkg','sdl','gfx','sfx',
+           '.local/generated-runtime','.local/imported-client','.local/linux-server-import','.local/keeperfx','.local/runtime-cache'}
     names.update(p.name for p in root.glob('build-*') if p.is_dir() or p.is_symlink())
     candidates=[]
     for name in sorted(names):

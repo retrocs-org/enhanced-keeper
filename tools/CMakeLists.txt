@@ -10,7 +10,7 @@ elseif( ${CMAKE_HOST_SYSTEM_NAME} STREQUAL "Linux" )
 	set( EXE_FILE_NAME png2ico)
 endif()
 
-set(DESTINATION_DIR ${CMAKE_SOURCE_DIR}/tools/png2ico/${CMAKE_HOST_SYSTEM_NAME})
+set(DESTINATION_DIR ${CMAKE_SOURCE_DIR}/tools/local/png2ico/${CMAKE_HOST_SYSTEM_NAME})
 
 # Check for the extracted exe itself, not just the directory: DESTINATION_DIR
 # can already exist (e.g. a stale doc/ folder left by a Makefile tool build)
@@ -36,5 +36,5 @@ add_custom_command(
 )
 add_custom_target(generate_ico DEPENDS ${CMAKE_SOURCE_DIR}/res/keeperfx_icon.ico)
 
-add_dependencies( keeperfx generate_ico )
-add_dependencies( keeperfx_hvlog generate_ico )
+add_dependencies( keeper-enhanced generate_ico )
+add_dependencies( keeper-enhanced-hvlog generate_ico )

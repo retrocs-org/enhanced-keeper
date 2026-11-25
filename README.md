@@ -340,8 +340,8 @@ starts without an import prompt. CD audio tracks are imported losslessly as 44.1
 Both multi-BIN and single-BIN CUE layouts preserve track order and omit pregaps.
 Plain ISO files contain no CD audio; use CUE/BIN to include the soundtrack.
 
-A missing default runtime base at `.local/keeperfx` is bootstrapped automatically
-from the checksum-pinned upstream asset bundle. You can instead provide a matching
+A missing default runtime base at `.local/generated-runtime` is generated
+automatically from the vendored assets and pinned source inputs. You can instead provide a matching
 prepared base with `KFX_GAME_DIR=/path/to/runtime`. The original files and music
 still come from your own disc. `macos/build-universal.sh` is compile-only.
 
@@ -369,7 +369,7 @@ music in `.local/imported-client`. `make import-server` reduces the prepared
 runtime to `.local/linux-server-import/GameData`. It skips CD audio extraction
 when an IMAGE is supplied and excludes standalone music and movies.
 
-`IMPORT_BASE` defaults to `.local/keeperfx`, bootstrapped automatically when missing.
+`IMPORT_BASE` defaults to `.local/generated-runtime`, generated automatically when missing.
 A custom `IMPORT_BASE` must already contain a matching prepared runtime. `IMPORT_DIR` defaults to `import/`;
 absolute IMAGE paths can point to discs elsewhere. Choose a fresh `IMPORT_OUTPUT`
 to change the destination. Existing destinations are never overwritten. Imports
@@ -400,23 +400,57 @@ existing installed server's data intact.
 `make clean` removes standard generated build directories (`build-*`, `out`),
 packages (`outputs`, `bin`, `obj`, `pkg`), generated legacy asset directories
 (`sdl`, `gfx`, `sfx`) and local imported runtime copies (`.local/imported-client`,
-`.local/linux-server-import`, `.local/keeperfx`). Use `make clean-preview` to list
+`.local/linux-server-import`, `.local/keeperfx`, `.local/generated-runtime`,
+`.local/runtime-cache`, and `tools/local/`). Use `make clean-preview` to list
 paths first. No cleanup is performed merely by updating this Makefile.
 
 Original discs in `import/`, tracked CMake source in `build/`, Git history,
 third-party source checkouts and installed profiles are retained. Custom output
 paths outside these standard directories are not removed. Local imports that
 contain saves or recordings stop cleanup rather than lose personal data.
-After cleaning, rerun `make import`; the default base runtime is bootstrapped again automatically.
+After cleaning, rerun `make import`; native tools and runtime data are rebuilt automatically.
 
 ### Fresh-checkout import
 
-`make import` automatically downloads the pinned KeeperFX 1.4.0 runtime asset
-bundle into an ignored local cache when the default `.local/keeperfx` base is
-missing. It verifies the archive size and SHA-256, extracts data only (no Windows
-executables are installed), then overlays the original files and soundtrack from
-your local BIN/CUE. The same bootstrap is used by local macOS app builds.
-Install `7z` or `7zz` first; on openSUSE Leap use `zypper install 7zip` (older
-releases may provide the command through p7zip). A custom `IMPORT_BASE` is never
-overwritten or silently downloaded into. The roughly 375 MB archive and generated
-assets are ignored by Git and removed by `make clean`.
+`make import` builds native asset converters under `tools/local/`, generates a
+runtime base at `.local/generated-runtime`, then overlays game data, movies and
+lossless CD audio from your own BIN/CUE. It does not download the prebuilt
+375 MB runtime bundle. Graphics and sound source assets are vendored in
+`assets/upstream/` with their GPLv3 licenses and credits. Configuration, maps,
+scripts and translations come from a pinned KeeperFX source checkout kept under
+`tools/local/src/keeperfx`.
+
+The first run fetches pinned converter, PNG/zlib and KeeperFX sources. All
+converter executables are built natively; no system-wide helper installation is
+needed. A C/C++ compiler, CMake, Make, Git and Python 3 are prerequisites. The
+first conversion can take several minutes; later runs reuse generated files.
+With pinned tool/source checkouts already cached, use `OFFLINE=1` to prevent
+fetching missing source inputs. Missing offline inputs produce an explicit error.
+A custom `IMPORT_BASE` can still provide an already prepared matching runtime.
+
+### Local external tools
+
+`make tools` builds pngpal2raw, png2bestpal, po2ngdat, sndbanker, rnc and dernc
+natively under `tools/local/bin/`, including local static PNG/zlib dependencies.
+`make import` builds these tools automatically when generating its runtime base.
+Tool downloads, executable, license and version metadata stay in `tools/local/`,
+which is Git-ignored and excluded by source-push policy. CMake's downloaded
+Windows icon helper also uses that prefix. `make clean` removes this entire
+local prefix, preserving tracked `tools/CMakeLists.txt` and `tools/fxfontmaker`.
+The system compiler, Python, CMake and Make are still normal build prerequisites.
+The older prebuilt-bundle bootstrap remains an explicit standalone fallback script;
+it is not used by the default import flow.
+
+## Third-party asset credits
+
+The source assets from [FXGraphics](https://github.com/dkfans/FXGraphics) and
+[FXsounds](https://github.com/dkfans/FXsounds) are vendored in
+`assets/upstream/fxgraphics/` and `assets/upstream/fxsounds/`. Both repositories
+carry GPLv3 license files, preserved alongside their source assets. These assets
+are credited to their upstream contributors, not the Keeper Enhanced team.
+See [credits.md](credits.md) for revisions, licenses and attribution.
+
+This is an explicit exception to the source-only policy for these two pinned
+asset trees. Original Dungeon Keeper disc images and disc-derived files remain
+excluded from Git and public packages. Generated assets and downloaded tools
+remain local; `make clean` preserves the tracked upstream source assets.

@@ -33,8 +33,8 @@ def validate_listing(text):
 
 def bootstrap(output,cache):
     if output.exists() or output.is_symlink():raise ValueError('Runtime base already exists; refusing replacement')
-    tool=shutil.which('7zz') or shutil.which('7z')
-    if not tool:raise ValueError('Missing 7z/7zz for runtime assets. On openSUSE: zypper install 7zip (or the p7zip provider on older releases).')
+    subprocess.run([__import__('sys').executable,str(ROOT/'scripts/bootstrap-tools.py')],check=True)
+    tool=str(ROOT/'tools/local/bin/7zz')
     cache.mkdir(parents=True,exist_ok=True)
     archive=cache/'keeperfx_1_4_0_complete.7z'
     if archive.is_symlink():raise ValueError('Runtime cache must not contain linked archives')

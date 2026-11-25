@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Shared Make entry point for owner-supplied client and minimal server data."""
 import argparse
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -19,9 +20,11 @@ def main():
     output=Path(a.output) if a.output else ROOT/'.local'/('imported-client' if a.kind=='client' else 'linux-server-import')
     if output.exists():p.error(f'{output} already exists; choose a new IMPORT_OUTPUT (nothing overwritten)')
     if not any((a.base/n).is_file() for n in ('keeper-enhanced.cfg','keeperfx.cfg')):
-        if a.base.resolve() != (ROOT/'.local/keeperfx').resolve():
+        if a.base.resolve() != (ROOT/'.local/generated-runtime').resolve():
             p.error('Custom IMPORT_BASE has no runtime configuration; choose a prepared runtime or omit IMPORT_BASE to bootstrap automatically')
-        subprocess.run([sys.executable,str(ROOT/'scripts/bootstrap-runtime.py'),'--output',str(a.base)],check=True)
+        args=[sys.executable,str(ROOT/'scripts/build-asset-runtime.py'),'--output',str(a.base)]
+        if os.environ.get('KFX_ASSET_OFFLINE')=='1':args.append('--offline')
+        subprocess.run(args,check=True)
     image=Path(a.image) if a.image else None
     directory=image.parent if image and image.is_absolute() else a.import_dir
     def client_args(destination):

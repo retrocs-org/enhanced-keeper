@@ -8,5 +8,5 @@
   "port": 5556,
   "humans": 3,
   "spectators": false,
-  "rotation": [{"campaign": "classic", "level": 52}]
+  "rotation": [{"campaign": "original", "level": 52}]
 }

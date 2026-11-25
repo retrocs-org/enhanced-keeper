@@ -79,7 +79,7 @@ if (in_array($path, ['/community-pages.js', '/routes.js', '/app.js', '/portal.js
 if ($path === '/api-catalog.json') { define('KFX_WEB_PAGE',true); require __DIR__.'/api-catalog.php'; header('Content-Type: application/json; charset=utf-8'); echo json_encode(api_catalog(),JSON_THROW_ON_ERROR); exit; }
 // Canonical Network subpages share the existing page handlers; old bookmarks still work.
 $path=['/network'=>'/services','/network/servers'=>'/servers','/network/events'=>'/events','/network/replays'=>'/replays','/network/challenges'=>'/challenges'][$path]??$path;
-if (!in_array($path, ['/', '/index.php', '/community', '/servers', '/events', '/profile', '/device', '/services', '/api-browser', '/replays', '/challenges', '/features', '/leaderboard', '/downloads'], true)
+if (!in_array($path, ['/', '/index.php', '/community', '/servers', '/events', '/profile', '/device', '/services', '/api-browser', '/replays', '/challenges', '/features', '/leaderboard', '/downloads', '/credits'], true)
     && !(is_string($path) && preg_match('~^/keeper/[a-f0-9]{32}$~D', $path))) {
     problem(404, 'Not found.');
 }
@@ -88,5 +88,5 @@ define('KFX_WEB_PAGE', true);
 require __DIR__.'/releases.php';
 require __DIR__.'/layout.php';
 require __DIR__.'/api-catalog.php';
-if(in_array($path,['/features','/leaderboard','/downloads'],true)){require __DIR__.'/project.php';exit;}
+if(in_array($path,['/features','/leaderboard','/downloads','/credits'],true)){require __DIR__.'/project.php';exit;}
 require __DIR__ . (in_array($path,['/','/index.php'],true)?'/home.php':(in_array($path,['/services','/api-browser'],true)?'/network.php':'/community.php'));

@@ -37,4 +37,16 @@ class AudioTests(unittest.TestCase):
             cue=root/'disc.cue';cue.write_text('FILE "audio.bin" BINARY\n TRACK 02 AUDIO\n INDEX 01 00:00:00\n')
             with self.assertRaises(ValueError):m.cue_audio_tracks(cue)
 
+class OriginalMapTests(unittest.TestCase):
+    def test_disc_layouts_preserve_enhanced_scripts(self):
+        disc=m.Disc.__new__(m.Disc)
+        names=['keeper/'+n for n in m.REQUIRED]+['keeper/levels/map00001.slb','keeper/levels/map00001.txt','keeper/levels/map00052.slb']
+        disc.files={name:(0,1) for name in names};disc.read=lambda offset,size:b'X'*size
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);script=root/'campgns/keeporig/map00001.txt';script.parent.mkdir(parents=True);script.write_text('Enhanced script')
+            disc.extract(root)
+            self.assertEqual(script.read_text(),'Enhanced script')
+            self.assertEqual((root/'campgns/keeporig/map00001.slb').read_bytes(),b'X')
+            self.assertEqual((root/'multiplayer/original/map00052.slb').read_bytes(),b'X')
+
 if __name__=='__main__': unittest.main()
