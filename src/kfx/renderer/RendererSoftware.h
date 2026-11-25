@@ -64,6 +64,7 @@ private:
     int           m_direct_dst_h = 0;
     int           m_direct_filter = 0;
     bool          m_direct_present = false;
+    bool          m_direct_composite = false;
     std::vector<unsigned char> m_direct_rgba;
 
     SoftwareUIRenderer        m_ui_renderer;

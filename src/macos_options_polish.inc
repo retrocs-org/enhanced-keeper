@@ -1,8 +1,10 @@
 // Integrated feedback and diagnostics; shares the original-menu canvas and input ownership.
 bool menu_point(float mx,float my,int w,int h,SDL_Point &point){
-    if(w<=0||h<=0)return false;double scale=std::min(w/(double)WIDTH,h/(double)HEIGHT);
-    point={(int)((mx-(w-WIDTH*scale)/2)/scale),(int)((my-(h-HEIGHT*scale)/2)/scale)};
-    return point.x>=0&&point.y>=0&&point.x<WIDTH&&point.y<HEIGHT;
+    if(w<=0||h<=0)return false;
+    const auto view=options_window_view(w,h);
+    if(mx<view.x||my<view.y||mx>=view.x+view.w||my>=view.y+view.h)return false;
+    point={static_cast<int>((mx-view.x)*WIDTH/view.w),static_cast<int>((my-view.y)*HEIGHT/view.h)};
+    return true;
 }
 int button_animation_frame(Uint64 elapsed){static const int frames[]={0,1,2,3,4,3,2,1};return frames[(elapsed/100)&7];}
 void update_hover(){
@@ -41,11 +43,17 @@ void load_network_profile(){
 }
 void launch_local_profile(const std::string &profile);
 void finish_edit(){
+    if(editing==20){activate(2230);return;}
     if(editing==19){editing=0;SDL_StopTextInput(SDL_GetKeyboardFocus());activate(2126);return;}
     if(editing==12){library_rename();return;}
     if(editing==11){if(!create_profile())return;editing=0;SDL_StopTextInput(SDL_GetKeyboardFocus());if(choosing_local_profile)launch_local_profile(new_profile);return;}
     if(editing>=6){editing=0;browser_filter();SDL_StopTextInput(SDL_GetKeyboardFocus());return;}
     if(editing==5){if(saves.empty()||save_alias.empty()){notice="Enter a name for the saved game.";return;}std::string base=save_base(selected_save());if(!write_small_file(base+".label",save_alias)){notice="Could not rename this saved game.";return;}refresh_save(base);}
+    if(editing==3&&browser_redeem_room_code()){
+        editing=0;
+        SDL_StopTextInput(SDL_GetKeyboardFocus());
+        return;
+    }
     if(editing==3){std::string endpoint;if(!valid_endpoint(join_ip,endpoint)){notice="Use an IPv4 address and a port between 1 and 65535.";return;}join_ip=endpoint;if(!persist_endpoint(endpoint)){notice="Host address could not be remembered. Check save-folder permissions.";return;}}
     if(editing==4){if(network_name.empty()||network_name.find_first_not_of(' ')==std::string::npos){notice="Enter a player name.";return;}snprintf(tmp_net_player_name,sizeof(tmp_net_player_name),"%s",network_name.c_str());frontnet_session_set_player_name(nullptr);}
     editing=0;SDL_StopTextInput(SDL_GetKeyboardFocus());notice="Changes saved.";

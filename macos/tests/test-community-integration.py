@@ -76,10 +76,11 @@ test_coop=coop_mode in ('1','3')
 coop_humans=3 if coop_mode=='3' else 2
 manual_start=os.getenv('KFX_TEST_MANUAL_COOP')=='1'
 test_vote=os.getenv('KFX_TEST_MAP_VOTE')=='1'
+test_siege=os.getenv('KFX_TEST_SIEGE')=='1'
 test_party=test_coop or os.environ.get('KFX_TEST_PARTY')=='1'
 lobby_only=test_party or os.environ.get('KFX_TEST_LOBBY_ONLY')=='1'
 try:
- hostprofile=profile('host');hostport=port(True);cfg=dict(name='Local Dedicated QA',engine_binary=os.environ.get('KFX_TEST_SERVER_ENGINE',str(engine)),user_data=str(hostprofile),hub_url=base,endpoint='127.0.0.1:'+str(hostport),visibility='public',port=hostport,rotation=([{'campaign':'original','level':53}] if test_vote else [])+[{'campaign':'original','level':52}],allow_party_map_votes=test_vote,manual_start=manual_start,humans=3 if manual_start else coop_humans if test_coop else 3 if test_party else 2 if lobby_only else 1,cooperative=test_coop,ai_style=os.getenv('KFX_TEST_AI_STYLE','defensive'),spectators=not lobby_only,app_resources=str(app/'Contents/Resources'));os.environ['KFX_HUB_ADMIN_KEY']=hub.admin_key;supervisor=ded.Host(cfg);hosterrors=[]
+ hostprofile=profile('host');hostport=port(True);cfg=dict(name='Local Dedicated QA',engine_binary=os.environ.get('KFX_TEST_SERVER_ENGINE',str(engine)),user_data=str(hostprofile),hub_url=base,endpoint='127.0.0.1:'+str(hostport),visibility='public',port=hostport,rotation=([{'campaign':'original','level':53}] if test_vote else [])+[{'campaign':'original','level':60 if test_siege else 52}],allow_party_map_votes=test_vote,twin_hearts_siege=test_siege,manual_start=manual_start,humans=3 if manual_start else coop_humans if test_coop else 3 if test_party else 2 if lobby_only else 1,cooperative=test_coop,ai_style=os.getenv('KFX_TEST_AI_STYLE','defensive'),spectators=not lobby_only,app_resources=str(app/'Contents/Resources'));os.environ['KFX_HUB_ADMIN_KEY']=hub.admin_key;supervisor=ded.Host(cfg);hosterrors=[]
  def run_host():
   try:supervisor.run()
   except Exception:hosterrors.append(traceback.format_exc())
@@ -148,6 +149,12 @@ try:
   assert all(rpc(apiport)['coop_human_team'] and
              rpc(apiport)['dedicated_ai_style']==expected_style for apiport in ports)
   print(f'PASS: {coop_humans} humans play on one team against the dedicated AI',flush=True)
+  if test_siege:
+   until(lambda:all(rpc(apiport).get('turn',0)>620 for apiport in ports),seconds=100)
+   report=[rpc(apiport) for apiport in ports]
+   assert all(state.get('coop_siege') and state.get('siege_wave')==1 for state in report),report
+   print('PASS: both clients synchronized and played past the first siege wave',flush=True)
+
  elif lobby_only:
   until(lambda:rpc(clientport).get('active') and any(user.get('account') for user in supervisor.status.get('users',[])))
   print('PASS: packaged client entered a public lobby with its cloud identity',flush=True)

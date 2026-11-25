@@ -60,6 +60,7 @@
 #include "keeperfx.hpp"
 #include "kjm_input.h"
 #include "timer.h"
+#include "net_game.h"
 #include "post_inc.h"
 
 /******************************************************************************/
@@ -94,6 +95,7 @@ TbBool player_cannot_win(PlayerNumber plyr_idx)
 
 void set_player_as_won_level(struct PlayerInfo *player)
 {
+  if(network_is_active()&&kfx_coop_siege&&!kfx_coop_siege_finish)return;
   if (player->victory_state != VicS_Undecided)
   {
       //WARNLOG("Player fate is already decided to %d",(int)player->victory_state);

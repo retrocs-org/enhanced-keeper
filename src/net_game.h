@@ -29,6 +29,9 @@ extern "C" {
 
 extern int kfx_dedicated_player;
 extern int kfx_dedicated_ai_style;
+extern TbBool kfx_coop_siege;
+extern GameTurn kfx_coop_siege_finish;
+extern int kfx_coop_siege_wave;
 void apply_dedicated_coop_alliances(void);
 TbBool dedicated_coop_team_ready(void);
 

@@ -405,7 +405,10 @@ short setup_game(void)
   // init_sound(). This will probably change when we'll move sound
   // to SDL - then we'll put that line earlier, before setup_game().
   LbErrorParachuteInstall();
-  // View second splash screen
+  // Use the port's own title in the original splash position.
+#if defined(__APPLE__) || defined(_WIN32)
+  if (!kfx_show_startup_title())
+#endif
   if (flag_is_set(start_params.startup_flags, SFlg_FX))
   {
       result = init_actv_bitmap_screen(RBmp_SplashFx);

@@ -49,8 +49,30 @@ target_compile_definitions(keeper-enhanced-hvlog PUBLIC BFDEBUG_LEVEL=10)
 set(KFX_TARGETS keeper-enhanced keeper-enhanced-hvlog)
 
 if(WIN32)
+    set(KFX_RES "${CMAKE_SOURCE_DIR}/res")
+    if(NOT EXISTS "${KFX_RES}/keeperfx_stdres.rc")
+        set(KFX_RES "${CMAKE_SOURCE_DIR}/third_party/keeperfx-source/res")
+    endif()
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    set(KFX_WIN_ICON "${CMAKE_BINARY_DIR}/keeperfx_icon.ico")
+    set(KFX_WIN_MANIFEST "${CMAKE_SOURCE_DIR}/keeperfx.exe.manifest")
+    add_custom_command(OUTPUT "${KFX_WIN_ICON}"
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/scripts/windows-icon.py"
+            "${KFX_RES}/keeperfx_icon256-24bpp.png" "${KFX_WIN_ICON}"
+        DEPENDS "${KFX_RES}/keeperfx_icon256-24bpp.png" "${CMAKE_SOURCE_DIR}/scripts/windows-icon.py"
+        VERBATIM)
+    add_custom_target(generate_ico DEPENDS "${KFX_WIN_ICON}")
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${KFX_RES}/keeperfx_stdres.rc")
+    file(READ "${KFX_RES}/keeperfx_stdres.rc" KFX_RC)
+    string(REPLACE "../src/version.h" "version.h" KFX_RC "${KFX_RC}")
+    string(REPLACE "../keeperfx.exe.manifest" "${KFX_WIN_MANIFEST}" KFX_RC "${KFX_RC}")
+    string(REPLACE "keeperfx_icon.ico" "${KFX_WIN_ICON}" KFX_RC "${KFX_RC}")
+    file(CONFIGURE OUTPUT "${CMAKE_BINARY_DIR}/keeperfx_stdres.rc" CONTENT "${KFX_RC}" @ONLY)
+    set_source_files_properties("${CMAKE_BINARY_DIR}/keeperfx_stdres.rc"
+        PROPERTIES OBJECT_DEPENDS "${KFX_WIN_ICON};${KFX_WIN_MANIFEST}")
     foreach(_t IN LISTS KFX_TARGETS)
-        target_sources(${_t} PRIVATE "${CMAKE_SOURCE_DIR}/res/keeperfx_stdres.rc")
+        target_sources(${_t} PRIVATE "${CMAKE_BINARY_DIR}/keeperfx_stdres.rc")
+        add_dependencies(${_t} generate_ico)
     endforeach()
 
     # bfd is slow; prefer LLD when it's actually available (LINKER_TYPE needs

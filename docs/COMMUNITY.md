@@ -296,3 +296,19 @@ Public dedicated lobbies reserve one seat per party member for 60 seconds when
 the owner sends the join prompt. The party roster shows the hold timer and
 marks players **In Lobby** after the server admits them. Unused seats become
 available again when the hold expires.
+
+
+For a password-free unlisted dedicated lobby, set `"visibility": "code"`.
+Share the eight-character code from `dedicated/room-code.json` in the server
+profile. A signed-in player enters `CODE ABCD1234` in the game's direct-join
+field. Codes expire after 15 minutes. To rotate or revoke a code, write
+`rotate` or `revoke` to `dedicated/room-code.request`. A revoked code removes
+join access and outstanding tickets while players already in the lobby stay
+connected. Offline direct hosting still uses `"visibility": "private"`.
+
+
+Enable Twin Hearts Siege with `"twin_hearts_siege": true`, `"cooperative": true`,
+and `"humans": 2`. Use maps with three valid keeper starts. Both human dungeon
+hearts must survive until the third wave is cleared. Trusted public hosts can
+submit verified results. The Lair ranks the fastest result for each team
+whose two players both have public profiles.

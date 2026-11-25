@@ -22,13 +22,13 @@ std::map<int, PartyPlayer> party_targets;
 int ballot_offset=0;
 int party_tab = 0, party_offset = 0, party_chat_offset = 0;
 Uint64 party_poll_at = 0, party_last_input = 0, social_toast_until = 0;
-bool mute_social_in_match=false;
+bool mute_social_in_match=true;
 std::future<std::pair<bool,std::string>> party_scan;
 std::string party_scan_key;
 Uint64 party_check_at=0;
 std::string joining_prompt, pending_party_progress;
 bool party_join_connecting=false;
-std::string party_match_room,party_match_address,party_match_result;
+std::string party_match_room,party_match_address,party_match_map,party_match_result;
 std::array<bool,MAX_NET_USERS> party_match_departed{};
 bool party_match_active=false,party_rematch_pending=false;
 
@@ -66,7 +66,7 @@ bool party_all_ready()
         });
 }
 int social_unread(){return party.unread+static_cast<int>(party.invites.size());}
-std::string social_prefs_path(){return profiles_base()+"/social-mute.cfg";}
+std::string social_prefs_path(){return profiles_base()+"/social-match-notifications.cfg";}
 
 void party_notification_draw()
 {
@@ -307,7 +307,7 @@ void party_tick()
         party_poll_at = 0;
         party_last_input = SDL_GetTicks();
         social_toast_until = 0;
-        mute_social_in_match=access(social_prefs_path().c_str(),F_OK)==0;
+        mute_social_in_match=access(social_prefs_path().c_str(),F_OK)!=0;
         party_offset = 0;
         party_check_at = 0;
         party_match_room.clear();party_match_result.clear();party_match_active=false;party_rematch_pending=false;
@@ -325,9 +325,9 @@ void party_tick()
 
 bool party_action(int action)
 {
-    if (action == 2120) {
+    if (action == 2120 || action == 2181) {
         party_message.clear();
-        party_tab = party.id==party_match_room&&!party_match_result.empty()&&!party_match_active?5:0;
+        party_tab = action==2181?7:party.id==party_match_room&&!party_match_result.empty()&&!party_match_active?5:0;
         party_offset = 0;
         party_poll_at = 0;
         open_panel(38);
@@ -357,6 +357,7 @@ bool party_action(int action)
         ballot_offset=std::clamp(ballot_offset+(action==2170?-1:1),0,std::max(0,(int)party.ballot.size()-4));
         return true;
     }
+    if(action==2182&&party_tab==7){party_tab=1;party_poll_at=0;selected=0;return true;}
     if(party_tab==6&&action>=2172&&action<2180){
         const int index=ballot_offset+(action-2172)%4;
         if(index<(int)party.ballot.size()){
@@ -380,7 +381,7 @@ bool party_action(int action)
     }
     if(action==2134){
         const auto file=social_prefs_path();
-        const bool ok=mute_social_in_match?unlink(file.c_str())==0:write_small_file(file,"1\n");
+        const bool ok=mute_social_in_match?write_small_file(file,"1\n"):unlink(file.c_str())==0;
         if(ok){mute_social_in_match=!mute_social_in_match;social_toast_until=0;}
         else party_notice="Could not save the notification setting.";
         return true;
@@ -419,7 +420,7 @@ bool party_action(int action)
         party_offset = std::max(0, party_offset - 1);
     } else if (action == 2130) {
         ++party_offset;
-    } else if (action >= 2160 && action < 2164 && (party_tab == 0 || party_tab == 4)) {
+    } else if (action >= 2160 && action < 2164 && (party_tab == 0 || party_tab == 4 || party_tab == 7)) {
         auto friend_action = party_targets.find(action);
         if (friend_action != party_targets.end()) {
             direct_friend = friend_action->second.id;
@@ -434,9 +435,9 @@ bool party_action(int action)
         const auto target = party_targets.find(action);
         if (target == party_targets.end()) return true;
         if (party_tab == 0 || party_tab == 4) party_request("invite", "user", target->second.id);
-        else if (party_tab == 2) party_request("accept", "party", target->second.id);
+        else if (party_tab == 2 || party_tab == 7) party_request("accept", "party", target->second.id);
         else if (party_tab == 3) party_request("kick", "user", target->second.id);
-    } else if (action >= 2150 && action < 2154 && party_tab == 2) {
+    } else if (action >= 2150 && action < 2154 && (party_tab == 2 || party_tab == 7)) {
         const auto target = party_targets.find(action);
         if (target != party_targets.end()) party_request("decline", "party", target->second.id);
     } else if ((action == 2132 || action == 2133) && (party_tab == 1 || party_tab == 4)) {
@@ -488,6 +489,34 @@ void party_draw()
         return;
     }
 
+    if(party_tab==7){
+        std::vector<PartyPlayer> senders;
+        for(const auto &player:party.friends)if(player.unread>0)senders.push_back(player);
+        const int total=static_cast<int>(party.invites.size()+senders.size());
+        const int last=std::max(0,(total-1)/4);
+        party_offset=std::clamp(party_offset,0,last);
+        if(total==0&&!party.party_unread)centered(220,"No unread messages or invites.",20);
+        for(int i=0;i<4&&party_offset*4+i<total;++i){
+            const int index=party_offset*4+i,y=145+i*46;
+            if(index<static_cast<int>(party.invites.size())){
+                const auto &invite=party.invites[index];
+                party_targets[2140+i]=party_targets[2150+i]=invite;
+                small_line(35,y+6,short_text(invite.name,24)+" invited you",286);
+                control(333,y,120,"Accept",2140+i);
+                control(463,y,130,"Decline",2150+i);
+            }else{
+                const auto &sender=senders[index-party.invites.size()];
+                party_targets[2160+i]=sender;
+                small_line(35,y+6,short_text(sender.name,24)+" / "+std::to_string(sender.unread)+" unread",286);
+                control(333,y,260,"Open Conversation",2160+i);
+            }
+        }
+        if(party_offset>0)control(35,340,100,"Previous",2129);
+        if(party_offset<last)control(145,340,100,"Next",2130);
+        if(party.party_unread)control(333,340,260,"Party Chat ("+std::to_string(party.party_unread)+")",2182);
+        if(!party_notice.empty())small_line(35,392,party_notice,560);
+        return;
+    }
     if(party_tab==6&&!party.ballot.empty()){
         small_line(29,138,"Map vote / "+party.ballot_server,580);
         if(!party.ballot_winner.empty()){

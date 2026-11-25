@@ -1,4 +1,5 @@
 #include "pre_inc.h"
+#include <cstring>
 #include "keeperfx.hpp"
 #include "kfx/renderer/RendererSoftware.h"
 #include "bflib_video.h"       // PALETTE_COLORS, SDL, vsync_enabled
@@ -156,7 +157,8 @@ bool RendererSoftware::ScheduleScreenshot(const char* path, int fmt)
 bool RendererSoftware::PresentImage(const struct RendererPresentImageDesc* desc)
 {
     if (desc == nullptr || desc->src == nullptr ||
-        desc->kind != PRESENT_KIND_OPAQUE ||
+        (desc->kind != PRESENT_KIND_OPAQUE &&
+         !(desc->kind == PRESENT_KIND_COMPOSITE && desc->format == PRESENT_FORMAT_RGBA8)) ||
         desc->src_w <= 0 || desc->src_h <= 0)
         return false;
 
@@ -201,6 +203,7 @@ bool RendererSoftware::PresentImage(const struct RendererPresentImageDesc* desc)
     m_direct_dst_w = desc->dst_w;
     m_direct_dst_h = desc->dst_h;
     m_direct_filter = desc->filter;
+    m_direct_composite = desc->kind == PRESENT_KIND_COMPOSITE;
     m_direct_present = true;
     return true;
 }
@@ -227,6 +230,29 @@ void RendererSoftware::PresentFrame()
     GetSDLWindowSystem()->GetPresentRect(&px, &py, &pw, &ph);
     SDL_SetRenderDrawColor(m_renderer, 0, 0, 0, 255);
     SDL_RenderClear(m_renderer);
+
+    if (!m_direct_present || m_direct_composite)
+    {
+        SDL_Surface* texture_surface;
+        if (!SDL_LockTextureToSurface(m_texture, NULL, &texture_surface))
+        {
+            ERRORLOG("Present texture lock failed: %s", SDL_GetError());
+            LbMouseOnEndSwap();
+            return;
+        }
+        if (!SDL_BlitSurface(draw_surface, NULL, texture_surface, NULL))
+        {
+            ERRORLOG("Present blit failed: %s", SDL_GetError());
+            SDL_UnlockTexture(m_texture);
+            LbMouseOnEndSwap();
+            return;
+        }
+        SDL_UnlockTexture(m_texture);
+
+        const SDL_FRect dst = { (float)px, (float)py, (float)pw, (float)ph };
+        SDL_SetTextureScaleMode(m_texture, start_params.enhanced_mode ? SDL_SCALEMODE_LINEAR : SDL_SCALEMODE_NEAREST);
+        SDL_RenderTexture(m_renderer, m_texture, NULL, (pw > 0 && ph > 0) ? &dst : NULL);
+    }
 
     if (m_direct_present)
     {
@@ -272,31 +298,9 @@ void RendererSoftware::PresentFrame()
             ERRORLOG("Enhanced FMV texture update failed: %s", SDL_GetError());
         }
 
-        SDL_RenderPresent(m_renderer);
         m_direct_present = false;
-        LbMouseOnEndSwap();
-        return;
     }
 
-    SDL_Surface* texture_surface;
-    if (!SDL_LockTextureToSurface(m_texture, NULL, &texture_surface))
-    {
-        ERRORLOG("Present texture lock failed: %s", SDL_GetError());
-        LbMouseOnEndSwap();
-        return;
-    }
-    if (!SDL_BlitSurface(draw_surface, NULL, texture_surface, NULL))
-    {
-        ERRORLOG("Present blit failed: %s", SDL_GetError());
-        SDL_UnlockTexture(m_texture);
-        LbMouseOnEndSwap();
-        return;
-    }
-    SDL_UnlockTexture(m_texture);
-
-    const SDL_FRect dst = { (float)px, (float)py, (float)pw, (float)ph };
-    SDL_SetTextureScaleMode(m_texture, start_params.enhanced_mode ? SDL_SCALEMODE_LINEAR : SDL_SCALEMODE_NEAREST);
-    SDL_RenderTexture(m_renderer, m_texture, NULL, (pw > 0 && ph > 0) ? &dst : NULL);
     SDL_RenderPresent(m_renderer);
     LbMouseOnEndSwap();
 }

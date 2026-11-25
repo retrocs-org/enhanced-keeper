@@ -20,11 +20,20 @@ async function refresh(){
  else if(route==='/profile')await loadProfile();
  else if(['/events','/community'].includes(route))me=await api('me');
  if(['/lair','/servers','/community'].includes(route)){servers=(await api('servers')).servers;drawServers();}
- if(route==='/lair')await Promise.all([loadLairRankings(),loadLairHistory()]);
+ if(route==='/lair')await Promise.all([loadLairRankings(),loadLairHistory(),loadSiegeTimes()]);
  if(['/events','/community'].includes(route))await loadEvents();
  if(['/community','/challenges','/replays'].includes(route))await loadExtras();
 }
 
+async function loadSiegeTimes(){
+ const list=$('lair-siege-times');
+ try {
+  const {times}=await api('siege-times');
+  list.replaceChildren();
+  for(const row of times)node('li',row.first+' & '+row.second+' · '+Number(row.turns).toLocaleString()+' turns',list);
+  $('lair-siege-state').textContent=times.length?'':'No public verified times yet.';
+ }catch(error){$('lair-siege-state').textContent=error.message;}
+}
 async function loadLairHistory(){
  const panel=$('lair-match-list');
  panel.replaceChildren();

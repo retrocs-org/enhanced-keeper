@@ -11,7 +11,9 @@ static NSString *BasePrefs(void) {
     NSString *override=env[@"KFX_BASE_USER_DATA_DIR"]?:env[@"KFX_USER_DATA_DIR"];
     return override.length?override:[NSHomeDirectory() stringByAppendingPathComponent:@"Library/Application Support/keeperfx/keeperfx"];
 }
+static BOOL ForceDefaultRuntime=NO;
 static NSString *ProfileID(void) {
+    if(ForceDefaultRuntime)return @"default";
     NSString *value=NSProcessInfo.processInfo.environment[@"KFX_CONTENT_PROFILE"];
     if(!value)value=[NSString stringWithContentsOfFile:[BasePrefs() stringByAppendingPathComponent:@"content-profile.cfg"] encoding:NSUTF8StringEncoding error:nil];
     value=[value stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
@@ -295,6 +297,41 @@ static pid_t Launch(NSArray<NSString *> *extra, NSNumber *slot, NSError **error)
     }
     return pid;
 }
+// Archive a runtime profile only after its game process has closed every file.
+static int WaitForGame(pid_t child, NSString *launchedProfile, NSArray<NSString *> *extra, NSError **error) {
+    // The engine can reset content-profile.cfg before it exits.
+    NSString *pending=[BasePrefs() stringByAppendingPathComponent:@"remove-runtime-profile.pending"];
+    int status=0;
+    pid_t waited;
+    do { waited=waitpid(child,&status,0); } while(waited<0&&errno==EINTR);
+    if(waited<0||!WIFEXITED(status)||WEXITSTATUS(status)!=0)return 1;
+    NSString *request=[[NSString stringWithContentsOfFile:pending encoding:NSUTF8StringEncoding error:nil]
+        stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    if(!request.length || ![request isEqual:launchedProfile] || [request isEqual:@"default"])return 0;
+
+    NSString *profiles=[BasePrefs() stringByAppendingPathComponent:@"ContentProfiles"];
+    NSString *source=[profiles stringByAppendingPathComponent:request];
+    NSString *archive=[BasePrefs() stringByAppendingPathComponent:@"RemovedProfiles"];
+    for(NSString *path in @[profiles,source]){
+        if(![[[FM() attributesOfItemAtPath:path error:error] objectForKey:NSFileType] isEqual:NSFileTypeDirectory])return 1;
+    }
+    if(![FM() createDirectoryAtPath:archive withIntermediateDirectories:YES attributes:nil error:error]||
+       ![[[FM() attributesOfItemAtPath:archive error:error] objectForKey:NSFileType] isEqual:NSFileTypeDirectory])return 1;
+    NSString *folder=[archive stringByAppendingPathComponent:[@"local-" stringByAppendingString:NSUUID.UUID.UUIDString]];
+    if(![FM() createDirectoryAtPath:folder withIntermediateDirectories:NO attributes:nil error:error])return 1;
+    if(![FM() moveItemAtPath:source toPath:[folder stringByAppendingPathComponent:request] error:error]){
+        [FM() removeItemAtPath:folder error:nil];
+        return 1;
+    }
+    [FM() removeItemAtPath:pending error:nil];
+
+    ForceDefaultRuntime=YES;
+    if(!Prepare(error))return 1;
+    child=Launch(extra,nil,error);
+    if(child<0)return 1;
+    do { waited=waitpid(child,&status,0); } while(waited<0&&errno==EINTR);
+    return waited>0&&WIFEXITED(status)?WEXITSTATUS(status):1;
+}
 static NSDictionary *LegacySaveMetadata(NSString *path) {
     FILE *file=fopen(path.fileSystemRepresentation,"rb");if(!file)return @{};
     struct FileChunkHeader header;struct CatalogueEntry entry;
@@ -437,9 +474,10 @@ static NSDictionary *LegacySaveMetadata(NSString *path) {
                 ok=[settings writeToFile:settingsPath atomically:YES encoding:NSUTF8StringEncoding error:&error];
             }
         }
+        NSString *launchedProfile=ProfileID();
         pid_t child=ok?Launch(intro&&!loadSlot?@[]:@[@"-nointro"],loadSlot,&error):-1;
         dispatch_async(dispatch_get_main_queue(),^{self.working=NO;if(child<0){self.play.enabled=YES;self.status.stringValue=error.localizedDescription?:@"Unable to start the game.";}else{self.gamePID=child;self.status.stringValue=@"Game running. Quit the game to return to the launcher.";[self.window orderOut:nil];}});
-        if(child>0){int status=0;while(waitpid(child,&status,0)<0 && errno==EINTR){}dispatch_async(dispatch_get_main_queue(),^{self.gamePID=0;self.play.enabled=YES;self.status.stringValue=WIFEXITED(status)&&WEXITSTATUS(status)==0?@"Ready to play.":@"The game stopped unexpectedly. Open Logs for details.";[self.window makeKeyAndOrderFront:nil];[NSApp activateIgnoringOtherApps:YES];});}
+        if(child>0){int status=WaitForGame(child,launchedProfile,@[@"-nointro"],&error);dispatch_async(dispatch_get_main_queue(),^{self.gamePID=0;self.play.enabled=YES;self.status.stringValue=status==0?@"Ready to play.":(error.localizedDescription?:@"The game stopped unexpectedly. Open Logs for details.");[self.window makeKeyAndOrderFront:nil];[NSApp activateIgnoringOtherApps:YES];});}
     });
 }
 #include "LauncherOptions.inc"
@@ -451,7 +489,7 @@ int main(int argc,char **argv){@autoreleasepool{
     NSArray *args=NSProcessInfo.processInfo.arguments;
     if([args containsObject:@"--export-personal"]){NSError *e=nil;BOOL ok=ExportPersonal(&e);if(!ok)fprintf(stderr,"Export failed: %s\n",e.localizedDescription.UTF8String);return ok?0:1;}
     if(argc>2 && !strcmp(argv[1],"--import")){NSError *e=nil;BOOL ok=Import(@(argv[2]),&e);if(!ok)fprintf(stderr,"%s\n",e.localizedDescription.UTF8String);return ok?0:1;}
-    if([args containsObject:@"--prepare-only"]||[args containsObject:@"--play-direct"]){NSError *e=nil;if(!Prepare(&e)){fprintf(stderr,"%s\n",e.localizedDescription.UTF8String);return 1;}if([args containsObject:@"--prepare-only"]){puts("User runtime ready; application bundle unchanged.");return 0;}pid_t p=Launch(@[@"-nointro",@"-log",@"launcher-smoke.log"],nil,&e);if(p<0)return 1;int status=0;waitpid(p,&status,0);if(WIFEXITED(status)&&WEXITSTATUS(status)==0)[FM() removeItemAtPath:[Prefs() stringByAppendingPathComponent:@"display-startup.pending"] error:nil];return WIFEXITED(status)?WEXITSTATUS(status):1;}
+    if([args containsObject:@"--prepare-only"]||[args containsObject:@"--play-direct"]){NSError *e=nil;if(!Prepare(&e)){fprintf(stderr,"%s\n",e.localizedDescription.UTF8String);return 1;}if([args containsObject:@"--prepare-only"]){puts("User runtime ready; application bundle unchanged.");return 0;}NSString *launchedProfile=ProfileID();NSArray *extra=@[@"-nointro",@"-log",@"launcher-smoke.log"];pid_t p=Launch(extra,nil,&e);if(p<0)return 1;int status=WaitForGame(p,launchedProfile,extra,&e);if(status==0)[FM() removeItemAtPath:[Prefs() stringByAppendingPathComponent:@"display-startup.pending"] error:nil];return status;}
     if(![args containsObject:@"--launcher"]){
         NSApplication *setup=NSApplication.sharedApplication;setup.activationPolicy=NSApplicationActivationPolicyAccessory;
         NSError *error=nil;
@@ -461,8 +499,9 @@ int main(int argc,char **argv){@autoreleasepool{
             if(!Import(panel.URL.path,&error)){NSAlert *alert=[NSAlert new];alert.messageText=@"Keeper-Enhanced import failed";alert.informativeText=error.localizedDescription;[alert runModal];return 1;}
         }
         if(!Prepare(&error)){NSAlert *alert=[NSAlert new];alert.messageText=@"Keeper-Enhanced could not prepare game data";alert.informativeText=error.localizedDescription;[alert runModal];return 1;}
+        NSString *launchedProfile=ProfileID();
         pid_t child=Launch(@[],nil,&error);if(child<0){NSAlert *alert=[NSAlert new];alert.messageText=@"Keeper-Enhanced could not start";alert.informativeText=error.localizedDescription?:@"Unable to start the game.";[alert runModal];return 1;}
-        int status=0;while(waitpid(child,&status,0)<0 && errno==EINTR){}if(WIFEXITED(status)&&WEXITSTATUS(status)==0)[FM() removeItemAtPath:[Prefs() stringByAppendingPathComponent:@"display-startup.pending"] error:nil];return WIFEXITED(status)?WEXITSTATUS(status):1;
+        int status=WaitForGame(child,launchedProfile,@[@"-nointro"],&error);if(error){NSAlert *alert=[NSAlert new];alert.messageText=@"Keeper-Enhanced could not finish switching profiles";alert.informativeText=error.localizedDescription;[alert runModal];}if(status==0)[FM() removeItemAtPath:[Prefs() stringByAppendingPathComponent:@"display-startup.pending"] error:nil];return status;
     }
     NSApplication *app=NSApplication.sharedApplication;app.activationPolicy=NSApplicationActivationPolicyRegular;Launcher *delegate=[Launcher new];app.delegate=delegate;[app run];
 }return 0;}

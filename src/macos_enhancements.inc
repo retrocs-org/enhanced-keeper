@@ -97,7 +97,24 @@ void performance_draw(){
  LbTextDrawResized(0,0,16,line.str().c_str());int x=14;for(int i=std::max(0,(int)frame_samples.size()-(width-12)/3);i<(int)frame_samples.size();i++){int h=std::min(42,(int)frame_samples[i]);LbDrawBox(x,100-h,2,h,15);x+=3;}RendererSetDrawFlags(flags);
 }
 
+SDL_Rect recovery_status_rect(){
+ const int width=RendererScreenWidth();
+ return {width/8,112,width*3/4,44};
+}
+
+bool recovery_status_event(const SDL_Event *event){
+ if(event->type!=SDL_EVENT_MOUSE_BUTTON_DOWN||event->button.button!=SDL_BUTTON_LEFT)return false;
+ auto *window=SDL_GetWindowFromID(event->button.windowID);
+ int width=0,height=0;
+ if(!window||!SDL_GetWindowSize(window,&width,&height)||width<=0||height<=0)return false;
+ const SDL_Point point={(int)(event->button.x*RendererScreenWidth()/width),
+                        (int)(event->button.y*RendererScreenHeight()/height)};
+ const auto rect=recovery_status_rect();
+ return SDL_PointInRect(&point,&rect)&&kfx_network_retry_now();
+}
+
 void recovery_status_draw(){
  const char *status=kfx_network_recovery_status();if(!status[0]||!winfont)return;
- int width=RendererScreenWidth(),flags=RendererGetDrawFlags();LbDrawBox(width/8,112,width*3/4,44,0);LbTextSetFont(winfont);LbTextSetWindow(width/8+8,118,width*3/4-16,32);RendererSetDrawFlags(Lb_TEXT_HALIGN_CENTER);LbTextDrawResized(0,0,20,status);RendererSetDrawFlags(flags);
+ const auto rect=recovery_status_rect();
+ int flags=RendererGetDrawFlags();LbDrawBox(rect.x,rect.y,rect.w,rect.h,0);LbTextSetFont(winfont);LbTextSetWindow(rect.x+8,rect.y+6,rect.w-16,32);RendererSetDrawFlags(Lb_TEXT_HALIGN_CENTER);LbTextDrawResized(0,0,20,status);RendererSetDrawFlags(flags);
 }

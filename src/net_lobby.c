@@ -149,10 +149,13 @@ TbError process_login_message(NetUserId source, char *read_pos, const char *end_
         const char *feature = getenv("KFX_DEDICATED_COOP") ? read_login_text(&read_pos,end_pos,16) : NULL;
         const char *ai_style=getenv("KFX_DEDICATED_AI_STYLE");
         const TbBool default_style=!ai_style||strcmp(ai_style,"defensive")==0;
-        const char *style_feature=feature&&!default_style?read_login_text(&read_pos,end_pos,16):NULL;
+        const char *style_feature=feature?read_login_text(&read_pos,end_pos,16):NULL;
+        const TbBool siege=getenv("KFX_COOP_SIEGE")!=NULL;
+        const char *siege_feature=siege&&style_feature?read_login_text(&read_pos,end_pos,16):NULL;
         const TbBool coop_supported = !getenv("KFX_DEDICATED_COOP") ||
             (feature&&strcmp(feature,"coop-v1")==0&&(default_style||
-                (style_feature&&strcmp(style_feature,"ai-style-v1")==0)));
+                (style_feature&&strcmp(style_feature,"ai-style-v1")==0))&&
+                (!siege||(siege_feature&&strcmp(siege_feature,"siege-v1")==0)));
         if(getenv("KFX_DEDICATED_COOP")){
             extern int autostart_multiplayer_users_expected;
             int humans=0;
@@ -252,7 +255,7 @@ TbError LbNetwork_ExchangeLogin(char *player_name)
     NETMSG("Logging in as %s", player_name);
     const char *ticket = kfx_hub_login_ticket();
     size_t ticket_size = ticket[0] ? strlen(ticket) + 1 : 0;
-    if (sizeof("coop-v1") + sizeof("ai-style-v1") + sizeof(KFX_APP_VERSION) + ticket_size + 1 + strlen(netstate.password) + 1 + strlen(player_name) + 1 + sizeof(net_current_version) >= sizeof(netstate.msg_buffer)) {
+    if (sizeof("coop-v1") + sizeof("ai-style-v1") + sizeof("siege-v1") + sizeof(KFX_APP_VERSION) + ticket_size + 1 + strlen(netstate.password) + 1 + strlen(player_name) + 1 + sizeof(net_current_version) >= sizeof(netstate.msg_buffer)) {
         ERRORLOG("Login credentials too long");
         return Lb_FAIL;
     }
@@ -273,6 +276,8 @@ TbError LbNetwork_ExchangeLogin(char *player_name)
     write_pos += sizeof("coop-v1");
     memcpy(write_pos,"ai-style-v1",sizeof("ai-style-v1"));
     write_pos += sizeof("ai-style-v1");
+    memcpy(write_pos,"siege-v1",sizeof("siege-v1"));
+    write_pos += sizeof("siege-v1");
     send_message_buffer(SERVER_ID, write_pos);
     TbClockMSec wait_start_time = LbTimerClock();
     while (LbTimerClock() - wait_start_time < TIMEOUT_JOIN_LOBBY + (ticket_size ? 6000 : 0)) {

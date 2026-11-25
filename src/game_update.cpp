@@ -30,6 +30,7 @@
 #include "thing_list.h"
 #include "thing_physics.h"
 #include "player_utils.h"
+#include "gui_msgs.h"
 #include "player_computer.h"
 #include "engine_camera.h"
 #include "local_camera.h"
@@ -59,6 +60,11 @@
 #include "game_loop.h"
 #include "room_library.h"
 #include "room_workshop.h"
+#include "net_game.h"
+#include "thing_navigate.h"
+#include "thing_physics.h"
+#include "config_creature.h"
+#include "player_utils.h"
 #include <cstdint>
 
 #include "post_inc.h"
@@ -304,10 +310,81 @@ static void process_payday(void)
     }
 }
 
+// Both defending keepers must keep their hearts and defeat every wave.
+static void process_coop_siege()
+{
+    constexpr GameTurn wave_turns[]={600,1800,3000};
+    constexpr int wave_sizes[]={3,5,7};
+    constexpr int count=15;
+    struct SiegeCreature { ThingIndex index; GameTurn spawned; };
+    static SiegeCreature attackers[count];
+    static Coord3d rally;
+    static bool started=false;
+    static bool completed=false;
+    static int spawned=0;
+    static GameTurn previous=0;
+    const GameTurn turn=get_gameturn();
+    if(turn<=previous||!started){
+        spawned=0;
+        completed=false;
+        started=true;
+        for(auto &attacker:attackers)attacker={};
+        const auto *heart=get_player_soul_container(kfx_dedicated_player);
+        if(!thing_exists(heart)){started=false;return;}
+        rally=heart->mappos;
+    }
+    previous=turn;
+    if(completed)return;
+    PlayerInfo *players[2]={};
+    for(int i=0;i<2;++i){
+        const int id=get_net_user_player_number(i+1);
+        if(id<0)return;
+        players[i]=get_player(id);
+    }
+    for(auto *player:players){
+        const auto *heart=get_player_soul_container(player->id_number);
+        if(!thing_exists(heart)||heart->active_state==ObSt_BeingDestroyed||player->victory_state==VicS_LostLevel){
+            for(auto *defender:players)set_player_as_lost_level(defender);
+            completed=true;
+            return;
+        }
+    }
+    const char *models[]={"TROLL","ORC","BILE_DEMON"};
+    for(int wave=0;wave<3;++wave){
+        if(turn!=wave_turns[wave])continue;
+        const ThingModel model=creature_model_id(models[wave]);
+        const int before=spawned;
+        for(int unit=0;model>0&&unit<wave_sizes[wave]&&spawned<count;++unit){
+            auto position=rally;
+            auto *creature=create_creature(&position,model,kfx_dedicated_player);
+            if(!thing_exists(creature))continue;
+            if(thing_in_wall_at(creature,&creature->mappos)&&!move_creature_to_nearest_valid_position(creature)){
+                delete_thing_structure(creature,0);
+                continue;
+            }
+            set_creature_level(creature,wave+1);
+            attackers[spawned++]={creature->index,turn};
+        }
+        if(spawned>before){
+            kfx_coop_siege_wave=wave+1;
+            message_add_fmt(MsgType_Player,get_my_player()->id_number,"Twin Hearts Siege: wave %d of 3",wave+1);
+        }
+    }
+    if(turn<wave_turns[2])return;
+    for(int i=0;i<spawned;++i){
+        const auto *creature=thing_get(attackers[i].index);
+        if(thing_exists(creature)&&creature->creation_turn==attackers[i].spawned&&creature->owner==kfx_dedicated_player)return;
+    }
+    kfx_coop_siege_finish=turn;
+    for(auto *player:players)set_player_as_won_level(player);
+    completed=true;
+}
+
 static void process_dungeons(void)
 {
   SYNCDBG(7,"Starting");
-  check_players_won();
+  if(network_is_active()&&kfx_coop_siege)process_coop_siege();
+  else check_players_won();
   check_players_lost();
   process_dungeon_power_magic();
   process_dungeon_devastation_effects();

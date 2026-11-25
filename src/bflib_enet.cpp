@@ -31,6 +31,7 @@
 #endif
 #include <enet6/enet.h>
 #include <cstddef>
+#include <cstdio>
 #include <climits>
 #include <array>
 #include <map>
@@ -76,7 +77,7 @@ namespace
     std::array<TbClockMSec,MAX_NET_USERS> reserved_until={};
     std::array<unsigned char,32> client_resume_key={};
     std::map<ENetPeer*,TbClockMSec> resume_pending;
-    TbClockMSec recovered_until=0;bool has_resume_key=false,resuming=false;TbClockMSec resume_deadline=0,resume_retry=0;
+    TbClockMSec recovered_until=0,resume_expired_until=0;bool has_resume_key=false,resuming=false;TbClockMSec resume_deadline=0,resume_retry=0;
     ENetAddress resume_address={};
     void send_resume(ENetPeer *peer,const char *kind,const unsigned char *key){unsigned char bytes[38];memcpy(bytes,kind,6);memcpy(bytes+6,key,32);enet_peer_send(peer,ENET_CHANNEL_RELIABLE,enet_packet_create(bytes,sizeof(bytes),ENET_PACKET_FLAG_RELIABLE));enet_host_flush(host);}
     bool equal_resume(const unsigned char *a,const unsigned char *b){unsigned char diff=0;for(int i=0;i<32;i++)diff|=a[i]^b[i];return diff==0;}
@@ -104,7 +105,7 @@ namespace
         for(auto it=resume_pending.begin();it!=resume_pending.end();)if(now>=it->second){enet_peer_disconnect_now(it->first,0);it=resume_pending.erase(it);}else ++it;
         for(int i=1;i<MAX_NET_USERS;i++)if(reserved_until[i]&&now>=reserved_until[i]){reserved_until[i]=0;resume_keys[i].fill(0);if(g_drop_callback)g_drop_callback(i,NETDROP_ERROR);}
         if(resuming){
-            if(now>=resume_deadline){resuming=false;has_resume_key=false;if(g_drop_callback)g_drop_callback(SERVER_ID,NETDROP_ERROR);}
+            if(now>=resume_deadline){resuming=false;has_resume_key=false;resume_expired_until=now+10000;if(g_drop_callback)g_drop_callback(SERVER_ID,NETDROP_ERROR);}
             else if(now>=resume_retry){resume_retry=now+2000;if(client_peer)enet_peer_reset(client_peer);client_peer=enet_host_connect(host,&resume_address,NUM_CHANNELS,RESUME_CONNECTION);}
         }
     }
@@ -635,7 +636,7 @@ namespace
                 }
                 if(resume_pending.erase(enet_event.peer)||user_id<0||user_id>=MAX_NET_USERS)break;
                 if(enet_event.type==ENET_EVENT_TYPE_DISCONNECT_TIMEOUT&&game.game_kind==GKind_MultiGame){
-                    if(client_peer==enet_event.peer&&has_resume_key){resume_address=enet_event.peer->address;if(!resuming)resume_deadline=LbTimerClock()+30000;resuming=true;resume_retry=0;kfx_network_issue("reconnecting",0,0,0);break;}
+                    if(client_peer==enet_event.peer&&has_resume_key){resume_address=enet_event.peer->address;if(!resuming){resume_deadline=LbTimerClock()+30000;resume_expired_until=0;}resuming=true;resume_retry=0;kfx_network_issue("reconnecting",0,0,0);break;}
                     if(!client_peer&&std::any_of(resume_keys[user_id].begin(),resume_keys[user_id].end(),[](unsigned char b){return b!=0;})){reserved_until[user_id]=LbTimerClock()+30000;kfx_network_issue("slot-reserved",0,0,0);break;}
                 }
                 reserved_until[user_id]=0;resume_keys[user_id].fill(0);
@@ -1122,7 +1123,14 @@ extern "C" int kfx_network_retry_now(void){
 }
 
 extern "C" const char *kfx_network_recovery_status(void){
- if(resuming)return "Reconnecting - slot reserved. F7: retry now";
+ if(resuming){
+    static char status[96];
+    const auto now=LbTimerClock();
+    const auto seconds=resume_deadline>now?(resume_deadline-now+999)/1000:0;
+    std::snprintf(status,sizeof(status),"Rejoin match (F7)   |   %lu s left",static_cast<unsigned long>(seconds));
+    return status;
+ }
  for(int i=1;i<MAX_NET_USERS;i++)if(reserved_until[i])return "Waiting for a player to reconnect - simulation held";
+ if(LbTimerClock()<resume_expired_until)return "Rejoin window expired - return to the lobby";
  return LbTimerClock()<recovered_until?"Connection recovered - same match and player slot":"";
 }

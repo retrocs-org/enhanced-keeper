@@ -68,6 +68,7 @@ final class KeeperHub {
             $ticket=api_text($data['ticket']??null,64);
             $this->limit(hash('sha256',$ticket),'cloud-verify',8,900);
         }
+        if($route==='/api/servers/redeem'&&$method==='POST')$this->limit($peer,'room-code',10,60);
         if($route==='/api/servers/register'&&$method==='POST')$this->limit($peer,'server-register',15);
         if(in_array($route,['/api/login','/api/register','/api/cloud/login'],true)&&$method==='POST')$this->limit($peer,'login',10);
         if($route==='/api/recovery/reset'&&$method==='POST')$this->limit($peer,'recovery',5,3600);
@@ -122,7 +123,7 @@ final class KeeperHub {
             return $row?['revision'=>(int)$row['revision'],'settings'=>$row['settings']]:['revision'=>0,'settings'=>''];
         }
         if($route==='/api/me'){demand($uid,'Sign in first',401);return $this->one('SELECT u.id,u.name,u.public,p.email,COALESCE(p.avatar,1) AS avatar FROM users u LEFT JOIN cloud_profiles p ON p.user=u.id WHERE u.id=?',[$uid]);}
-        if($route==='/api/servers'){$this->q("UPDATE matches SET ended=?,status=CASE WHEN status='lobby' THEN 'cancelled' ELSE 'abandoned' END WHERE ended=0 AND server IN (SELECT id FROM servers WHERE last_seen<?)",[$this->now,$this->now-90]);$servers=$this->rows('SELECT s.id,s.name,s.endpoint,s.engine,s.map,s.mods,s.players,s.capacity,s.password,s.region,s.kind,s.status,c.versions,o.ai_style,CASE WHEN v.server IS NULL THEN 0 ELSE 1 END AS voting FROM servers s LEFT JOIN server_compat c ON c.server=s.id LEFT JOIN server_coop o ON o.server=s.id LEFT JOIN server_voting v ON v.server=s.id WHERE s.last_seen>? ORDER BY s.name LIMIT 128',[$this->now-90]);
+        if($route==='/api/servers'){$this->q("UPDATE matches SET ended=?,status=CASE WHEN status='lobby' THEN 'cancelled' ELSE 'abandoned' END WHERE ended=0 AND server IN (SELECT id FROM servers WHERE last_seen<?)",[$this->now,$this->now-90]);$servers=$this->rows('SELECT s.id,s.name,s.endpoint,s.engine,s.map,s.mods,s.players,s.capacity,s.password,s.region,s.kind,s.status,c.versions,o.ai_style,CASE WHEN v.server IS NULL THEN 0 ELSE 1 END AS voting FROM servers s LEFT JOIN server_compat c ON c.server=s.id LEFT JOIN server_coop o ON o.server=s.id LEFT JOIN server_voting v ON v.server=s.id WHERE s.last_seen>? AND NOT EXISTS(SELECT 1 FROM server_room_codes rc WHERE rc.server=s.id) ORDER BY s.name LIMIT 128',[$this->now-90]);
             foreach($servers as &$server){$server['client_versions']=json_decode($server['versions']??'[]',true)?:[];unset($server['versions']);}
             unset($server);
             return ['servers'=>$servers];}
@@ -143,6 +144,21 @@ final class KeeperHub {
             }
             unset($match);
             return ['matches'=>$matches];
+        }
+        if($route==='/api/siege-times'){
+            $times=$this->rows("SELECT ss.match,ss.turns,a.name AS first,b.name AS second
+                FROM siege_scores ss
+                JOIN participants pa ON pa.match=ss.match AND pa.result='won'
+                JOIN participants pb ON pb.match=ss.match AND pb.result='won' AND pa.user<pb.user
+                JOIN users a ON a.id=pa.user AND a.public=1
+                JOIN users b ON b.id=pb.user AND b.public=1
+                ORDER BY ss.turns,ss.match LIMIT 100");
+            $teams=[];
+            foreach($times as $time){
+                $key=$time['first'].'|'.$time['second'];
+                $teams[$key]??=$time;
+            }
+            return ['times'=>array_slice(array_values($teams),0,25)];
         }
         if($route==='/api/leaderboard'){
             $rows=$this->rows("SELECT u.id,u.name,COUNT(*) AS matches,SUM(CASE WHEN p.result='won' THEN 1 ELSE 0 END) AS wins FROM users u JOIN participants p ON p.user=u.id JOIN matches m ON m.id=p.match WHERE u.public=1 AND m.verification='verified' AND m.ended>0 GROUP BY u.id,u.name ORDER BY wins DESC,matches DESC,u.name ASC LIMIT 100");

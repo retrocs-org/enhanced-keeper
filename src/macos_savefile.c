@@ -6,6 +6,22 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <limits.h>
+#ifdef _WIN32
+#include <io.h>
+#include <windows.h>
+#define fsync _commit
+#endif
+
+static int replace_save_file(const char *source, const char *destination)
+{
+#ifdef _WIN32
+    if (MoveFileExA(source, destination, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) return 0;
+    errno = GetLastError() == ERROR_FILE_NOT_FOUND ? ENOENT : EIO;
+    return -1;
+#else
+    return rename(source, destination);
+#endif
+}
 
 int kfx_save_is_protected(const char *destination)
 {
@@ -34,10 +50,10 @@ int kfx_commit_save(const char *temporary, const char *destination)
         for(int i=3;i>1;--i){
             if(snprintf(backup,sizeof(backup),"%s.backup%d",destination,i)>=(int)sizeof(backup) ||
                snprintf(older,sizeof(older),"%s.backup%d",destination,i-1)>=(int)sizeof(older)) {unlink(pending);return 0;}
-            if(rename(older,backup)!=0 && errno!=ENOENT){unlink(pending);return 0;}
+            if(replace_save_file(older,backup)!=0 && errno!=ENOENT){unlink(pending);return 0;}
         }
         if(snprintf(backup,sizeof(backup),"%s.backup1",destination)>=(int)sizeof(backup)){unlink(pending);return 0;}
-        if(rename(pending,backup)!=0){unlink(pending);return 0;}
+        if(replace_save_file(pending,backup)!=0){unlink(pending);return 0;}
     } else if(errno!=ENOENT) return 0;
-    return rename(temporary,destination)==0;
+    return replace_save_file(temporary,destination)==0;
 }

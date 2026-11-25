@@ -54,6 +54,12 @@ if($path==='/lair')$pageTitles['/lair']=['The Lair','Find a public game or see w
     <h2>Your match history</h2>
     <div id="lair-match-list" role="status"></div>
 </section>
+<section id="siege-results">
+    <h2>Twin Hearts Siege</h2>
+    <p>Keep both dungeon hearts alive through three waves and clear the attackers. Fastest verified teams are ranked by game turns.</p>
+    <ol id="lair-siege-times"></ol>
+    <p id="lair-siege-state" role="status"></p>
+</section>
 <section id="rankings">
     <h2>Verified rankings</h2>
     <p id="lair-rank-state" role="status">Loading verified records…</p>

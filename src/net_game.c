@@ -58,10 +58,14 @@ extern "C" {
 int kfx_dedicated_player=-1;
 static TbBool dedicated_coop;
 int kfx_dedicated_ai_style;
+TbBool kfx_coop_siege;
+GameTurn kfx_coop_siege_finish;
+int kfx_coop_siege_wave;
 #define STARTUP_DEDICATED_AI 0x8000
 #define STARTUP_DEDICATED_COOP 0x4000
 #define STARTUP_AI_BALANCED 0x2000
 #define STARTUP_AI_RUSH 0x1000
+#define STARTUP_COOP_SIEGE 0x0800
 
 TbBool dedicated_coop_team_ready(void)
 {
@@ -306,6 +310,7 @@ static void build_local_startup_sync(void)
         initial_tendencies|=STARTUP_DEDICATED_AI;
         if(getenv("KFX_DEDICATED_COOP")){
             initial_tendencies|=STARTUP_DEDICATED_COOP;
+            if(getenv("KFX_COOP_SIEGE"))initial_tendencies|=STARTUP_COOP_SIEGE;
             const char *style=getenv("KFX_DEDICATED_AI_STYLE");
             if(style&&strcmp(style,"balanced")==0)initial_tendencies|=STARTUP_AI_BALANCED;
             if(style&&strcmp(style,"rush")==0)initial_tendencies|=STARTUP_AI_RUSH;
@@ -351,6 +356,9 @@ static TbBool net_startup_sync_exchange_and_apply(void)
     frontview_zoom_distance_setting = host_sync->frontview_zoom_distance_setting;
     setup_players_from_startup_packets(s_startup_sync_packets);
     dedicated_coop=(host_sync->initial_tendencies&STARTUP_DEDICATED_COOP)!=0;
+    kfx_coop_siege=(host_sync->initial_tendencies&STARTUP_COOP_SIEGE)!=0;
+    kfx_coop_siege_finish=0;
+    kfx_coop_siege_wave=0;
     kfx_dedicated_ai_style=(host_sync->initial_tendencies&STARTUP_AI_RUSH)?2:
         (host_sync->initial_tendencies&STARTUP_AI_BALANCED)?1:0;
     return true;

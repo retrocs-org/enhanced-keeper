@@ -470,6 +470,58 @@ class PHPWebsiteTests(unittest.TestCase):
         with admit_peer({'peer': 2, 'occupied': 0, 'ticket': fresh['identity_ticket']}) as reply:
             self.assertTrue(json.load(reply)['user'])
 
+    def test_twin_hearts_siege_lists_best_public_team_time(self):
+        self.request('/api/health').close()
+        dsn = ('mysql:unix_socket='+os.environ['KFX_TEST_MYSQL_SOCKET']+';dbname='+self.mysql_database
+               if hasattr(self, 'mysql_database') else str(Path(self.temp.name)/'test.sqlite3'))
+        code = """define('KFX_API_INTERNAL',true);require 'public-web/lib/Hub.php';
+        $hub=new KeeperHub($argv[1],'','','',null,['user'=>'root','password'=>'','migrate'=>false]);
+        foreach([['a','KeeperOne',1],['b','KeeperTwo',1],['c','PrivateKeeper',0]] as [$id,$name,$public]){
+            $hub->q('INSERT INTO users(id,name,salt,password,public,created) VALUES(?,?,?,?,?,?)',
+                [str_repeat($id,32),$name,str_repeat('0',32),str_repeat('0',64),$public,1]);
+        }
+        foreach([[1,3500,'b'],[2,3200,'b'],[3,3010,'c']] as [$number,$turns,$partner]){
+            $match=str_pad((string)$number,32,'0',STR_PAD_LEFT);
+            $hub->q('INSERT INTO siege_scores VALUES(?,?)',[$match,$turns]);
+            foreach(['a',$partner] as $id)$hub->q('INSERT INTO participants VALUES(?,?,?)',[$match,str_repeat($id,32),'won']);
+        }"""
+        subprocess.run(['php','-r',code,dsn],cwd=ROOT,check=True,capture_output=True)
+        results=json.load(self.request('/api/siege-times'))['times']
+        self.assertEqual([(r['first'],r['second'],r['turns']) for r in results],
+                         [('KeeperOne','KeeperTwo',3200)])
+
+    def test_unlisted_room_requires_current_code_at_admission(self):
+        self.request('/api/register', {'name':'CodeKeeper','password':'a long room password'}).close()
+        self.jar.clear()
+        account=json.load(self.request('/api/cloud/login', {'name':'CodeKeeper','password':'a long room password'}))
+        user={'Authorization':'Bearer '+account['token']}
+        room=json.load(self.request('/api/servers/register', {
+            'name':'Unlisted Room','endpoint':'127.0.0.1:5556','kind':'dedicated',
+            'engine':'0.1.0','code_room':True,
+        }))
+        host={'Authorization':'Bearer '+room['secret']}
+        path='/api/servers/'+room['id']
+        self.assertEqual(json.load(self.request('/api/servers'))['servers'],[])
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            self.request(path+'/join',{},user)
+        self.assertEqual(error.exception.code,403)
+        self.assertEqual(room['expires_in'],900)
+        entry=json.load(self.request('/api/servers/redeem',{'code':room['code'].lower()},user))
+        self.assertEqual(entry['server']['id'],room['id'])
+        ticket=json.load(self.request(path+'/join',{},user))['identity_ticket']
+        self.request(path+'/room-code',{'revoke':True},host).close()
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            self.request(path+'/admit',{'ticket':ticket,'peer':1,'occupied':1},host)
+        self.assertEqual(error.exception.code,403)
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            self.request('/api/servers/redeem',{'code':room['code']},user)
+        self.assertEqual(error.exception.code,404)
+        new=json.load(self.request(path+'/room-code',{},host))
+        self.request('/api/servers/redeem',{'code':new['code']},user).close()
+        ticket=json.load(self.request(path+'/join',{},user))['identity_ticket']
+        self.assertEqual(json.load(self.request(path+'/admit',{'ticket':ticket,'peer':1,'occupied':1},host))['user'],
+                         account['id'])
+
     def test_relay_is_disabled_even_with_legacy_configuration(self):
         health=json.load(self.request('/api/health'))
         self.assertTrue(health['ok'])

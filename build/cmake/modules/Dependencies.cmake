@@ -99,7 +99,6 @@ if(WIN32)
     kfx_fetch(spng       "${KFX_DEPS_BASE}/initial/spng-mingw32.tar.gz")
     kfx_fetch(astronomy  "${KFX_DEPS_BASE}/astronomy_fix/astronomy-mingw32.tar.gz")
     kfx_fetch(centijson  "${KFX_DEPS_BASE}/initial/centijson-mingw32.tar.gz")
-    kfx_fetch(ffmpeg     "${KFX_DEPS_BASE}/initial/ffmpeg-mingw32.tar.gz")
     kfx_fetch(luajit     "${KFX_DEPS_BASE}/20250418/luajit-mingw32.tar.gz")
     kfx_fetch(miniupnpc  "${KFX_DEPS_BASE}/20260102/miniupnpc-mingw32.tar.gz")
     kfx_fetch(libnatpmp  "${KFX_DEPS_BASE}/20260102/libnatpmp-mingw32.tar.gz")
@@ -113,21 +112,11 @@ if(WIN32)
     kfx_imported(zlib_static       "${D}/zlib/libz.a"                "${D}/zlib/include")
     kfx_imported(minizip_static    "${D}/zlib/libminizip.a"          "${D}/zlib/include")
     target_link_libraries(minizip_static INTERFACE zlib_static)
-    # OpenAL: the kfx-deps prebuilt tarball is win32-thread-model MinGW, built
-    # against i686-w64-mingw32-g++ (what the Makefile and the CI cross-compile
-    # toolchain use) -- fine there, but MSYS2's native mingw32 gcc used by the
-    # vcpkg-based CMake presets is posix-threads only, so linking against it
-    # fails with "undefined reference to `__gthr_win32_mutex_lock'" etc. Build
-    # it from source via vcpkg (openal-soft in vcpkg.json) instead when vcpkg
-    # is actually in play, so the thread model always matches the compiler
-    # actually in use; otherwise use the prebuilt tarball, matching the
-    # i686-w64-mingw32-g++ toolchain.
+    find_package(Threads REQUIRED)
     if(VCPKG_TOOLCHAIN)
         find_package(OpenAL CONFIG REQUIRED)
     else()
-        kfx_fetch(openal "${KFX_DEPS_BASE}/2024-11-14/openal-mingw32.tar.gz")
-        kfx_imported(openal_static "${D}/openal/libOpenAL32.a" "${D}/openal/include")
-        target_link_libraries(openal_static INTERFACE winmm ole32 uuid)
+        find_package(OpenAL CONFIG REQUIRED PATHS "${D}/openal-prefix" NO_DEFAULT_PATH)
     endif()
     kfx_imported(luajit_static     "${D}/luajit/lib/libluajit.a"     "${D}/luajit/include")
     kfx_imported(miniupnpc_static  "${D}/miniupnpc/libminiupnpc.a"   "${D}/miniupnpc/include")
@@ -138,11 +127,15 @@ if(WIN32)
     target_compile_definitions(curl_static INTERFACE CURL_STATICLIB)
     target_link_libraries(curl_static INTERFACE zlib_static wldap32 crypt32 secur32 bcrypt ws2_32 iphlpapi)
 
-    kfx_imported(libavcodec_static     "${D}/ffmpeg/libavcodec/libavcodec.a"         "${D}/ffmpeg")
-    kfx_imported(libavformat_static    "${D}/ffmpeg/libavformat/libavformat.a"       "${D}/ffmpeg")
-    kfx_imported(libavutil_static      "${D}/ffmpeg/libavutil/libavutil.a"           "${D}/ffmpeg")
-    kfx_imported(libswresample_static  "${D}/ffmpeg/libswresample/libswresample.a"   "${D}/ffmpeg")
-    kfx_imported(libswscale_static     "${D}/ffmpeg/libswscale/libswscale.a"         "${D}/ffmpeg")
+    set(KFX_WINDOWS_FFMPEG_ROOT "${D}/ffmpeg-prefix" CACHE PATH "MinGW FFmpeg installation prefix")
+    if(NOT EXISTS "${KFX_WINDOWS_FFMPEG_ROOT}/include/libswscale/swscale.h")
+        message(FATAL_ERROR "Missing Windows FFmpeg with swscale. Use scripts/build-target.sh client-windows or set KFX_WINDOWS_FFMPEG_ROOT.")
+    endif()
+    foreach(_lib avcodec avformat avutil swresample swscale)
+        kfx_imported(lib${_lib}_static "${KFX_WINDOWS_FFMPEG_ROOT}/lib/lib${_lib}.a"
+            "${KFX_WINDOWS_FFMPEG_ROOT}/include")
+    endforeach()
+    target_link_libraries(libavutil_static INTERFACE bcrypt)
 
     add_library(centitoml OBJECT "${KFX_CENTITOML_SRC}/toml_api.c")
     target_link_libraries(centitoml PUBLIC centijson_static)
@@ -343,18 +336,13 @@ function(kfx_link_dependencies TARGET)
             astronomy_static enet6_static miniupnpc_static natpmp_static
             curl_static spng_static centijson_static minizip_static zlib_static
             luajit_static)
-        if(NOT VCPKG_TOOLCHAIN)
-            list(APPEND _static openal_static)
-        endif()
         if(CMAKE_CXX_LINK_GROUP_USING_RESCAN_SUPPORTED)
             set(_static_link "$<LINK_GROUP:RESCAN,${_static}>")
         else()
             set(_static_link ${_static})
         endif()
         target_link_libraries(${TARGET} PRIVATE kfx_sdl3 ${_static_link} centitoml)
-        if(VCPKG_TOOLCHAIN)
-            target_link_libraries(${TARGET} PRIVATE OpenAL::OpenAL)
-        endif()
+        target_link_libraries(${TARGET} PRIVATE OpenAL::OpenAL)
     elseif(APPLE)
         target_link_libraries(${TARGET} PRIVATE
             kfx_sdl3 ffmpeg_mac openal_mac lua_mac

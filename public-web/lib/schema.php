@@ -34,6 +34,10 @@ CREATE TABLE IF NOT EXISTS game_activity(user TEXT PRIMARY KEY,activity TEXT NOT
 CREATE TABLE IF NOT EXISTS server_voting(server TEXT PRIMARY KEY);
 CREATE TABLE IF NOT EXISTS party_ballots(party TEXT PRIMARY KEY,server TEXT NOT NULL,winning TEXT NOT NULL,expires REAL NOT NULL);
 CREATE TABLE IF NOT EXISTS party_map_votes(party TEXT NOT NULL,user TEXT NOT NULL,map TEXT NOT NULL,PRIMARY KEY(party,user));
+CREATE TABLE IF NOT EXISTS server_room_codes(server TEXT PRIMARY KEY,digest TEXT UNIQUE,expires REAL NOT NULL);
+CREATE TABLE IF NOT EXISTS server_room_access(server TEXT NOT NULL,user TEXT NOT NULL,PRIMARY KEY(server,user));
+CREATE TABLE IF NOT EXISTS siege_hosts(server TEXT PRIMARY KEY);
+CREATE TABLE IF NOT EXISTS siege_scores(match TEXT PRIMARY KEY,turns INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS lobby_epochs(server TEXT PRIMARY KEY,epoch TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS party_seat_holds(server TEXT NOT NULL,party TEXT NOT NULL,user TEXT NOT NULL,expires REAL NOT NULL,PRIMARY KEY(server,party,user));
 CREATE INDEX IF NOT EXISTS party_seat_holds_party ON party_seat_holds(party);

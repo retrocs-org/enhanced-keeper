@@ -419,6 +419,9 @@ FrontendMenuState get_startup_menu_state(void);
 FrontendMenuState get_menu_state_when_back_from_substate(FrontendMenuState substate);
 void frontend_input(void);
 void frontend_update(short *finish_menu);
+#if defined(__APPLE__) || defined(_WIN32)
+TbBool kfx_show_startup_title(void);
+#endif
 short frontend_draw(void);
 void create_frontend_error_box(long showTime, const char * text);
 void try_restore_frontend_error_box(); // Restore error box if frontend state was switched

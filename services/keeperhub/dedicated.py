@@ -110,12 +110,18 @@ def validate(config):
     for item in config['rotation']:assert re.fullmatch('[A-Za-z0-9_-]{1,63}',item['campaign']) and type(item['level'])==int and 0<item['level']<=99999,'Invalid map'
     assert config.get('ai_style','defensive') in ('defensive','balanced','rush'),'Invalid AI style'
     assert type(config.get('allow_party_map_votes',False)) is bool,'allow_party_map_votes must be true or false'
+    assert type(config.get('twin_hearts_siege',False)) is bool,'twin_hearts_siege must be true or false'
+    if config.get('twin_hearts_siege'):
+        assert config.get('cooperative') and config.get('humans')==2,'Twin Hearts Siege needs exactly two co-op keepers'
+        assert not config.get('manual_start'),'Twin Hearts Siege starts when both keepers are ready'
     assert type(config.get('manual_start',False)) is bool,'manual_start must be true or false'
     assert type(config.get('cooperative', False)) is bool, 'cooperative must be true or false'
-    assert config.get('visibility','public') in ('private','public'),'Visibility must be private or public'
+    assert config.get('visibility','public') in ('private','public','code'),'Visibility must be private, public, or code'
     assert type(config.get('port',5556)) is int and 1<=config.get('port',5556)<=65535,'Invalid gameplay port'
     password=os.environ.get('KFX_SERVER_PASSWORD','')
     assert len(password.encode())<=31 and not any(ord(c)<32 for c in password),'Password must be at most 31 UTF-8 bytes without control characters'
+    if config.get('visibility')=='code':
+        assert not password,'Code rooms must not set KFX_SERVER_PASSWORD'
     if config.get('visibility','public')=='private':return engine,profile
     endpoint=config.get('endpoint')
     assert endpoint is None or isinstance(endpoint,str),'Endpoint must be a hostname:port or auto'
@@ -130,6 +136,8 @@ class Host:
             if command=='stop':self.stop=True
             elif command=='next':self.next=True
             elif command=='setup':
+                if self.config.get('twin_hearts_siege'):
+                    raise ValueError('Twin Hearts Siege uses its configured map and two seats')
                 if not self.config.get('cooperative'):
                     raise ValueError('Setup requires a co-op server')
                 map_index, humans, style = data.get('map'), data.get('humans'), data.get('ai_style')
@@ -160,8 +168,23 @@ class Host:
             except BlockingIOError:raise RuntimeError('This dedicated profile already has a running host')
             self._run_locked()
     def _run_locked(self):
-        cfg=self.config;public=cfg.get('visibility','public')=='public';base=cfg.get('hub_url','').rstrip('/');key=os.environ.get('KFX_HUB_ADMIN_KEY','');state=self.profile/'dedicated';state.mkdir(mode=0o700,exist_ok=True)
+        cfg=self.config;code_room=cfg.get('visibility')=='code';public=cfg.get('visibility','public')!='private';base=cfg.get('hub_url','').rstrip('/');key=os.environ.get('KFX_HUB_ADMIN_KEY','');state=self.profile/'dedicated';state.mkdir(mode=0o700,exist_ok=True)
         startfile=state/'start.request';startfile.unlink(missing_ok=True);stopfile=state/'stop.request';nextfile=state/'next.request';stopfile.unlink(missing_ok=True);nextfile.unlink(missing_ok=True)
+        code_file=state/'room-code.json'
+        code_request=state/'room-code.request'
+        if code_room:
+            code_file.unlink(missing_ok=True)
+            code_request.unlink(missing_ok=True)
+        def write_code(room):
+            if not room.get('code'):
+                code_file.unlink(missing_ok=True)
+                return
+            temporary=code_file.with_suffix('.tmp')
+            fd=os.open(temporary,os.O_WRONLY|os.O_CREAT|os.O_TRUNC|os.O_NOFOLLOW,0o600)
+            with os.fdopen(fd,'w') as stream:
+                os.fchmod(stream.fileno(),0o600)
+                json.dump({'code':room['code'],'expires':int(time.time())+room['expires_in']},stream)
+            temporary.replace(code_file)
         version=server_version(self.engine) if public else ''
         clients=supported_clients(self.engine) if public else []
         endpoint=cfg.get('endpoint') or ''
@@ -202,6 +225,8 @@ class Host:
                     'map': f"{item['campaign']}:{item['level']}",
                     'rotation': [f"{v['campaign']}:{v['level']}" for v in cfg['rotation']],
                     'password': bool(os.environ.get('KFX_SERVER_PASSWORD')),
+                    'code_room':code_room,
+                    'twin_hearts_siege':bool(cfg.get('twin_hearts_siege')),
                 }
                 if cfg.get('cooperative'):
                     registration['coop']={'humans':humans,'ai_style':ai_style,'map_voting':bool(voting)}
@@ -210,8 +235,9 @@ class Host:
                 if key:
                     registration['admin_key'] = key
                 room = request(base, '/api/servers/register', registration)
+                if code_room:write_code(room)
             trusted = public and room.get('trusted', bool(key))
-            spectators = trusted and not os.environ.get('KFX_SERVER_PASSWORD') and cfg.get('spectators', False)
+            spectators = trusted and not code_room and not os.environ.get('KFX_SERVER_PASSWORD') and cfg.get('spectators', False)
             env=dict(os.environ,KFX_USER_DATA_DIR=str(self.profile),KFX_HEADLESS='1',KFX_LOCAL_NETWORK_ONLY='1',SDL_VIDEODRIVER='dummy',SDL_RENDER_DRIVER='software',SDL_AUDIODRIVER='dummy',ALSOFT_DRIVERS='null',KFX_HUB_URL=base,KFX_HUB_SERVER_ID=room['id'],KFX_HUB_SERVER_SECRET=room['secret'])
             if not public:
                 env['KFX_PRIVATE_SERVER']='1'
@@ -224,10 +250,12 @@ class Host:
             env.pop('KFX_DEDICATED_COOP',None)
             env.pop('KFX_DEDICATED_AI_STYLE',None)
             env.pop('KFX_COOP_MANUAL_START',None)
+            env.pop('KFX_COOP_SIEGE',None)
             if cfg.get('cooperative'):
                 env['KFX_DEDICATED_COOP']='1'
                 env['KFX_DEDICATED_AI_STYLE']=ai_style
                 if cfg.get('manual_start'):env['KFX_COOP_MANUAL_START']='1'
+                if cfg.get('twin_hearts_siege'):env['KFX_COOP_SIEGE']='1'
             if cfg.get('app_resources'):env['KFX_APP_RESOURCES']=cfg['app_resources']
             replay=state/(room['id']+'.pck');port=int(cfg.get('port',5556));args=[str(runtime/'keeperfx'),'-nointro','-server',str(port),'-campaign',item['campaign'],'-level',str(item['level']),'-waitusers',str(humans+1),'-nosound','-nick',cfg.get('ai_name','ServerAI'),'-packetsave',str(replay),'-log','dedicated.log']
             log=open(state/'engine-output.log','ab');self.process=subprocess.Popen(args,executable=str(self.engine),cwd=runtime,env=env,stdout=log,stderr=subprocess.STDOUT);offset=0;had_game=False;failures=0;verified=False;stream_truncated=False
@@ -242,6 +270,13 @@ class Host:
                     try:
                         if stopfile.exists():self.stop=True;stopfile.unlink();break
                         if nextfile.exists():self.next=True;nextfile.unlink();break
+                        if code_room and code_request.exists():
+                            value=code_request.read_text().strip()
+                            code_request.unlink()
+                            if value in ('rotate','revoke'):
+                                reply=request(base,f"/api/servers/{room['id']}/room-code",
+                                    {'revoke':value=='revoke'},room['secret'])
+                                write_code(reply)
                         if startfile.exists():
                             startfile.unlink()
                             self.command('{"command":"start"}')
@@ -267,7 +302,7 @@ class Host:
                         if ended:
                             identified=[{'user':v['account'],'result':'won' if v['outcome']==1 else 'lost'} for v in human_players if v.get('account') and v.get('outcome') in (1,2)]
                             if trusted and identified and all(v.get('verified_finish') for v in human_players):
-                                try:request(base,'/api/servers/'+room['id']+'/result',{'match':room['match_id'],'results':identified,'cooperative':bool(cfg.get('cooperative',False))},room['secret']);verified=True
+                                try:request(base,'/api/servers/'+room['id']+'/result',{'match':room['match_id'],'results':identified,'cooperative':bool(cfg.get('cooperative',False)),'siege_finish':status.get('siege_finish',0)},room['secret']);verified=True
                                 except Exception:pass # Unverified/disconnected games never become ranked wins.
                             break
                     except (OSError,ValueError):
@@ -276,6 +311,7 @@ class Host:
                     time.sleep(1)
             finally:
                 self.api_port=None;self.finish_child();log.close()
+                if code_room and not retained_room:code_file.unlink(missing_ok=True)
                 if spectators and replay.exists() and not stream_truncated:
                     with replay.open('rb') as f:
                         f.seek(offset)

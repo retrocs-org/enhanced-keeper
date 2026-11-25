@@ -28,13 +28,14 @@ bool use_player_storage(const std::string &folder){
  scan_saves();
  return true;
 }
+void record_local_profile(const std::string &name);
 void launch_local_profile(const std::string &profile){
  if(!profile_storage_safe()||!use_player_storage(profiles_base()+"/ContentProfiles/"+profile)){
   notice="Return to the main menu and check the local profile folder.";
   return;
  }
  kfx_hub_use_local_profile();
- snprintf(net_player_name,sizeof(net_player_name),"%s",profile.c_str());
+ record_local_profile(profile);
  startup_login=choosing_local_profile=false;
  close_panel();
 }

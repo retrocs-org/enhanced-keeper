@@ -19,7 +19,10 @@ case "$TARGET" in
         command -v i686-w64-mingw32-gcc >/dev/null 2>&1 || {
             echo 'Install the i686 MinGW-w64 toolchain; this target supports native MSYS2 or cross-compilation.' >&2; exit 1;
         }
+        command -v wixl >/dev/null 2>&1 || { echo 'Install wixl (msitools) to build the Windows MSI.' >&2; exit 1; }
         BUILD="$ROOT/out/$TARGET"
+        sh "$ROOT/scripts/build-windows-ffmpeg.sh" "$BUILD/deps/ffmpeg-prefix" "$JOBS"
+        sh "$ROOT/scripts/build-windows-openal.sh" "$BUILD/deps" "$JOBS"
         cmake -S "$ROOT" -B "$BUILD" -G "Unix Makefiles" \
             -DCMAKE_TOOLCHAIN_FILE="$ROOT/build/cmake/toolchains/mingw32.cmake" \
             -DCMAKE_BUILD_TYPE="$BUILD_TYPE" -DKFX_DEDICATED=OFF -DKFX_INSTALL_GAME_DATA=OFF
@@ -32,4 +35,9 @@ case "$TARGET" in
     *) echo "Unknown build target: $TARGET" >&2; exit 1;;
 esac
 cmake --build "$BUILD" --config "$BUILD_TYPE" --target keeper-enhanced --parallel "$JOBS"
-echo "Build ready in $BUILD (original game assets excluded)."
+if [ "$TARGET" = client-windows ]; then
+    OUT=${KFX_PACKAGE_DIR:-"$HOME/Development/builds/keeper-enhanced/$(date +%Y%m%d-%H%M%S)"}
+    python3 "$ROOT/scripts/package-windows.py" "$BUILD" "$OUT"
+else
+    echo "Build ready in $BUILD (original game assets excluded)."
+fi

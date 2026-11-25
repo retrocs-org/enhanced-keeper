@@ -19,7 +19,8 @@
 #include "pre_inc.h"
 #include "kfx/renderer/RendererManager.h"
 #include "frontend.h"
-#if defined(__APPLE__)
+#include "keeper_release.h"
+#if defined(__APPLE__) || defined(_WIN32)
 #include "macos_game_options.h"
 #include <SDL3/SDL.h>
 #include <algorithm>
@@ -113,6 +114,18 @@ MenuID vid_change_query_menu = GMnu_CREATURE_QUERY1;
 TbBool right_click_tag_mode_toggle = false;
 unsigned char default_tag_mode = 1;
 
+#ifdef __APPLE__
+static void frontend_switch_profile(struct GuiButton *)
+{
+    kfx_options_show_page(40);
+}
+
+static void frontend_draw_switch_profile(struct GuiButton *button)
+{
+    frontend_draw_button(button, 0, "Switch Profile", Lb_TEXT_HALIGN_CENTER);
+}
+#endif
+
 struct GuiButtonInit frontend_main_menu_buttons[] = {
   { LbBtnT_NormalBtn,  BID_MENU_TITLE, 0, 0, NULL,               NULL,        NULL,                 0, 999,  26, 999,  26, 371, 46, frontend_draw_large_menu_button,  0, GUIStr_Empty,  0,       {1},            0, NULL },
   { LbBtnT_NormalBtn,  BID_DEFAULT, 0, 0, frontend_start_new_game,NULL,frontend_over_button,     3, 999,  92, 999,  92, 371, 46, frontend_draw_large_menu_button,  0, GUIStr_Empty,  0,       {2},            0, NULL },
@@ -123,6 +136,9 @@ struct GuiButtonInit frontend_main_menu_buttons[] = {
   { LbBtnT_NormalBtn,  BID_DEFAULT, 0, 0, frontend_change_state,NULL, frontend_over_button,   27, 999, 322,   999, 322, 371, 46, frontend_draw_large_menu_button,  0, GUIStr_Empty,  0,      {97},            0, NULL },
   { LbBtnT_NormalBtn,  BID_DEFAULT, 0, 0, frontend_ldcampaign_change_state,NULL, frontend_over_button,18,999,368,999,368,371,46, frontend_draw_large_menu_button,  0, GUIStr_Empty,  0,     {104},            0, frontend_main_menu_highscores_maintain },
   { LbBtnT_NormalBtn,  BID_DEFAULT, 0, 0, frontend_change_state,NULL, frontend_over_button,      9, 999, 414, 999, 414, 371, 46, frontend_draw_large_menu_button,  0, GUIStr_Empty,  0,       {5},            0, NULL },
+#ifdef __APPLE__
+  { LbBtnT_NormalBtn, BID_DEFAULT, 0, 0, frontend_switch_profile, NULL, frontend_over_button, 0, 525, 398, 525, 398, 110, 34, frontend_draw_switch_profile, 0, GUIStr_Empty, 0, {0}, 0, NULL },
+#endif
   { LbBtnT_NormalBtn,  BID_DEFAULT, 0, 0, NULL,               NULL,        NULL,                 0, 0,   455, 0,   455, 371, 46, frontend_draw_product_version,    0, GUIStr_Empty,  0,       {0},            0, NULL },
   {-1,  BID_DEFAULT, 0, 0, NULL,               NULL,        NULL,                 0,   0,   0,   0,   0,   0,  0, NULL,                             0, GUIStr_Empty,  0,       {0},            0, NULL },
 };
@@ -3302,21 +3318,29 @@ void draw_debug_messages() {
  * Frontend drawing function.
  * @return Gives 0 if a movie has started, 1 if normal draw occured, 2 on error.
  */
-#if defined(__APPLE__)
-int kfx_title_motion_preference();
+#if defined(__APPLE__) || defined(_WIN32)
+int kfx_read_title_motion_preference();
 static bool draw_keeper_title()
 {
     static bool attempted=false;
+#ifdef __APPLE__
+    static const int motion=kfx_read_title_motion_preference();
+#else
+    constexpr int motion=0;
+#endif
     static SDL_Surface *title=nullptr;
     static Uint64 deadline=0,last_frame=0;
     static std::vector<unsigned char> pixels;
     struct LightPixel { size_t offset; float phase; float strength; int layer; };
     static std::vector<LightPixel> lights;
-    const int motion=kfx_title_motion_preference();
+    static std::vector<size_t> sparks;
     if(motion==2)return false;
     if(!attempted){
         attempted=true;
         const char *resources=getenv("KFX_APP_RESOURCES");
+#ifdef _WIN32
+        if(!resources)resources=keeper_runtime_directory;
+#endif
         if(resources&&!getenv("KFX_HEADLESS")){
             char filename[DISKPATH_SIZE];
             int length=snprintf(filename,sizeof(filename),"%s/keeper-title.png",resources);
@@ -3344,6 +3368,10 @@ static bool draw_keeper_title()
                     const float right=std::hypot(nx-.69f,(ny-.66f)*.72f);
                     const float brightness=std::max(0.f,1.f-std::min(left,right)/.075f);
                     if(brightness>.08f)lights.push_back({offset,0.f,brightness*brightness,left<right?1:2});
+                    else if(ny>.78f&&nx>.31f&&nx<.66f&&ember>.08f)
+                        lights.push_back({offset,41.f*ny+14.f*nx,ember,3});
+                    else if(ny<.19f&&ny>.079f&&rgb[0]>155&&rgb[1]>100&&ember>.12f)
+                        lights.push_back({offset,8.f*nx,ember,4});
                 }
             }
         }
@@ -3351,11 +3379,12 @@ static bool draw_keeper_title()
     }
     if(!title)return false;
     const Uint64 now=SDL_GetTicks();
-    if(now>=deadline||lbInkey!=KC_UNASSIGNED){
+    if(now>=deadline||lbInkey!=KC_UNASSIGNED||is_mouse_pressed_lrbutton()){
         SDL_DestroySurface(title);
         title=nullptr;
         std::vector<unsigned char>().swap(pixels);
         std::vector<LightPixel>().swap(lights);
+        std::vector<size_t>().swap(sparks);
         return false;
     }
     if(motion==0&&now-last_frame>=33){
@@ -3363,15 +3392,40 @@ static bool draw_keeper_title()
         const float fire[]={0.f,std::sin(seconds*11)+.35f*std::sin(seconds*23),
             std::sin(seconds*9+1.f)+.3f*std::sin(seconds*19)};
         const auto *source=static_cast<const unsigned char *>(title->pixels);
+        for(const size_t offset:sparks)std::copy_n(source+offset,3,pixels.data()+offset);
+        sparks.clear();
         for(const auto &light:lights){
-            const float intensity=light.layer==0
-                ? 38.f*std::sin(light.phase-seconds*10.f)+12.f*std::sin(light.phase*.43f-seconds*5.f)
-                : 27.f*fire[light.layer];
+            float intensity=0.f;
+            if(light.layer==0)intensity=38.f*std::sin(light.phase-seconds*10.f)+12.f*std::sin(light.phase*.43f-seconds*5.f);
+            else if(light.layer==3)intensity=14.f+24.f*std::sin(light.phase-seconds*4.f);
+            else if(light.layer==4)intensity=22.f*std::pow(std::max(0.f,std::sin(light.phase-seconds*1.5f)),14.f);
+            else intensity=27.f*fire[light.layer];
             const float delta=intensity*light.strength;
             const float warmth[]={1.f,.64f,.25f};
             for(size_t channel=0;channel<3;++channel){
                 const size_t index=light.offset+channel;
                 pixels[index]=static_cast<unsigned char>(std::clamp(source[index]+delta*warmth[channel],0.f,255.f));
+            }
+        }
+        for(int ember=0;ember<28;++ember){
+            const float seed=ember*.173f;
+            const float life=std::fmod(seconds*(.37f+(ember%3)*.06f)+seed,1.f);
+            const float x=(ember%3==0?.405f:ember%3==1?.69f:.48f)
+                +.013f*std::sin(ember*3.f+life*2.f)+.026f*life;
+            const float y=(ember%3==2?.91f:.66f)-life*(.08f+(ember%5)*.01f);
+            const int cx=static_cast<int>(x*title->w),cy=static_cast<int>(y*title->h);
+            const float glow=(1.f-life)*(ember%2?.68f:.86f);
+            for(int dy=-2;dy<=2;++dy)for(int dx=-2;dx<=2;++dx){
+                const int distance=dx*dx+dy*dy;
+                if(distance>5)continue;
+                const size_t offset=static_cast<size_t>(cy+dy)*title->pitch+(cx+dx)*4;
+                const float alpha=glow/(1.f+distance);
+                const float color[]={255,168,69};
+                for(int channel=0;channel<3;++channel){
+                    const float previous=pixels[offset+channel];
+                    pixels[offset+channel]=static_cast<unsigned char>(previous+std::max(0.f,color[channel]-previous)*alpha);
+                }
+                sparks.push_back(offset);
             }
         }
         last_frame=now;
@@ -3391,6 +3445,27 @@ static bool draw_keeper_title()
     image.filter=PRESENT_FILTER_NEAREST;
     image.exclusive=1;
     return RendererPresentImage(&image);
+}
+
+TbBool kfx_show_startup_title()
+{
+#ifdef __APPLE__
+    if(!getenv("KFX_APP_RESOURCES"))return false;
+#endif
+    if(getenv("KFX_HEADLESS"))return false;
+    lbInkey=KC_UNASSIGNED;
+    bool shown=false;
+    while(poll_inputs()){
+        if(!RendererBeginFrame())break;
+        shown=draw_keeper_title();
+        RendererEndFrame();
+        if(!shown)break;
+        RendererPresentFrame();
+        SDL_Delay(16);
+    }
+    lbInkey=KC_UNASSIGNED;
+    clear_mouse_pressed_lrbutton();
+    return shown;
 }
 #endif
 
@@ -3424,10 +3499,6 @@ short frontend_draw(void)
     switch ( frontend_menu_state )
     {
     case FeSt_MAIN_MENU:
-#if defined(__APPLE__)
-        if (draw_keeper_title()) break;
-#endif
-        [[fallthrough]];
     case FeSt_FELOAD_GAME:
     case FeSt_NET_SERVICE:
     case FeSt_NET_SESSION:
@@ -3640,6 +3711,7 @@ void frontend_update(short *finish_menu)
                 choose_profile = false;
                 kfx_options_show_page(37);
             }
+            if(kfx_options_startup_pending()){time_last_played_demo=LbTimerClock();break;}
         }
 #endif
         frontend_button_info[8].font_index = (continue_game_option_available?1:3);
@@ -3989,7 +4061,7 @@ void frontend_draw_product_version(struct GuiButton *gbtn)
     int h = LbTextLineHeight() * units_per_px / 16;
     LbTextSetWindow(0, gbtn->scr_pos_y, gbtn->width, h);
     char text[128];
-    snprintf(text, sizeof(text), "%s %s", PRODUCT_NAME, PRODUCT_VERSION);
+    snprintf(text, sizeof(text), "Keeper-Enhanced %s", KFX_APP_VERSION);
     LbTextDrawResized(0, 0, units_per_px, text);
 }
 

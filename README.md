@@ -28,7 +28,7 @@ CMake controls platform dependencies and compiler settings. Optional Make shortc
 make server-linux JOBS=4   # simulation-only server; no desktop multimedia libraries
 make client-linux JOBS=4
 make client-macos JOBS=4   # local universal app with imported BIN/CUE data, on macOS
-make client-windows JOBS=4 # i686 MinGW-w64 toolchain required
+make client-windows JOBS=4 # build the Windows MSI with the i686 MinGW-w64 toolchain
 make all JOBS=4            # native targets; Linux builds both server and client
 ```
 
@@ -37,7 +37,14 @@ and Windows shortcuts use GNU Make through CMake, without Ninja. The universal
 macOS dependency pipeline currently requires Ninja and Xcode command-line tools.
 `BUILD_TYPE=Debug` is supported by the Linux/Windows shortcuts; the universal
 macOS pipeline always builds Release. Windows cross-compilation requires the
-MinGW-w64 toolchain; macOS builds must run on macOS.
+i686 MinGW-w64 toolchain, Python 3, and `wixl` (msitools). The Windows MSI
+includes the project artwork, runtime assets, and SDL DLLs. The macOS DMG
+build must run on macOS.
+
+On the development Mac, run `./scripts/build-local-packages.sh 8` to build
+both installers. The scripts default to a timestamped folder under
+`~/Development/builds/keeper-enhanced`. Set `KFX_PACKAGE_DIR` to choose a
+different output folder.
 
 For a Linux server alone, use CMake directly:
 
