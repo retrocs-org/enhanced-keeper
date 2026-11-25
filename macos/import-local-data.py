@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Overlay required owner-supplied CD files onto a prepared Keeper Enhanced runtime."""
 import argparse
+import os
+import zipfile
 from pathlib import Path
 import re
 import shutil
@@ -10,6 +12,25 @@ import wave
 import json
 
 REQUIRED = ['data/' + n for n in ('bluepal.dat','bluepall.dat','dogpal.pal','hitpall.dat','lightng.pal','redpal.col','redpall.dat','slab0-0.dat','slab0-1.dat','vampal.pal','whitepal.col')] + ['sound/' + n for n in ('atmos1.sbk','atmos2.sbk','bullfrog.sbk')]
+
+MULTIPLAYER_ARCHIVES = (
+    'colored_sprites.zip', 'creatures.zip', 'decorative_objects.zip', 'druid.zip',
+    'effects.zip', 'maiden.zip', 'natural_features.zip', 'time_mage.zip', 'trapsdoors.zip',
+)
+
+
+def copy_multiplayer_archives(source, destination):
+    archives = [source/name for name in MULTIPLAYER_ARCHIVES]
+    for archive in archives:
+        if archive.is_symlink() or not archive.is_file():
+            raise ValueError(f'Missing regular sprite archive: {archive}')
+        with zipfile.ZipFile(archive) as contents:
+            if not contents.infolist() or contents.testzip() is not None:
+                raise ValueError(f'Invalid sprite archive: {archive}')
+    destination.mkdir(parents=True, exist_ok=True)
+    for archive in archives:
+        shutil.copy2(archive, destination/archive.name)
+
 
 class Disc:
     def __init__(self, image):
@@ -216,6 +237,16 @@ def main():
         disc=Disc(image)
         try: count=disc.extract(stage)
         finally: disc.stream.close()
+        sprite_dir = os.environ.get('KFX_SPRITE_ARCHIVES_DIR')
+        if sprite_dir:
+            try:
+                copy_multiplayer_archives(Path(sprite_dir), stage/'fxdata')
+            except (OSError, ValueError, zipfile.BadZipFile) as error:
+                p.error(str(error))
+        else:
+            missing = [name for name in MULTIPLAYER_ARCHIVES if not (stage/'fxdata'/name).is_file()]
+            if missing:
+                print('Multiplayer sprite archives missing. Set KFX_SPRITE_ARCHIVES_DIR to a matching fxdata directory.')
         audio_count=0 if a.no_audio else import_audio(image, stage)
         if (stage/'asset-build.json').exists():
             # Source-generated bases lack optional community layouts; don't advertise broken packs.

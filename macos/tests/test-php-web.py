@@ -251,6 +251,66 @@ class PHPWebsiteTests(unittest.TestCase):
             self.request(route, payload, csrf)
         self.assertEqual(error.exception.code, 409)
 
+    def test_friends_presence_and_party_flow(self):
+        password = 'test password for party'
+        def call(path, data, token=''):
+            headers = {'Content-Type': 'application/json'}
+            if token:
+                headers['Authorization'] = 'Bearer ' + token
+            request = urllib.request.Request(self.origin + path, data=json.dumps(data).encode(), headers=headers)
+            with urllib.request.urlopen(request, timeout=4) as reply:
+                return json.load(reply)
+        def account(name):
+            call('/api/register', {'name': name, 'password': password})
+            return call('/api/cloud/login', {'name': name, 'password': password})
+        def party(account_, action='state', **values):
+            return call('/api/party', {'action': action, **values}, account_['token'])
+
+        owner, friend, stranger = (account(name) for name in ('PartyOwner', 'PartyFriend', 'PartyStranger'))
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            call('/api/party', {})
+        self.assertEqual(error.exception.code, 401)
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            party(owner, 'invite', user=stranger['id'])
+        self.assertEqual(error.exception.code, 403)
+
+        call('/api/friends', {'user': friend['id']}, owner['token'])
+        call('/api/friends', {'user': owner['id']}, friend['token'])
+        self.assertFalse(party(owner)['friends'][0]['online'])
+        party(friend)
+        self.assertTrue(party(owner)['friends'][0]['online'])
+
+        state = party(owner, 'invite', user=friend['id'])
+        room = state['party']
+        self.assertEqual(state['owner'], owner['id'])
+        self.assertEqual(party(friend)['invites'][0]['id'], room)
+        with self.assertRaises(urllib.error.HTTPError):
+            party(stranger, 'accept', party=room)
+        accepted = party(friend, 'accept', party=room)
+        self.assertEqual({p['id'] for p in accepted['members']}, {owner['id'], friend['id']})
+
+        party(owner, 'message', message='Party channel')
+        party(friend, 'friend-message', user=owner['id'], message='Private conversation')
+        state = party(owner, user=friend['id'])
+        self.assertEqual([m['body'] for m in state['messages']], ['Party channel'])
+        self.assertEqual([m['body'] for m in state['friend_messages']], ['Private conversation'])
+        self.assertEqual(party(stranger, user=friend['id'])['friend_messages'], [])
+        self.assertEqual(party(stranger)['messages'], [])
+
+        server = call('/api/servers/register', {'name': 'Party server', 'endpoint': '127.0.0.1:5556',
+                                               'engine': '0.1.0', 'kind': 'dedicated'})
+        for action, values in [('prompt', {'server': server['id']}), ('kick', {'user': owner['id']})]:
+            with self.assertRaises(urllib.error.HTTPError) as error:
+                party(friend, action, **values)
+            self.assertEqual(error.exception.code, 403)
+        party(owner, 'prompt', server=server['id'])
+        self.assertEqual(party(friend)['prompt']['id'], server['id'])
+        self.assertIsNone(party(stranger)['prompt'])
+        party(owner, 'kick', user=friend['id'])
+        self.assertEqual(party(friend)['party'], '')
+        self.assertIsNone(party(friend)['prompt'])
+        self.assertEqual(party(owner, 'leave')['party'], '')
+
     def test_public_dedicated_admission_requires_one_use_account_ticket(self):
         host = json.load(self.request('/api/servers/register', {
             'name': 'Public Keeper', 'endpoint': '127.0.0.1:5556',

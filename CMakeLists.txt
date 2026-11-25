@@ -33,6 +33,9 @@ set(PACKAGE_SUFFIX ""  CACHE STRING "Distribution suffix (e.g. Alpha, Release)")
 set(VER_STRING     "${VER_MAJOR}.${VER_MINOR}.${VER_RELEASE}.${BUILD_NUMBER} ${PACKAGE_SUFFIX}")
 set(GIT_REVISION   "${COMMIT_ID}")
 
+file(STRINGS "${CMAKE_SOURCE_DIR}/VERSION" KFX_APP_VERSION LIMIT_COUNT 1)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/VERSION")
+
 # src/version.h includes "ver_defs.h" relative to src/ (matches GENSRC in Makefile).
 configure_file(${CMAKE_SOURCE_DIR}/ver_defs.h.in ${CMAKE_SOURCE_DIR}/src/ver_defs.h)
 

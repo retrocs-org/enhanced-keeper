@@ -20,6 +20,12 @@ def request(base,route,data=None,token=''):
         retry=urllib.request.Request(direct,data=req.data,headers=headers)
         with urllib.request.urlopen(retry,timeout=5) as response:return json.load(response)
 
+def server_version(engine):
+    version = subprocess.check_output([str(engine), '--server-build-info'], text=True, timeout=5).strip()
+    if not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', version):
+        raise RuntimeError('The dedicated engine did not report a Keeper Enhanced server version')
+    return version
+
 def rpc(port):
     with socket.create_connection(('127.0.0.1',port),timeout=2) as c:
         c.sendall(b'{"action":"get_network_info","ack":1}\n');raw=b''
@@ -129,6 +135,7 @@ class Host:
     def _run_locked(self):
         cfg=self.config;public=cfg.get('visibility','public')=='public';base=cfg.get('hub_url','').rstrip('/');key=os.environ.get('KFX_HUB_ADMIN_KEY','');state=self.profile/'dedicated';state.mkdir(mode=0o700,exist_ok=True)
         stopfile=state/'stop.request';nextfile=state/'next.request';stopfile.unlink(missing_ok=True);nextfile.unlink(missing_ok=True)
+        version=server_version(self.engine) if public else ''
         endpoint=cfg.get('endpoint') or ''
         mapping=NatPmpMapping(cfg.get('port',5556)) if public and endpoint=='auto' else None
         while not self.stop:
@@ -142,7 +149,7 @@ class Host:
             if public:
                 registration = {
                     'name': cfg['name'], 'port': cfg.get('port', 5556),
-                    'engine': cfg.get('engine_version', '1.4.0.0'), 'kind': 'dedicated',
+                    'engine': version, 'kind': 'dedicated',
                     'map': f"{item['campaign']}:{item['level']}",
                     'rotation': [f"{v['campaign']}:{v['level']}" for v in cfg['rotation']],
                     'password': bool(os.environ.get('KFX_SERVER_PASSWORD')),

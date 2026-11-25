@@ -172,6 +172,11 @@ than overwritten. An active match is interrupted during the final restart.
 Linux/Leap runtime validation is still pending; swap/rollback behavior is covered
 by isolated tests with simulated builds and systemd.
 
+The public directory shows the Keeper Enhanced server release reported by its
+binary. The dedicated engine checks an explicit list of compatible Keeper
+Enhanced client releases during login. The initial list contains client
+`0.1.0`. Update both the server and clients for this login change.
+
 ## Minimal server-data import
 
 `import-data.py` now defaults to a minimal import. It retains `keeper-enhanced.cfg` and

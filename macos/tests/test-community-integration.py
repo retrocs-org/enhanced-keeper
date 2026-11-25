@@ -64,16 +64,17 @@ def until(fn,seconds=40):
   except (OSError,ValueError,AssertionError) as e:last=str(e)
   time.sleep(.3)
  raise AssertionError('Timed out: '+str(last))
-def launch(p,apiport,token=None,endpoint=None):
+def launch(p,apiport,token=None,endpoint=None,client_engine=engine):
  config_api(p,apiport)
  if token:
   me=hub.handle('GET','/api/me',{},token);(p/'save/community-session.cfg').write_text(base+'\n'+token+'\n'+me['name']+'\n'+me['id']+'\n');(p/'save/community-session.cfg').chmod(0o600)
  elif not (p/'save/community-session.cfg').exists():(p/'save/community-url.cfg').write_text(base)
  env=dict(os.environ,KFX_USER_DATA_DIR=str(p),KFX_HEADLESS='1',KFX_LOCAL_NETWORK_ONLY='1',SDL_VIDEODRIVER='dummy',SDL_RENDER_DRIVER='software',SDL_AUDIODRIVER='dummy',ALSOFT_DRIVERS='null',KFX_APP_RESOURCES=str(app/'Contents/Resources'))
- log=open(p/'stdout.log','w');proc=subprocess.Popen([str(p/'GameData/keeperfx'),'-nointro','-nosound','-nick','LocalTester','-log','community.log',*(['-connect',endpoint] if endpoint else [])],executable=str(engine),env=env,cwd=p/'GameData',stdout=log,stderr=subprocess.STDOUT,start_new_session=True);processes.append((proc,log));until(lambda:rpc(apiport,'community_status'));return proc
-lobby_only=os.environ.get('KFX_TEST_LOBBY_ONLY')=='1'
+ log=open(p/'stdout.log','w');proc=subprocess.Popen([str(p/'GameData/keeperfx'),'-nointro','-nosound','-nick','LocalTester','-log','community.log',*(['-connect',endpoint] if endpoint else [])],executable=str(client_engine),env=env,cwd=p/'GameData',stdout=log,stderr=subprocess.STDOUT,start_new_session=True);processes.append((proc,log));until(lambda:rpc(apiport,'community_status'));return proc
+test_party=os.environ.get('KFX_TEST_PARTY')=='1'
+lobby_only=test_party or os.environ.get('KFX_TEST_LOBBY_ONLY')=='1'
 try:
- hostprofile=profile('host');hostport=port(True);cfg=dict(name='Local Dedicated QA',engine_binary=os.environ.get('KFX_TEST_SERVER_ENGINE',str(engine)),user_data=str(hostprofile),hub_url=base,endpoint='127.0.0.1:'+str(hostport),visibility='public',port=hostport,rotation=[{'campaign':'original','level':52}],humans=2 if lobby_only else 1,spectators=not lobby_only,app_resources=str(app/'Contents/Resources'));os.environ['KFX_HUB_ADMIN_KEY']=hub.admin_key;supervisor=ded.Host(cfg);hosterrors=[]
+ hostprofile=profile('host');hostport=port(True);cfg=dict(name='Local Dedicated QA',engine_binary=os.environ.get('KFX_TEST_SERVER_ENGINE',str(engine)),user_data=str(hostprofile),hub_url=base,endpoint='127.0.0.1:'+str(hostport),visibility='public',port=hostport,rotation=[{'campaign':'original','level':52}],humans=3 if test_party else 2 if lobby_only else 1,spectators=not lobby_only,app_resources=str(app/'Contents/Resources'));os.environ['KFX_HUB_ADMIN_KEY']=hub.admin_key;supervisor=ded.Host(cfg);hosterrors=[]
  def run_host():
   try:supervisor.run()
   except Exception:hosterrors.append(traceback.format_exc())
@@ -81,7 +82,26 @@ try:
  with socket.socket(socket.AF_INET,socket.SOCK_DGRAM) as query:
   query.settimeout(2);query.sendto(b'KFXQ1 local-probe',('127.0.0.1',hostport));assert query.recvfrom(100)[0]==b'KFXA1 local-probe'
  print('PASS: server latency query does not allocate a player',flush=True)
- user=hub.handle('POST','/api/register',{'name':'LocalKeeper','password':'local game test password'});clientprofile=profile('client');clientport=port();client=launch(clientprofile,clientport,user['token']);rpc(clientport,'community_action',command=2000);until(lambda:rpc(clientport,'community_status').get('servers')==1);rpc(clientport,'community_action',command=2010);rpc(clientport,'community_action',command=2040)
+ user=hub.handle('POST','/api/register',{'name':'LocalKeeper','password':'local game test password'});clientprofile=profile('client');clientport=port();client=launch(clientprofile,clientport,user['token']);rpc(clientport,'community_action',command=2000);until(lambda:rpc(clientport,'community_status').get('servers')==1);rpc(clientport,'community_action',command=2010)
+ if test_party:
+  owner=hub.handle('GET','/api/me',{},user['token'])
+  buddy=hub.handle('POST','/api/register',{'name':'PartyBuddy','password':'local game test password'})
+  member=hub.handle('GET','/api/me',{},buddy['token'])
+  hub.handle('POST','/api/friends',{'user':member['id']},user['token'])
+  hub.handle('POST','/api/friends',{'user':owner['id']},buddy['token'])
+  room=hub.handle('POST','/api/party',{'action':'invite','user':member['id']},user['token'])
+  hub.handle('POST','/api/party',{'action':'accept','party':room['party']},buddy['token'])
+  buddy_profile=profile('party-buddy')
+  buddy_port=port()
+  launch(buddy_profile,buddy_port,buddy['token'])
+  until(lambda:rpc(clientport,'community_status')['party_members']==2)
+  rpc(clientport,'community_action',command=2121)
+  until(lambda:rpc(buddy_port,'community_status')['party_prompt']==cfg['name'])
+  rpc(buddy_port,'community_action',command=2120)
+  rpc(buddy_port,'community_action',command=2128)
+  until(lambda:rpc(buddy_port).get('active') and any(v.get('account')==member['id'] for v in supervisor.status.get('users',[])))
+  print('PASS: an owner sends a server prompt and the invited game client joins through it',flush=True)
+ rpc(clientport,'community_action',command=2040)
  if lobby_only:
   until(lambda:rpc(clientport).get('active') and any(user.get('account') for user in supervisor.status.get('users',[])))
   print('PASS: packaged client entered a public lobby with its cloud identity',flush=True)
@@ -111,6 +131,13 @@ try:
  hostthread=threading.Thread(target=run_host,daemon=True)
  hostthread.start()
  until(lambda:supervisor.status.get('active'))
+ old_client=os.environ.get('KFX_TEST_OLD_CLIENT_ENGINE')
+ if old_client:
+  old_profile=profile('old-client')
+  launch(old_profile,port(),endpoint='127.0.0.1:'+str(private_port),client_engine=Path(old_client))
+  until(lambda:'refused an unsupported Keeper Enhanced client version' in (private_profile/'dedicated.log').read_text())
+  assert supervisor.status.get('players')==1
+  print('PASS: a client without an allowlisted release is refused before lobby admission',flush=True)
  offline_profile=profile('offline-client')
  shutil.copyfile(clientprofile/'save/community-session.cfg',offline_profile/'save/community-session.cfg')
  offline_port=port()

@@ -349,6 +349,11 @@ prepared base. If the checked-in runtime is missing, the importer can generate
 a fallback under `.local/generated-runtime`. `macos/build-universal.sh` is
 compile-only.
 
+Set `KFX_SPRITE_ARCHIVES_DIR=/path/to/fxdata` to include the nine multiplayer
+sprite archives from a matching local runtime during disc import. Use the same
+archives on the Mac and when running `make import-server IMAGE=...` on Linux.
+The engine verifies that peers use matching sprite data.
+
 `import/`, `.local/` and `outputs/` are Git-ignored. Source export/push policy also
 rejects the entire import directory. Imported packages are for local use; public
 release packaging continues to strip original data and reject data-bearing apps.

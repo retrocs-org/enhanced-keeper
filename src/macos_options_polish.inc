@@ -41,6 +41,7 @@ void load_network_profile(){
 }
 void launch_local_profile(const std::string &profile);
 void finish_edit(){
+    if(editing==19){editing=0;SDL_StopTextInput(SDL_GetKeyboardFocus());activate(2126);return;}
     if(editing==12){library_rename();return;}
     if(editing==11){if(!create_profile())return;editing=0;SDL_StopTextInput(SDL_GetKeyboardFocus());if(choosing_local_profile)launch_local_profile(new_profile);return;}
     if(editing>=6){editing=0;browser_filter();SDL_StopTextInput(SDL_GetKeyboardFocus());return;}

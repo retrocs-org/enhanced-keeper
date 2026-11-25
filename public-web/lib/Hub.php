@@ -5,13 +5,14 @@ require_once __DIR__.'/Accounts.php';
 require_once __DIR__.'/smtp.php';
 require_once __DIR__.'/Servers.php';
 require_once __DIR__.'/Community.php';
+require_once __DIR__.'/Parties.php';
 final class ApiProblem extends RuntimeException { public function __construct(public int $status,string $message){parent::__construct($message);} }
 function demand(mixed $ok,string $message,int $status=400): void {if(!$ok)throw new ApiProblem($status,$message);}
 function api_text(mixed $value,int $limit=80): string {demand(is_string($value)&&mb_strlen($value)>0&&mb_strlen($value)<=$limit&&!preg_match('/[\x00-\x1f\x7f]/u',$value),'Invalid text');return $value;}
 function api_token(int $bytes=32): string {return rtrim(strtr(base64_encode(random_bytes($bytes)),'+/','-_'),'=');}
 function api_endpoint(mixed $value): string {$value=api_text($value,150);demand(preg_match('/^(\[[0-9a-fA-F:]+\]|[A-Za-z0-9][A-Za-z0-9.-]*):([0-9]{1,5})$/D',$value,$m)&&((int)$m[2])>0&&((int)$m[2])<65536,'Use hostname:port or [IPv6]:port');return $value;}
 final class KeeperHub {
-    use HubAccounts,HubServers,HubCommunity;
+    use HubAccounts,HubServers,HubCommunity,HubParties;
     public PDO $db; public float $now; public bool $mysql=false;
     private string $localPublicAddress;
     private array $localPublicPeers;
@@ -72,6 +73,7 @@ final class KeeperHub {
         if($route==='/api/recovery/reset'&&$method==='POST')$this->limit($peer,'recovery',5,3600);
         $session=$token!==''?$this->one('SELECT s.*,u.name FROM sessions s JOIN users u ON u.id=s.user WHERE token=? AND expires>?',[hash('sha256',$token),$this->now]):false;$uid=$session['user']??null;
         if($cookie&&$method==='POST')demand($session&&hash_equals($session['csrf'],$csrf),'Reload the page before submitting',403);
+        if($route==='/api/party'&&$method==='POST'&&$uid&&($data['action']??'state')!=='state')$this->limit($uid,'party-actions',60);
         if($route==='/api/recovery/codes'&&$method==='POST'){demand($uid,'Sign in first',401);$this->limit($uid,'recovery-issue',3,3600);}
         if($method==='POST'&&in_array($route,['/api/profile/email','/api/profile/password','/api/profile/delete'],true)){
             demand($uid,'Sign in first',401);
@@ -84,7 +86,7 @@ final class KeeperHub {
         $this->db->beginTransaction();try{
             foreach(['sessions','devices','tickets'] as $table)$this->q("DELETE FROM $table WHERE expires<?",[$this->now]);
             if($method==='GET')$answer=$this->read($route,$parts,$query,$session,$uid);
-            else $answer=$this->accountWrite($route,$data,$token,$uid)??$this->serverWrite($route,$parts,$data,$token,$uid,$peer)??$this->communityWrite($route,$parts,$data,$token,$uid);
+            else $answer=$this->partyWrite($route,$data,$uid)??$this->accountWrite($route,$data,$token,$uid)??$this->serverWrite($route,$parts,$data,$token,$uid,$peer)??$this->communityWrite($route,$parts,$data,$token,$uid);
             demand(is_array($answer),'Not found',404);$this->db->commit();return $answer;
         }catch(Throwable $e){if($this->db->inTransaction())$this->db->rollBack();throw $e;}
     }

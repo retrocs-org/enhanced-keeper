@@ -28,5 +28,15 @@ return <<<'SQL'
         CREATE TABLE IF NOT EXISTS streams(id TEXT PRIMARY KEY,server TEXT,match TEXT,data BLOB,finished INTEGER,engine TEXT);
         CREATE TABLE IF NOT EXISTS replays(id TEXT PRIMARY KEY,match TEXT,owner TEXT,data BLOB,sha TEXT,size INTEGER);
         
+CREATE TABLE IF NOT EXISTS game_presence(user TEXT PRIMARY KEY,seen REAL NOT NULL);
+CREATE TABLE IF NOT EXISTS party_rooms(id TEXT PRIMARY KEY,owner TEXT NOT NULL,server TEXT NOT NULL DEFAULT '',prompt TEXT NOT NULL DEFAULT '',prompt_expires REAL NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS party_members(user TEXT PRIMARY KEY,party TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS party_members_room ON party_members(party);
+CREATE TABLE IF NOT EXISTS party_invites(party TEXT NOT NULL,recipient TEXT NOT NULL,expires REAL NOT NULL,PRIMARY KEY(party,recipient));
+CREATE INDEX IF NOT EXISTS party_invites_recipient ON party_invites(recipient,expires);
+CREATE TABLE IF NOT EXISTS party_messages(id TEXT PRIMARY KEY,party TEXT NOT NULL,sender TEXT NOT NULL,body TEXT NOT NULL,created REAL NOT NULL);
+CREATE INDEX IF NOT EXISTS party_messages_room ON party_messages(party,created,id);
+CREATE TABLE IF NOT EXISTS friend_messages(id TEXT PRIMARY KEY,sender TEXT NOT NULL,recipient TEXT NOT NULL,body TEXT NOT NULL,created REAL NOT NULL);
+CREATE INDEX IF NOT EXISTS friend_messages_thread ON friend_messages(sender,recipient,created,id);
 CREATE TABLE IF NOT EXISTS rate_limits(peer TEXT,bucket TEXT,start REAL,count INTEGER,PRIMARY KEY(peer,bucket));
 SQL;

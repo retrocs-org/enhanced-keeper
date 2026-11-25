@@ -57,6 +57,20 @@ IPv4/IPv6 addresses can be probed; unresolved hostnames show unknown ping.
 Engine filtering is an initial check. The existing preflight checks selected
 map/campaign bytes and mods before a normal host starts.
 
+## Friends and parties in the game
+
+Open **Friends and Party** from the public server browser or use **F8** on
+macOS. Cloud accounts show presence for accepted friends and have separate
+friend conversations and party chat. Inviting a friend creates a party and
+makes the inviter its owner. The owner can invite or remove players and send a
+join prompt from a public server's details. Each player accepts the prompt
+individually. The server must be open, password-free, and have enough lobby
+slots at the time of the prompt. Party chat continues between games. The game
+lobby keeps its own chat.
+
+Deploy the updated website and run its CLI schema migration before using the
+new client with an existing MariaDB installation.
+
 ## Headless hosting
 
 The current lockstep engine makes the host a player. This implementation uses
@@ -87,7 +101,7 @@ need a version that supports admission tickets. A public server can register
 without an administrator key. Either mode accepts an optional
 `KFX_SERVER_PASSWORD`.
 Copy `examples/dedicated-local.json` to an ignored local file and adjust paths.
-Choose maps with enough player positions. The example runs Classic map 52 with
+Choose maps with enough player positions. The example runs original map 52 with
 one human and the AI host. The engine binary and GameData must have matching
 assets. The supervisor writes only into the dedicated profile, never the app.
 

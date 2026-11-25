@@ -1,3 +1,4 @@
+#define KFX_APP_VERSION "${KFX_APP_VERSION}"
 #define VER_MAJOR       ${VER_MAJOR}
 #define VER_MINOR       ${VER_MINOR}
 #define VER_RELEASE     ${VER_RELEASE}

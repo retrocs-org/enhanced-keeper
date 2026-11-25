@@ -80,7 +80,11 @@ trait HubAccounts {
             return ['ok'=>true];
         }
         demand(($data['confirmation']??null)==='DELETE','Type DELETE to confirm');
-        foreach(['sessions','devices','recovery','tickets','cloud_profiles','cloud_settings','cloud_email_changes','participants','identities','entrants','completions'] as $table)
+        $this->leaveParty($uid,$this->partyFor($uid));
+        $this->q('DELETE FROM party_invites WHERE recipient=?',[$uid]);
+        $this->q('DELETE FROM party_messages WHERE sender=?',[$uid]);
+        $this->q('DELETE FROM friend_messages WHERE sender=? OR recipient=?',[$uid,$uid]);
+        foreach(['game_presence','sessions','devices','recovery','tickets','cloud_profiles','cloud_settings','cloud_email_changes','participants','identities','entrants','completions'] as $table)
             $this->q("DELETE FROM $table WHERE user=?",[$uid]);
         $this->q('DELETE FROM friends WHERE a=? OR b=?',[$uid,$uid]);
         $this->q('DELETE FROM cloud_signup WHERE name=?',[$account['name']]);

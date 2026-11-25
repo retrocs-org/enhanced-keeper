@@ -54,7 +54,7 @@
 #include "ariadne_update.h"
 #include "api.h"
 #include "custom_sprites.h"
-#include "version.h"
+#include "keeper_release.h"
 #include "front_simple.h"
 #include "frontend.h"
 #include "front_input.h"
@@ -2258,11 +2258,19 @@ int LbBullfrogMain(unsigned short argc, char *argv[])
 
 int kfxmain(int argc, char *argv[])
 {
-#ifdef KFX_DEDICATED
-  if(argc==2 && (!strcmp(argv[1],"--version") || !strcmp(argv[1],"--server-build-info"))) {
-    printf("Keeper Enhanced dedicated server %s (engine %s); presentation backends disabled\n",KFX_APP_VERSION,VER_STRING);
+  if(argc==2 && !strcmp(argv[1],"--server-build-info")) {
+    puts(KFX_SERVER_VERSION);
     return 0;
   }
+  if(argc==2 && !strcmp(argv[1],"--version")) {
+#ifdef KFX_DEDICATED
+    printf("Keeper Enhanced dedicated server %s\n", KFX_SERVER_VERSION);
+#else
+    printf("Keeper Enhanced client %s\n", KFX_APP_VERSION);
+#endif
+    return 0;
+  }
+#ifdef KFX_DEDICATED
   bool dedicated_requested=false;
   for(int i=1;i<argc;i++)if(!strcasecmp(argv[i],"-server"))dedicated_requested=true;
   if(!dedicated_requested){fprintf(stderr,"Dedicated build: start through dedicated.py or supply -server PORT.\n");return 2;}

@@ -28,6 +28,7 @@
 #include "front_network.h"
 #include "net_lan.h"
 #include "net_hub.h"
+#include "keeper_release.h"
 #include "net_matchmaking.h"
 #include "packets.h"
 #include "player_data.h"
@@ -73,6 +74,17 @@ static const char *read_login_text(char **position, const char *end, size_t max_
     }
     *position += terminator - text + 1;
     return text;
+}
+
+static TbBool dedicated_client_allowed(const char *version)
+{
+    // Add a release here once its gameplay compatibility has been verified.
+    static const char *const supported_clients[] = {"0.1.0"};
+    for (size_t i = 0; i < sizeof(supported_clients)/sizeof(supported_clients[0]); ++i) {
+        if (version != NULL && strcmp(version, supported_clients[i]) == 0)
+            return true;
+    }
+    return false;
 }
 
 TbError process_login_message(NetUserId source, char *read_pos, const char *end_pos)
@@ -123,8 +135,22 @@ TbError process_login_message(NetUserId source, char *read_pos, const char *end_
     }
     memcpy(&user->version, read_pos, sizeof(user->version));
     read_pos += sizeof(user->version);
-    if (kfx_hub_requires_login_ticket()) {
-        const char *ticket = read_login_text(&read_pos, end_pos, 43);
+    const TbBool requires_ticket = kfx_hub_requires_login_ticket();
+    const char *ticket = requires_ticket ? read_login_text(&read_pos, end_pos, 43) : NULL;
+#ifdef KFX_DEDICATED
+    const TbBool dedicated = true;
+#else
+    const TbBool dedicated = requires_ticket || getenv("KFX_PRIVATE_SERVER") != NULL;
+#endif
+    if (dedicated) {
+        const char *version = read_login_text(&read_pos, end_pos, 32);
+        if (!dedicated_client_allowed(version) || !net_versions_match(&user->version, &net_current_version)) {
+            NETMSG("Dedicated server refused an unsupported Keeper Enhanced client version");
+            netstate.sp->drop_user(source);
+            return Lb_OK;
+        }
+    }
+    if (requires_ticket) {
         unsigned occupied = 0;
         for (NetUserId id = 1; id < netstate.max_users; ++id) {
             if (netstate.users[id].progress == USER_LOGGEDIN) occupied |= 1u << id;
@@ -205,7 +231,7 @@ TbError LbNetwork_ExchangeLogin(char *player_name)
     NETMSG("Logging in as %s", player_name);
     const char *ticket = kfx_hub_login_ticket();
     size_t ticket_size = ticket[0] ? strlen(ticket) + 1 : 0;
-    if (ticket_size + 1 + strlen(netstate.password) + 1 + strlen(player_name) + 1 + sizeof(net_current_version) >= sizeof(netstate.msg_buffer)) {
+    if (sizeof(KFX_APP_VERSION) + ticket_size + 1 + strlen(netstate.password) + 1 + strlen(player_name) + 1 + sizeof(net_current_version) >= sizeof(netstate.msg_buffer)) {
         ERRORLOG("Login credentials too long");
         return Lb_FAIL;
     }
@@ -220,6 +246,8 @@ TbError LbNetwork_ExchangeLogin(char *player_name)
         memcpy(write_pos, ticket, ticket_size);
         write_pos += ticket_size;
     }
+    memcpy(write_pos, KFX_APP_VERSION, sizeof(KFX_APP_VERSION));
+    write_pos += sizeof(KFX_APP_VERSION);
     send_message_buffer(SERVER_ID, write_pos);
     TbClockMSec wait_start_time = LbTimerClock();
     while (LbTimerClock() - wait_start_time < TIMEOUT_JOIN_LOBBY + (ticket_size ? 6000 : 0)) {

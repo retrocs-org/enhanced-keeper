@@ -4,6 +4,7 @@ std::string hub_field(const VALUE *root,const char *key){const VALUE *v=root?val
 int hub_integer(const VALUE *root,const char *key){const VALUE *v=root?value_dict_get(root,key):nullptr;return v&&(value_type(v)==VALUE_INT32||value_type(v)==VALUE_UINT32)?value_int32(v):0;}
 std::string hub_quote(const std::string &s){std::string out="\"";for(unsigned char c:s){if(c=='"'||c=='\\')out+='\\';if(c>=32)out+=c;}return out+'"';}
 struct BrowserServer{std::string id,name,address,engine,map,kind,region,content,status;int players=0,capacity=4;bool password=false;};
+bool dedicated_listing(const BrowserServer &server){return server.kind=="dedicated"||server.kind=="community";}
 std::vector<BrowserServer> browser_servers,public_servers,favourite_servers,recent_servers;
 std::map<std::string,int> browser_pings;int browser_sort=0;
 int browser_tab=0,browser_index=0,community_tab=0,community_offset=0;bool browser_compatible=false;
@@ -14,7 +15,7 @@ void browser_load(const char *file,std::vector<BrowserServer> &rows){FILE *f=fop
 void browser_filter(){
  browser_servers=browser_tab==0?public_servers:browser_tab==2?favourite_servers:browser_tab==3?recent_servers:std::vector<BrowserServer>{};
  if(browser_tab==1){lan_refresh_sessions();for(int i=0;i<lan_session_count&&i<LAN_SESSIONS_MAX;i++){BrowserServer s;s.name=lan_sessions[i].text;s.address=lan_sessions[i].join_address;if(s.address.rfind("LAN:",0)==0)s.address.erase(0,4);s.kind="LAN";browser_servers.push_back(s);}}
- std::string q=browser_search;std::transform(q.begin(),q.end(),q.begin(),[](unsigned char c){return std::tolower(c);});browser_servers.erase(std::remove_if(browser_servers.begin(),browser_servers.end(),[&](const BrowserServer &s){std::string text=s.name+" "+s.map+" "+s.region;std::transform(text.begin(),text.end(),text.begin(),[](unsigned char c){return std::tolower(c);});return text.find(q)==std::string::npos||(browser_compatible&&!s.engine.empty()&&normalized_version(s.engine)!=normalized_version(VER_STRING));}),browser_servers.end());std::sort(browser_servers.begin(),browser_servers.end(),[](const BrowserServer &a,const BrowserServer &b){if(browser_sort==1){int x=browser_pings.count(a.address)&&browser_pings[a.address]>=0?browser_pings[a.address]:999999,y=browser_pings.count(b.address)&&browser_pings[b.address]>=0?browser_pings[b.address]:999999;if(x!=y)return x<y;}else if(browser_sort==2&&a.players!=b.players)return a.players>b.players;else if(browser_sort==3&&a.map!=b.map)return a.map<b.map;return a.name<b.name;});browser_index=std::clamp(browser_index,0,std::max(0,(int)browser_servers.size()-1));
+ std::string q=browser_search;std::transform(q.begin(),q.end(),q.begin(),[](unsigned char c){return std::tolower(c);});browser_servers.erase(std::remove_if(browser_servers.begin(),browser_servers.end(),[&](const BrowserServer &s){std::string text=s.name+" "+s.map+" "+s.region;std::transform(text.begin(),text.end(),text.begin(),[](unsigned char c){return std::tolower(c);});return text.find(q)==std::string::npos||(browser_compatible&&!dedicated_listing(s)&&!s.engine.empty()&&normalized_version(s.engine)!=normalized_version(VER_STRING));}),browser_servers.end());std::sort(browser_servers.begin(),browser_servers.end(),[](const BrowserServer &a,const BrowserServer &b){if(browser_sort==1){int x=browser_pings.count(a.address)&&browser_pings[a.address]>=0?browser_pings[a.address]:999999,y=browser_pings.count(b.address)&&browser_pings[b.address]>=0?browser_pings[b.address]:999999;if(x!=y)return x<y;}else if(browser_sort==2&&a.players!=b.players)return a.players>b.players;else if(browser_sort==3&&a.map!=b.map)return a.map<b.map;return a.name<b.name;});browser_index=std::clamp(browser_index,0,std::max(0,(int)browser_servers.size()-1));
  for(int i=(browser_index/3)*3;i<std::min((int)browser_servers.size(),(browser_index/3)*3+3);i++)if(!browser_pings.count(browser_servers[i].address)&&kfx_hub_probe(browser_servers[i].address.c_str()))browser_pings[browser_servers[i].address]=-2;
 }
 void browser_refresh(){if(browser_tab==0||browser_tab==2||browser_tab==3){if(!kfx_hub_request("servers","/api/servers",nullptr,0))hub_message="A community request is still running.";else hub_message="Refreshing directory...";}else{browser_filter();hub_message=browser_servers.empty()?"No servers found in this tab.":"Server list updated.";}}
@@ -123,6 +124,8 @@ void choose_startup_profile(){
 void community_request(){const char *routes[]={"/api/events","/api/friends","/api/matches","/api/challenges","/api/replays"};kfx_hub_request("community",routes[community_tab],nullptr,community_tab==1||community_tab==2?1:0);community_text="Loading...";community_offset=0;}
 std::future<std::pair<bool,std::string>> content_scan;std::string content_key,content_value,content_error,content_join_id;bool content_host=false;int content_join_action=0;bool publish_after_scan=false;
 void start_content_scan(const std::string &map,bool hosting){std::string key=std::string(keeper_runtime_directory)+"|"+map;if(content_scan.valid()||content_key==key)return;content_key=key;content_value.clear();content_error.clear();content_host=hosting;if(hosting)kfx_hub_content("");std::string root=keeper_runtime_directory;content_scan=std::async(std::launch::async,[root,map](){char out[256];bool ok=kfx_content_fingerprint(root.c_str(),map.c_str(),out,sizeof(out));return std::make_pair(ok,std::string(out));});}
+#include "macos_party.inc"
+
 void browser_tick(){
  if(content_scan.valid()&&content_scan.wait_for(std::chrono::seconds(0))==std::future_status::ready){auto result=content_scan.get();if(result.first)content_value=result.second;else content_error=result.second;if(content_host)kfx_hub_content(content_key.substr(content_key.find('|')+1).empty()?"":content_value.c_str());if(publish_after_scan){publish_after_scan=false;if(page==23)browser_action(2062);}if(content_join_action){int action=content_join_action;content_join_action=0;if(page==21&&!browser_servers.empty()&&browser_servers[browser_index].id==content_join_id)browser_action(action);}}
 
@@ -131,7 +134,8 @@ void browser_tick(){
  std::string current_map=hosting?host_map:"";if(hosting&&frontend_menu_state==FeSt_INITIAL){current_map=campaign.fname;if(current_map.size()>4&&current_map.substr(current_map.size()-4)==".cfg")current_map.resize(current_map.size()-4);current_map+=":"+std::to_string(get_loaded_level_number());}
  if(hosting)start_content_scan(current_map,true);else if(page==21&&!browser_servers.empty())start_content_scan(browser_servers[browser_index].map,false);
  if(kfx_hub_tick(hosting,count,hosting&&frontend_menu_state==FeSt_INITIAL,current_map.c_str())){
-  std::string tag=kfx_hub_result_tag();HubDocument d(kfx_hub_result());std::string error=hub_field(&d.root,"error");if(tag=="settings-read"||tag=="settings-write"){
+  std::string tag=kfx_hub_result_tag();HubDocument d(kfx_hub_result());std::string error=hub_field(&d.root,"error");if(tag.rfind("party:",0)==0)party_reply(tag,d.root,error);
+  else if(tag=="settings-read"||tag=="settings-write"){
    if(settings_account==kfx_hub_account_id()){
     const long status=kfx_hub_result_status();
     if(status==200&&tag=="settings-read"){
@@ -161,7 +165,24 @@ void browser_tick(){
    if(tag=="community")community_text=error;
   }
   else if(tag.rfind("ping:",0)==0){browser_pings[hub_field(&d.root,"address")]=hub_integer(&d.root,"ping_ms");}
-  else if(tag=="servers"){public_servers.clear();const VALUE *list=value_dict_get(&d.root,"servers");for(size_t i=0;list&&i<std::min(value_array_size(list),(size_t)128);i++){const VALUE *r=value_array_get(list,i);BrowserServer s;s.id=hub_field(r,"id");s.name=hub_field(r,"name");s.address=hub_field(r,"endpoint");s.engine=hub_field(r,"engine");s.map=hub_field(r,"map");s.content=hub_field(r,"mods");if(s.content.size()!=64||!std::all_of(s.content.begin(),s.content.end(),[](unsigned char c){return std::isxdigit(c);}))s.content.clear();s.kind=hub_field(r,"kind");s.status=hub_field(r,"status");s.region=hub_field(r,"region");s.players=hub_integer(r,"players");s.capacity=hub_integer(r,"capacity");s.password=hub_integer(r,"password")!=0;public_servers.push_back(s);}for(auto *saved:{&favourite_servers,&recent_servers})for(auto &entry:*saved)for(const auto &fresh:public_servers)if(entry.address==fresh.address&&entry.name==fresh.name)entry=fresh;browser_filter();hub_message=public_servers.empty()?"No public servers. LAN and direct play are available.":"Directory updated.";}
+  else if(tag=="servers"){public_servers.clear();const VALUE *list=value_dict_get(&d.root,"servers");for(size_t i=0;list&&i<std::min(value_array_size(list),(size_t)128);i++){const VALUE *r=value_array_get(list,i);BrowserServer s;s.id=hub_field(r,"id");s.name=hub_field(r,"name");s.address=hub_field(r,"endpoint");s.engine=hub_field(r,"engine");s.map=hub_field(r,"map");s.content=hub_field(r,"mods");if(s.content.size()!=64||!std::all_of(s.content.begin(),s.content.end(),[](unsigned char c){return std::isxdigit(c);}))s.content.clear();s.kind=hub_field(r,"kind");s.status=hub_field(r,"status");s.region=hub_field(r,"region");s.players=hub_integer(r,"players");s.capacity=hub_integer(r,"capacity");s.password=hub_integer(r,"password")!=0;public_servers.push_back(s);}for(auto *saved:{&favourite_servers,&recent_servers})for(auto &entry:*saved)for(const auto &fresh:public_servers)if(entry.address==fresh.address&&entry.name==fresh.name)entry=fresh;browser_filter();
+    if(!party_join_server.empty()){
+     auto requested=std::find_if(public_servers.begin(),public_servers.end(),[](const BrowserServer &s){return s.id==party_join_server;});
+     party_join_server.clear();
+     if(requested!=public_servers.end()&&page==38){
+      browser_tab=0;browser_search.clear();browser_compatible=false;browser_filter();
+      auto row=std::find_if(browser_servers.begin(),browser_servers.end(),[&](const BrowserServer &s){return s.id==requested->id;});
+      if(row!=browser_servers.end()){
+       browser_index=static_cast<int>(row-browser_servers.begin());
+       server_password.clear();
+       open_panel(21);
+       browser_action(2040);
+       return;
+      }
+     }
+     party_notice="The party server is no longer available.";
+    }
+    hub_message=public_servers.empty()?"No public servers. LAN and direct play are available.":"Directory updated.";}
   else if(tag=="pair-start"){device_code=hub_field(&d.root,"device_code");pair_code=hub_field(&d.root,"user_code");pair_at=SDL_GetTicks()+3000;pair_deadline=SDL_GetTicks()+600000;hub_message="Approve this code in your browser.";SDL_OpenURL((std::string(kfx_hub_url())+"/index.php?route=%2Fdevice").c_str());}
   else if(tag=="pair-poll"&&!hub_field(&d.root,"token").empty()){device_code.clear();pair_code.clear();hub_message="Game connected to your account.";kfx_hub_request("me","/api/me",nullptr,1);}
   else if(tag=="cloud-signup"){cloud_ticket=hub_field(&d.root,"ticket");selected=0;hub_message="Enter the six-digit code sent to your email.";}
@@ -180,16 +201,18 @@ void browser_tick(){
    }
    join_ip=hub_field(&d.root,"endpoint");pending_join=true;
   }
-  else if(tag=="spectate-start"){std::string id=hub_field(&d.root,"stream_id");if(normalized_version(hub_field(&d.root,"engine"))!=normalized_version(VER_STRING)){hub_message="Spectator engine version differs.";return;}if(!id.empty()){kfx_hub_spectator_start(id.c_str());hub_message="Buffering a read-only spectator replay...";}}
+  else if(tag=="spectate-start"){std::string id=hub_field(&d.root,"stream_id");if(normalized_version(hub_field(&d.root,"engine"))!=normalized_version(KFX_APP_VERSION)&&normalized_version(hub_field(&d.root,"engine"))!=normalized_version(VER_STRING)){hub_message="Spectator engine version differs.";return;}if(!id.empty()){kfx_hub_spectator_start(id.c_str());hub_message="Buffering a read-only spectator replay...";}}
   else if(tag=="publish")hub_message="Public lobby registered. Players can join directly.";
   else if(tag=="community"){community_text.clear();const char *keys[]={"events","friends","matches","challenges","replays"};const VALUE *rows=value_dict_get(&d.root,keys[community_tab]);for(size_t i=0;rows&&i<std::min(value_array_size(rows),(size_t)50);i++){const VALUE *r=value_array_get(rows,i);std::string title=hub_field(r,community_tab==0||community_tab==3?"title":community_tab==1?"name":community_tab==2?"map":"id");community_text+=title+"\n";std::string detail=hub_field(r,community_tab==0?"kind":community_tab==1?"status":community_tab==2?"verification":community_tab==3?"description":"sha");community_text+=detail+"\n\n";}if(community_text.empty())community_text="Nothing here yet. Create events and manage your profile on the website.";}
  }
+ party_tick();
  sync_cloud_settings();
  if(kfx_hub_spectator_ready()){close_panel();snprintf(game.packet_fname,sizeof(game.packet_fname),"%s",kfx_hub_spectator_file());game.packet_load_enable=true;game.packet_load_initialized=false;frontend_set_state(FeSt_PACKET_DEMO);}
  if(!device_code.empty()&&SDL_GetTicks()>pair_deadline){device_code.clear();pair_code.clear();hub_message="Pairing expired. Choose Sign In again.";}
  if(!device_code.empty()&&SDL_GetTicks()>=pair_at&&!kfx_hub_busy()){pair_at=SDL_GetTicks()+3000;std::string body="{\"device_code\":"+hub_quote(device_code)+"}";kfx_hub_request("pair-poll","/api/device/poll",body.c_str(),0);}
 }
 bool browser_action(int action){
+ if(party_action(action))return true;
  if(action==2114||action==2115){
   if(!settings_conflict||settings_account!=kfx_hub_account_id())return true;
   if(game.game_kind!=GKind_Unset||network_is_active()){
@@ -256,7 +279,7 @@ bool browser_action(int action){
  if(action==2027){browser_sort=(browser_sort+1)%4;browser_filter();return true;}
  if(action==2026){browser_compatible=!browser_compatible;browser_filter();return true;}
  if(action==2030||action==2031){browser_index=std::clamp(browser_index+(action==2030?-3:3),0,std::max(0,(int)browser_servers.size()-1));browser_filter();return true;}
- if(action==2040){if(browser_servers.empty())return true;const auto &s=browser_servers[browser_index];if(network_is_active()||game.game_kind==GKind_LocalGame){hub_message="Return to the main menu before joining.";return true;}if(!s.engine.empty()&&normalized_version(s.engine)!=normalized_version(VER_STRING)){hub_message="Engine differs. Use the same game version before joining.";return true;}if(!s.content.empty()){start_content_scan(s.map,false);if(content_scan.valid()){content_join_action=action;content_join_id=s.id;hub_message="Checking campaign, map, configuration and mods before joining...";return true;}if(!content_error.empty()){hub_message=content_error;return true;}if(content_value!=s.content){hub_message="Content differs: campaign/map, configuration or mods. Use the host's content profile.";return true;}}browser_join_id=s.id;browser_join_content=s.content.empty()?"":content_value;if(s.id.empty()){join_ip=s.address;pending_join=true;}else{std::string body="{\"engine\":"+hub_quote(normalized_version(VER_STRING))+",\"content\":"+hub_quote(browser_join_content)+"}";kfx_hub_request("join",("/api/servers/"+s.id+"/join").c_str(),body.c_str(),1);}recent_servers.erase(std::remove_if(recent_servers.begin(),recent_servers.end(),[&](const BrowserServer &r){return r.address==s.address;}),recent_servers.end());recent_servers.insert(recent_servers.begin(),s);if(recent_servers.size()>32)recent_servers.resize(32);browser_save("servers-recent.cfg",recent_servers);return true;}
+ if(action==2040){if(browser_servers.empty())return true;const auto &s=browser_servers[browser_index];if(network_is_active()||game.game_kind==GKind_LocalGame){hub_message="Return to the main menu before joining.";return true;}if(!dedicated_listing(s)&&s.kind!="saved"&&!s.engine.empty()&&normalized_version(s.engine)!=normalized_version(VER_STRING)){hub_message="Engine differs. Use the same game version before joining.";return true;}if(!s.content.empty()){start_content_scan(s.map,false);if(content_scan.valid()){content_join_action=action;content_join_id=s.id;hub_message="Checking campaign, map, configuration and mods before joining...";return true;}if(!content_error.empty()){hub_message=content_error;return true;}if(content_value!=s.content){hub_message="Content differs: campaign/map, configuration or mods. Use the host's content profile.";return true;}}browser_join_id=s.id;browser_join_content=s.content.empty()?"":content_value;if(s.id.empty()){join_ip=s.address;pending_join=true;}else{std::string body="{\"content\":"+hub_quote(browser_join_content);if(s.kind=="listen")body+=",\"engine\":"+hub_quote(normalized_version(VER_STRING));body+="}";kfx_hub_request("join",("/api/servers/"+s.id+"/join").c_str(),body.c_str(),1);}recent_servers.erase(std::remove_if(recent_servers.begin(),recent_servers.end(),[&](const BrowserServer &r){return r.address==s.address;}),recent_servers.end());recent_servers.insert(recent_servers.begin(),s);if(recent_servers.size()>32)recent_servers.resize(32);browser_save("servers-recent.cfg",recent_servers);return true;}
  if(action==2044){start_edit(10);return true;}
  if(action==2045&&!browser_servers.empty()){if(network_is_active()||game.game_kind==GKind_LocalGame){hub_message="Return to the main menu before spectating.";return true;}kfx_hub_request("spectate-start",("/api/servers/"+browser_servers[browser_index].id+"/spectate").c_str(),nullptr,0);return true;}
  if(action==2042&&!browser_servers.empty()){BrowserServer s=browser_servers[browser_index];auto i=std::find_if(favourite_servers.begin(),favourite_servers.end(),[&](const BrowserServer &v){return v.address==s.address;});if(i==favourite_servers.end())favourite_servers.push_back(s);else favourite_servers.erase(i);hub_message=browser_save("servers-favourites.cfg",favourite_servers)?"Favourites updated.":"Could not save favourites. Check folder permissions.";browser_filter();return true;}
@@ -326,8 +349,8 @@ void browser_draw(){
   button(24,341,108,"Prev",2030,selected==3,34);button(144,341,108,"Next",2031,selected==4,34);
   button(264,341,108,"Refresh",2020,selected==5,34);button(384,341,108,"Host",2022,selected==6,34);
   button(504,341,112,"Account",2023,selected==7,34);
-  button(24,382,284,"Community",2024,selected==8,32);button(332,382,284,"Direct Connect",2025,selected==9,32);
- }else if(page==21&&!browser_servers.empty()){const auto &s=browser_servers[browser_index];centered(88,s.name,24);small_line(24,126,s.address+" / "+s.engine,592);small_line(24,151,s.map+" / "+s.region+(s.password?" / Password required":""),592);button(64,180,512,"Password: "+std::string(server_password.size(),'*'),2044,selected==0,32);button(64,219,512,"Join Server",2040,selected==1,38);button(64,271,512,"Toggle Favourite",2042,selected==2,38);button(64,321,248,"Copy Address",2043,selected==3,38);button(328,321,248,"Spectate",2045,selected==4,38);
+  button(24,382,184,"Community",2024,selected==8,32);button(228,382,184,"Direct Connect",2025,selected==9,32);button(432,382,184,party.invites.empty()?"Friends and Party":"Party Invites ("+std::to_string(party.invites.size())+")",2120,selected==13,32);
+ }else if(page==21&&!browser_servers.empty()){const auto &s=browser_servers[browser_index];centered(88,s.name,24);small_line(24,126,s.address+" / "+s.engine,592);small_line(24,151,s.map+" / "+s.region+(s.password?" / Password required":""),592);button(64,180,512,"Password: "+std::string(server_password.size(),'*'),2044,selected==0,32);button(64,219,512,"Join Server",2040,selected==1,38);button(64,271,512,"Toggle Favourite",2042,selected==2,38);button(64,321,248,"Copy Address",2043,selected==3,38);button(328,321,248,"Spectate",2045,selected==4,38);if(party_owner()&&!s.id.empty())button(64,368,512,party.server==s.id?"Send Join Prompt Again":"Send Join Prompt to Party",2121,selected==5,38);
  }else if(page==22&&settings_conflict){
   centered(100,"Settings changed on both devices",22);
   small_line(60,158,settings_status,520);
