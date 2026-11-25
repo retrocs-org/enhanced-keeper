@@ -19,7 +19,82 @@ trait HubAccounts {
         }
         return ['ticket'=>$ticket,'expires_in'=>900];
     }
+    private function requireCurrentPassword(string $uid,array $data): array {
+        $row=$this->one('SELECT name,salt,password FROM users WHERE id=?'.($this->mysql&&$this->db->inTransaction()?' FOR UPDATE':''),[$uid]);
+        $password=api_text($data['current_password']??null,128);
+        demand($row&&hash_equals($row['password'],$this->passwordHash($password,$row['salt'])),'Current password is incorrect',401);
+        return $row;
+    }
+
+    private function profileWrite(string $route,array $data,string $token,?string $uid): ?array {
+        if(!in_array($route,['/api/profile/avatar','/api/profile/email','/api/profile/email/verify','/api/profile/password','/api/profile/delete'],true))return null;
+        demand($uid,'Sign in first',401);
+        if($route==='/api/profile/avatar'){
+            $avatar=$data['avatar']??null;
+            demand(is_int($avatar)&&$avatar>=1&&$avatar<=15,'Invalid avatar');
+            $this->q('INSERT OR IGNORE INTO cloud_profiles(user,email,avatar) VALUES(?,NULL,?)',[$uid,$avatar]);
+            $this->q('UPDATE cloud_profiles SET avatar=? WHERE user=?',[$avatar,$uid]);
+            return ['ok'=>true,'avatar'=>$avatar];
+        }
+        if($route==='/api/profile/email'){
+            $account=$this->requireCurrentPassword($uid,$data);
+            demand(function_exists('web_settings')&&kfx_smtp_ready(),'Email verification is unavailable',503);
+            $email=strtolower(api_text($data['email']??null,254));
+            demand(filter_var($email,FILTER_VALIDATE_EMAIL),'Enter a valid email address');
+            demand(!$this->one('SELECT user FROM cloud_profiles WHERE email=?',[$email]),'Choose a different email address',409);
+            $ticket=api_token();
+            $digest=hash('sha256',$ticket);
+            $code=str_pad((string)random_int(0,999999),6,'0',STR_PAD_LEFT);
+            $this->q('DELETE FROM cloud_email_changes WHERE expires<?',[$this->now]);
+            $this->q('INSERT INTO cloud_email_changes VALUES(?,?,?,?,?,?)',[$digest,$uid,$email,$account['password'],hash_hmac('sha256',$code,$ticket),$this->now+900]);
+            try {
+                kfx_smtp_send($email,'Confirm your Keeper Enhanced email change',"Your verification code is $code. It expires in 15 minutes.");
+            } catch (Throwable $error) {
+                $this->q('DELETE FROM cloud_email_changes WHERE ticket=?',[$digest]);
+                throw new ApiProblem(503,'The verification email could not be sent. Try again later.');
+            }
+            return ['ticket'=>$ticket,'expires_in'=>900];
+        }
+        if($route==='/api/profile/email/verify'){
+            $ticket=api_text($data['ticket']??null,64);
+            $code=api_text($data['code']??null,6);
+            $digest=hash('sha256',$ticket);
+            $account=$this->one('SELECT password FROM users WHERE id=?'.($this->mysql?' FOR UPDATE':''),[$uid]);
+            $change=$this->one('SELECT * FROM cloud_email_changes WHERE ticket=? AND user=? AND expires>?',[$digest,$uid,$this->now]);
+            demand($account&&$change&&hash_equals($change['password'],$account['password'])&&
+                preg_match('/^[0-9]{6}$/D',$code)&&hash_equals($change['code'],hash_hmac('sha256',$code,$ticket)),'Code is incorrect or expired');
+            demand(!$this->one('SELECT user FROM cloud_profiles WHERE email=?',[$change['email']]),'Choose a different email address',409);
+            $this->q('INSERT OR IGNORE INTO cloud_profiles(user,email,avatar) VALUES(?,NULL,1)',[$uid]);
+            $this->q('UPDATE cloud_profiles SET email=? WHERE user=?',[$change['email'],$uid]);
+            $this->q('DELETE FROM cloud_email_changes WHERE user=?',[$uid]);
+            return ['ok'=>true,'email'=>$change['email']];
+        }
+        $account=$this->requireCurrentPassword($uid,$data);
+        if($route==='/api/profile/password'){
+            $password=api_text($data['password']??null,128);
+            demand(mb_strlen($password)>=12,'Use at least 12 password characters');
+            $salt=bin2hex(random_bytes(16));
+            $this->q('UPDATE users SET salt=?,password=? WHERE id=?',[$salt,$this->passwordHash($password,$salt),$uid]);
+            $this->q('DELETE FROM sessions WHERE user=? AND token<>?',[$uid,hash('sha256',$token)]);
+            foreach(['devices','recovery','tickets','cloud_email_changes'] as $table)$this->q("DELETE FROM $table WHERE user=?",[$uid]);
+            return ['ok'=>true];
+        }
+        demand(($data['confirmation']??null)==='DELETE','Type DELETE to confirm');
+        foreach(['sessions','devices','recovery','tickets','cloud_profiles','cloud_email_changes','participants','identities','entrants','completions'] as $table)
+            $this->q("DELETE FROM $table WHERE user=?",[$uid]);
+        $this->q('DELETE FROM friends WHERE a=? OR b=?',[$uid,$uid]);
+        $this->q('DELETE FROM cloud_signup WHERE name=?',[$account['name']]);
+        $this->q('DELETE FROM replays WHERE owner=?',[$uid]);
+        $this->q("UPDATE matches SET winner='' WHERE winner=?",[$uid]);
+        foreach(['a','b','winner'] as $column)$this->q("UPDATE bracket SET $column='' WHERE $column=?",[$uid]);
+        foreach(['servers','events'] as $table)$this->q("UPDATE $table SET owner='' WHERE owner=?",[$uid]);
+        $this->q('DELETE FROM users WHERE id=?',[$uid]);
+        return ['ok'=>true];
+    }
+
     private function accountWrite(string $route,array $data,string $token,?string $uid): ?array {
+        $settings=$this->profileWrite($route,$data,$token,$uid);
+        if($settings!==null)return $settings;
         if(in_array($route,['/api/cloud/signup','/api/cloud/resend'],true)){
             demand(function_exists('web_settings')&&kfx_smtp_ready(),'Email verification is unavailable',503);
             $name=api_text($data['name']??null,24);

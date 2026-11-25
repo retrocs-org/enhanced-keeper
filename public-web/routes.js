@@ -11,6 +11,10 @@ function kfxPage() {
 }
 
 let kfxSessionRequest;
+function kfxAvatar(node, avatar) {
+ const index=Math.max(0,Math.min(14,(Number(avatar)||1)-1));
+ node.style.backgroundPosition=(index%5)*25+'% '+Math.floor(index/5)*50+'%';
+}
 function kfxAccountUI(session) {
  if(!session.signed_in){
   for(const id of ['pair-panel','profile-panel','event','upload-replay']){const node=document.getElementById(id);if(node)node.hidden=true;}
@@ -18,7 +22,14 @@ function kfxAccountUI(session) {
  }
  document.querySelectorAll('[data-auth-only]').forEach(node=>node.hidden=!session.signed_in);
  document.querySelectorAll('[data-guest-only]').forEach(node=>node.hidden=session.signed_in);
- document.querySelectorAll('[data-account-label]').forEach(node=>node.textContent=session.signed_in?'My Keeper':'Sign in');
+ document.querySelectorAll('[data-account-link]').forEach(link=>{
+  link.classList.toggle('account-link-signed-in',session.signed_in);
+  link.setAttribute('aria-label',session.signed_in?'My Keeper profile':'Sign in');
+  const avatar=link.querySelector('[data-account-avatar]');
+  link.querySelector('[data-account-label]').hidden=session.signed_in;
+  avatar.hidden=!session.signed_in;
+  if(session.signed_in)kfxAvatar(avatar,session.avatar);
+ });
  return session;
 }
 function kfxSession(force=false) {

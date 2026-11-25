@@ -214,3 +214,11 @@ Set the relay hostname, port, sender and TLS mode. The transport supports
 STARTTLS, implicit TLS and unauthenticated plaintext relays. SMTP credentials
 require TLS. The game sends the verification request to KeeperHub over HTTPS
 and the relay sends a six-digit, single-use code that expires after 15 minutes.
+
+
+Signed-in players can choose a preset avatar and update their account from
+the website profile. Email changes use the same relay and require a code sent
+to the new address. Apply the additive schema migration before using these
+controls on MariaDB. Password changes revoke other sessions and old recovery
+codes. Account deletion removes the cloud profile and personal associations
+while keeping anonymized match records and local saves.

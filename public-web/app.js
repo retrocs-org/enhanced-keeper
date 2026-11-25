@@ -43,7 +43,7 @@ async function loadLairRankings(){
  } catch(error) { $('lair-rank-state').textContent=error.message; }
 }
 function drawServers(){const q=$('filter').value.toLowerCase(),body=$('servers');body.replaceChildren();for(const s of servers.filter(s=>(s.name+' '+s.map+' '+s.region).toLowerCase().includes(q))){const tr=node('tr','',body);node('td',s.name+(s.password?' 🔒':''),tr);node('td',s.map||'Lobby',tr);node('td',s.players+'/'+s.capacity,tr);node('td',s.engine,tr);node('td',s.kind+' · '+s.region+' · '+s.status,tr);action('Copy address',async()=>{await navigator.clipboard.writeText(s.endpoint);note('Address copied. Use Direct Connect in the game.');},node('td','',tr));}$('server-state').textContent=servers.length?servers.length+' live servers. Refresh to update availability.':'No active servers. LAN and direct connections are still available.';}
-async function loadProfile(){me=await api('me');const portrait=$('profile-avatar');if(portrait){const index=Math.max(0,Math.min(14,Number(me.avatar)||1)-1);portrait.style.backgroundPosition=(index%5)*25+'% '+Math.floor(index/5)*50+'%';portrait.hidden=false;}$('profile-title').textContent=me.name+'’s Keeper';$('profile-id').textContent='Account ID: '+me.id;$('public').checked=!!me.public;node('span',' · ', $('profile-id'));const link=node('a','View public profile', $('profile-id'));link.href=kfxRoute('/keeper/'+me.id);const p=await api('profiles/'+me.id);$('statistics').textContent=(p.verified_stats.matches||0)+' verified matches · '+(p.verified_stats.wins||0)+' verified wins'+(p.achievements.length?' · '+p.achievements.join(', '):'');$('history').replaceChildren();for(const m of (await api('matches')).matches){const a=node('article','', $('history'));node('strong',m.map||'Match',a);node('p',new Date(m.started*1000).toLocaleString()+' · '+m.status+' · '+m.verification+' · Match ID: '+m.id,a);}$('friends').replaceChildren();for(const f of (await api('friends')).friends){const li=node('li',f.name+' · '+f.status+' ', $('friends'));if(f.status==='pending'&&f.requester!==me.id)action('Accept',async()=>{await api('friends',{user:f.id});await loadProfile();},li);action('Remove',async()=>{await api('friends',{user:f.id,action:'remove'});await loadProfile();},li);}}
+async function loadProfile(){me=await api('me');showProfileSettings();$('profile-title').textContent=me.name+'’s Keeper';$('profile-id').textContent='Account ID: '+me.id;$('public').checked=!!me.public;node('span',' · ', $('profile-id'));const link=node('a','View public profile', $('profile-id'));link.href=kfxRoute('/keeper/'+me.id);const p=await api('profiles/'+me.id);$('statistics').textContent=(p.verified_stats.matches||0)+' verified matches · '+(p.verified_stats.wins||0)+' verified wins'+(p.achievements.length?' · '+p.achievements.join(', '):'');$('history').replaceChildren();for(const m of (await api('matches')).matches){const a=node('article','', $('history'));node('strong',m.map||'Match',a);node('p',new Date(m.started*1000).toLocaleString()+' · '+m.status+' · '+m.verification+' · Match ID: '+m.id,a);}$('friends').replaceChildren();for(const f of (await api('friends')).friends){const li=node('li',f.name+' · '+f.status+' ', $('friends'));if(f.status==='pending'&&f.requester!==me.id)action('Accept',async()=>{await api('friends',{user:f.id});await loadProfile();},li);action('Remove',async()=>{await api('friends',{user:f.id,action:'remove'});await loadProfile();},li);}}
 async function loadEvents(){$('events').replaceChildren();const events=(await api('events')).events;for(const e of events){const a=node('article','', $('events'));node('h3',e.title,a);node('p',new Date(e.starts*1000).toLocaleString()+' · '+e.kind+' · '+e.entrants+' signed up',a);node('p',e.description,a);if(session.signed_in)action('Join event',async()=>{await api('events/'+e.id+'/join',{});await loadEvents();},a);if(e.kind==='tournament'){action('Show bracket',async()=>{const b=await api('events/'+e.id+'/bracket');if(!b.games){node('p',b.round_one.map(p=>p.a.name+' vs '+(p.b?p.b.name:'bye')).join(' • ')||'Awaiting entrants',a);return;}for(const g of b.games){const row=node('article','Round '+g.round+' · '+g.a_name+' vs '+g.b_name+' · '+g.status+(g.winner?' · Winner: '+g.winner_name:''),a);if(me&&me.id===e.owner&&g.status==='pending'){const label=node('label','Verified match ID',row),input=document.createElement('input');input.maxLength=32;label.append(input);action('Record verified result',async()=>{await api('events/'+e.id+'/bracket/report',{round:g.round,position:g.position,match:input.value.trim()});note('Bracket advanced.');await loadEvents();},row);}}},a);if(me&&me.id===e.owner)action('Start tournament',async()=>{await api('events/'+e.id+'/bracket/start',{});note('Bracket created. Registration is closed.');await loadEvents();},a);}}if(!events.length)node('p','No scheduled events yet.', $('events'));}
 async function loadExtras(){if(['/community','/challenges'].includes(kfxPage())){$('challenges').replaceChildren();const c=await api('challenges');for(const v of c.challenges){const a=node('article','', $('challenges'));node('h3',v.title,a);node('p',v.map+' · '+v.description,a);if(session.signed_in){const label=node('label','Verified winning match ID',a),input=document.createElement('input');input.maxLength=32;label.append(input);action('Record completion',async()=>{await api('challenges/'+v.id+'/complete',{match:input.value.trim()});note('Challenge completed.');await loadExtras();},a);}}if(!c.challenges.length)node('p','Community challenges will appear here when the service administrator adds them.', $('challenges'));}if(['/community','/replays'].includes(kfxPage())){$('replays').replaceChildren();const r=await api('replays');for(const v of r.replays){const a=node('article','Replay '+v.id.slice(0,8)+' · '+Math.round(v.size/1024)+' KiB ', $('replays'));action('Download',async()=>{const x=await api('replays/'+v.id);const bytes=Uint8Array.from(atob(x.data),c=>c.charCodeAt(0));const actual=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),b=>b.toString(16).padStart(2,'0')).join('');if(actual!==x.sha256)throw Error('Replay checksum differs');const url=URL.createObjectURL(new Blob([bytes],{type:'application/octet-stream'}));const link=node('a','');link.href=url;link.download='keeperfx-'+v.id+'.pck';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);note('Replay downloaded. Required engine: '+x.engine);},a);}if(!r.replays.length)node('p','No shared replays yet.', $('replays'));}}
 for(const id of ['login','pair','friend','event'])$(id).addEventListener('submit',async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.target));try{if(id==='login')await api('login',d);if(id==='pair')await api('device/approve',{user_code:d.code.trim().toUpperCase()});if(id==='friend')await api('friends',d);if(id==='event')await api('events',{...d,starts:Math.floor(new Date(d.starts).getTime()/1000)});note(id==='pair'?'Game approved. Return to KeeperFX.':'Saved.');await refresh();}catch(e){note(e.message);}});
@@ -95,4 +95,67 @@ $('cloud-verify').addEventListener('submit', async event => {
         await refresh();
         note('Email verified.');
     } catch (error) { note(error.message); }
+});
+
+let emailTicket='';
+const avatarInputs=[...document.querySelectorAll('.avatar-picker input')];
+for(const tile of document.querySelectorAll('[data-avatar]'))kfxAvatar(tile,tile.dataset.avatar);
+function showProfileSettings(){
+    const portrait=$('profile-avatar');
+    kfxAvatar(portrait,me.avatar);
+    portrait.hidden=false;
+    $('profile-email').textContent=me.email?'Current email: '+me.email:'No email is linked to this account.';
+    for(const input of avatarInputs)input.checked=Number(input.value)===Number(me.avatar);
+}
+for(const input of avatarInputs)input.addEventListener('change',async()=>{
+    if(!input.checked)return;
+    for(const option of avatarInputs)option.disabled=true;
+    try {
+        const result=await api('profile/avatar',{avatar:Number(input.value)});
+        me.avatar=result.avatar;
+        session.avatar=result.avatar;
+        kfxAccountUI(session);
+        note('Avatar saved.');
+    } catch(error) { note(error.message); }
+    finally {
+        if(me)showProfileSettings();
+        for(const option of avatarInputs)option.disabled=false;
+    }
+});
+function profileSubmit(id,submit){
+    $(id).addEventListener('submit',async event=>{
+        event.preventDefault();
+        const form=event.target, button=event.submitter;
+        if(button)button.disabled=true;
+        try { await submit(Object.fromEntries(new FormData(form)));form.reset(); }
+        catch(error) { note(error.message); }
+        finally { if(button)button.disabled=false; }
+    });
+}
+profileSubmit('profile-email-form',async data=>{
+    emailTicket=(await api('profile/email',data)).ticket;
+    $('profile-email-verify').hidden=false;
+    $('profile-email-verify').elements.code.focus();
+    note('Enter the code sent to your new email address.');
+});
+profileSubmit('profile-email-verify',async data=>{
+    const result=await api('profile/email/verify',{ticket:emailTicket,code:data.code});
+    emailTicket='';
+    me.email=result.email;
+    $('profile-email-verify').hidden=true;
+    showProfileSettings();
+    note('Email address updated.');
+});
+profileSubmit('profile-password-form',async data=>{
+    await api('profile/password',data);
+    emailTicket='';
+    $('profile-email-verify').hidden=true;
+    note('Password changed. Other sessions and recovery codes were revoked.');
+});
+profileSubmit('profile-delete-form',async data=>{
+    await api('profile/delete',data);
+    emailTicket='';
+    $('profile-email-verify').hidden=true;
+    await refresh();
+    note('Your cloud account was deleted.');
 });

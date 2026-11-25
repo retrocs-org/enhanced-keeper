@@ -7,6 +7,8 @@ return <<<'SQL'
         CREATE TABLE IF NOT EXISTS cloud_profiles(user TEXT PRIMARY KEY,email TEXT UNIQUE,avatar INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS cloud_signup(ticket TEXT PRIMARY KEY,name TEXT,email TEXT,salt TEXT,password TEXT,avatar INTEGER,code TEXT,expires REAL);
         CREATE INDEX IF NOT EXISTS cloud_signup_expiry ON cloud_signup(expires);
+        CREATE TABLE IF NOT EXISTS cloud_email_changes(ticket TEXT PRIMARY KEY,user TEXT NOT NULL,email TEXT NOT NULL,password TEXT NOT NULL,code TEXT NOT NULL,expires REAL NOT NULL);
+        CREATE INDEX IF NOT EXISTS cloud_email_expiry ON cloud_email_changes(expires);
         CREATE TABLE IF NOT EXISTS recovery(user TEXT,code TEXT UNIQUE,PRIMARY KEY(user,code));
         CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY,user TEXT,csrf TEXT,expires REAL);
         CREATE INDEX IF NOT EXISTS session_expiry ON sessions(expires);

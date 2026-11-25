@@ -53,22 +53,7 @@ summary { color: #d6c198; cursor: pointer; }
     background-size: 500% 300%;
 }
 
-/* Account forms sit on a light, separate surface within the community site. */
-.account-auth {
-    color-scheme: light;
-    background: #f3efe5;
-    color: #23291f;
-}
-.account-auth .site-header,
-.account-auth .site-footer {
-    --line: #d7cebc;
-    --accent: #a0311e;
-    color: #484738;
-}
-.account-auth .site-header .brand,
-.account-auth .site-footer .brand { color: #4b3824; }
-.account-auth .site-header nav a,
-.account-auth .site-header .brand small { color: #54594e; }
+/* Account form layout uses the shared site theme. */
 .account-auth .community-intro,
 .account-auth #session,
 .account-auth #notice { display: none; }
@@ -84,68 +69,64 @@ summary { color: #d6c198; cursor: pointer; }
 }
 .account-panel .account-eyebrow {
     margin: 0 0 19px;
-    color: #a0311e;
+    color: var(--accent);
     font: 700 .85rem/1.4 var(--mono);
     letter-spacing: .14em;
     text-transform: uppercase;
 }
 .account-panel h1 {
     margin: 0 0 16px;
-    color: #23291f;
-    font-family: var(--heading);
-    font-weight: 800;
-    text-shadow: none;
     font-size: clamp(2.4rem, 6vw, 4.75rem);
-    line-height: 1.03;
-    letter-spacing: -.045em;
+    line-height: 1.08;
 }
 .account-panel #account-intro {
     margin: 0 0 34px;
     max-width: 64ch;
-    color: #54594e;
+    color: var(--muted);
     font-size: clamp(1.05rem, 2.2vw, 1.28rem);
 }
 .account-panel #account-status:not(:empty) {
     margin: 0 0 23px;
     padding: 11px 15px;
-    border-inline-start: 3px solid #a0311e;
-    background: #ece2d4;
+    border-inline-start: 3px solid var(--accent);
+    background: var(--panel);
 }
 .portal-main .account-panel form { max-width: none; gap: 24px; }
-.portal-main .account-panel label { color: #23291f; font-size: 1.1rem; font-weight: 650; }
-.portal-main .account-panel label small { display: block; margin-top: 8px; color: #54594e; font-weight: 400; }
-.portal-main .account-panel input {
-    background: #fcfaf4;
-    color: #23291f;
-    border: 1px solid #b9b8a7;
-    border-radius: 6px;
-    min-height: 57px;
-    margin-top: 7px;
-    font-size: 1rem;
-}
-.portal-main .account-panel form button {
-    min-height: 52px;
-    padding: 12px 22px;
-    color: #fff;
-    background: #a0311e;
-    border: 1px solid #a0311e;
-    border-radius: 3px;
-    font-weight: 700;
-}
-.portal-main .account-panel form button:hover { background: #832414; border-color: #832414; }
+.portal-main .account-panel label { font-size: 1.1rem; font-weight: 650; }
+.portal-main .account-panel label small { display: block; margin-top: 8px; color: var(--muted); font-weight: 400; }
+.portal-main .account-panel input { min-height: 57px; margin-top: 7px; font-size: 1rem; }
+.portal-main .account-panel form button { min-height: 52px; padding: 12px 22px; font-weight: 700; }
 .account-nav { display: flex; flex-wrap: wrap; gap: 10px 26px; margin-top: 25px; }
-.portal-main .account-nav a {
-    padding: 6px 0;
-    min-height: 44px;
-    color: #8e2d1c;
-    background: none;
-    border: 0;
-    text-align: left;
-    text-decoration: none;
-}
+.portal-main .account-nav a { display: inline-flex; align-items: center; min-height: 44px; text-decoration: none; }
 .portal-main .account-nav a:hover,
-.portal-main .account-nav a[aria-current=page] { color: #702515; text-decoration: underline; }
-.account-auth :focus-visible { outline-color: #a0311e; }
+.portal-main .account-nav a[aria-current=page] { text-decoration: underline; }
 @media (max-width: 540px) {
     .account-auth .portal-main { width: calc(100% - 36px); }
 }
+
+.profile-settings { margin: 26px 0 32px; }
+.profile-settings details { border-block-start: 1px solid var(--line); padding: 15px 0; }
+.profile-settings details summary { cursor: pointer; color: var(--accent); font-weight: 650; }
+.profile-settings details form { margin-top: 15px; }
+.profile-settings .profile-delete summary { color: #ffa990; }
+.avatar-picker { margin: 0 0 22px; padding: 0; border: 0; }
+.avatar-picker legend { color: var(--text); font-weight: 650; margin-bottom: 10px; }
+.avatar-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(108px, 1fr)); gap: 10px; }
+.avatar-grid .avatar-option {
+    position: relative;
+    display: grid;
+    justify-items: center;
+    gap: 7px;
+    min-height: 100px;
+    padding: 10px 6px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    cursor: pointer;
+    text-align: center;
+    font-size: .85rem;
+    line-height: 1.25;
+}
+.avatar-option input { position: absolute; opacity: 0; }
+.avatar-option .preset-avatar { width: 53px; height: 53px; }
+.avatar-option:has(input:checked) { border-color: var(--accent); background: var(--panel); }
+.avatar-option:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }

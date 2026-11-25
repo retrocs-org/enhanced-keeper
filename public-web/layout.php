@@ -16,7 +16,7 @@ function site_header(string $current = '/'): void {
         $active=$current===$url;
         echo '<a href="'.web_escape(web_url($url)).'"'.($active?' aria-current="page"':'').($url==='/profile'?' data-account-label':'').'>'.$label.'</a>';
     }
-    echo '</nav><a class="account-link" href="'.web_escape(web_url('/profile')).'" data-account-label'.(in_array($current,['/profile','/device'],true)?' aria-current="page"':'').'>Sign in</a></header>';
+    echo '</nav><a class="account-link" href="'.web_escape(web_url('/profile')).'" data-account-link'.(in_array($current,['/profile','/device'],true)?' aria-current="page"':'').'><span data-account-label>Sign in</span><span class="profile-avatar nav-avatar" data-account-avatar aria-hidden="true" hidden></span></a></header>';
     if($current==='/lair'||str_starts_with($current,'/network/')){
         echo '<div class="wrap"><nav class="network-nav" aria-label="Community navigation">';
         foreach(['/lair'=>'The Lair','/network/events'=>'Events','/network/replays'=>'Replays','/network/challenges'=>'Challenges'] as $url=>$label)

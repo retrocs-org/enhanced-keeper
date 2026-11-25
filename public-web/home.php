@@ -16,7 +16,8 @@ function escape(string $value): string { return htmlspecialchars($value,ENT_QUOT
 <?php site_header('/'); ?>
 <main id="main">
 <section class="hero wrap" aria-labelledby="hero-title">
-  <div class="hero-content"><p class="eyebrow">Evil has a new home on macOS</p>
+  <div class="hero-content"><p class="eyebrow">Evil has a new home</p>
+  <img class="hero-keeper-mark" src="/assets/keeper-mask.svg" width="240" height="266" alt="">
   <h1 id="hero-title">Your dungeon.<br><span>Your dominion.</span></h1>
   <p class="hero-copy">Build your realm beneath the surface. Keeper-Enhanced is a fork of <a href="https://github.com/dkfans/keeperfx">KeeperFX</a>, bringing classic dungeon strategy to your Mac with modern controls and more ways to play together.</p>
   <div class="actions"><a class="button primary" href="<?= web_escape(web_url('/downloads')) ?>">Browse downloads</a><a class="button secondary" href="<?= web_escape(web_url('/servers')) ?>">Find a game</a></div>

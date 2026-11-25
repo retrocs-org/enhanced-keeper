@@ -180,3 +180,27 @@ small { display: block; font: 14px/1.65 var(--heading); color: var(--muted); mar
   .feature-lineage { padding-bottom: 15px; }
 }
 @media(prefers-reduced-motion:reduce) { html { scroll-behavior: auto; } }
+
+.hero-keeper-mark {
+    display: block;
+    width: clamp(135px, 23vw, 240px);
+    height: auto;
+    margin: 22px auto 26px;
+    filter: drop-shadow(0 10px 30px #b74f2e45);
+}
+.account-link-signed-in {
+    display: grid;
+    place-items: center;
+    width: 50px;
+    height: 50px;
+    padding: 3px;
+    border: 2px solid var(--accent);
+    border-radius: 50%;
+}
+.account-link-signed-in:hover { border-color: #f2d098; }
+.account-link .nav-avatar {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+}

@@ -66,6 +66,11 @@ if ($method !== 'GET') {
     header('Allow: GET');
     problem(405, 'Method not allowed.');
 }
+if ($path==='/assets/avatars/presets.png') {
+    header('Content-Type: image/png');
+    readfile(__DIR__.$path);
+    exit;
+}
 if (in_array($path, ['/assets/keeper-sigil.svg','/assets/dungeon-heart.svg','/assets/keeper-mask.svg','/assets/dungeon-stone.svg'], true)) {
     header('Content-Type: image/svg+xml; charset=utf-8');
     readfile(__DIR__.$path);
