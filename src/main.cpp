@@ -2258,6 +2258,12 @@ int LbBullfrogMain(unsigned short argc, char *argv[])
 
 int kfxmain(int argc, char *argv[])
 {
+  if(argc==2 && !strcmp(argv[1],"--supported-client-versions")) {
+#define CLIENT_RELEASE(s) puts(s);
+    KFX_SUPPORTED_CLIENT_RELEASES(CLIENT_RELEASE)
+#undef CLIENT_RELEASE
+    return 0;
+  }
   if(argc==2 && !strcmp(argv[1],"--server-build-info")) {
     puts(KFX_SERVER_VERSION);
     return 0;

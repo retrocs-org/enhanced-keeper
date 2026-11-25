@@ -57,16 +57,38 @@ IPv4/IPv6 addresses can be probed; unresolved hostnames show unknown ping.
 Engine filtering is an initial check. The existing preflight checks selected
 map/campaign bytes and mods before a normal host starts.
 
+## Dedicated co-op, reconnect, and cloud backups
+
+Set `"cooperative": true` in the dedicated server JSON and choose a rotation
+with enough positions for the humans and the server AI. Co-op clients must
+support the synchronized team setup. Humans start allied with one another
+and hostile to the dedicated AI.
+
+During a short network interruption, the running game automatically retries
+its reserved player slot. On macOS, use **F7** during reconnect to retry now.
+
+Cloud accounts can back up a current manual save from its details screen.
+Use **Cloud Backups** in Saved Games to restore a copy to a free local slot.
+The service retains eight backups per account, up to 2 MiB per backup.
+Deploy the website update and run the schema migration before using backups.
+
 ## Friends and parties in the game
 
 Open **Friends and Party** from the public server browser or use **F8** on
-macOS. Cloud accounts show presence for accepted friends and have separate
-friend conversations and party chat. Inviting a friend creates a party and
-makes the inviter its owner. The owner can invite or remove players and send a
-join prompt from a public server's details. Each player accepts the prompt
-individually. The server must be open, password-free, and have enough lobby
-slots at the time of the prompt. Party chat continues between games. The game
-lobby keeps its own chat.
+macOS. The sidebar shows accepted friends with Online, Offline, In lobby,
+Playing, or Idle status. Select a friend to open a private conversation or invite
+them to your party. Inviting a friend makes the inviter the owner of the new
+party. The owner can choose **Check Party Readiness** in a public server's
+details. The Party tab shows each member's readiness beside the party chat.
+Clients check their version, required sprite archives, and any content
+fingerprint the server publishes. When everyone shows **Ready**, the owner can
+send one join prompt, and each player chooses whether to join. The server must
+be open, password-free, and have enough lobby slots at the time of the prompt.
+Party chat continues between games. The game
+lobby keeps its own chat. The browser and social tabs show unread messages and
+pending invitations. Use **Mute during matches** to turn off in-match popups.
+The server details show local sprite archive availability, advertised client
+compatibility, and the sign-in requirement for public dedicated servers.
 
 Deploy the updated website and run its CLI schema migration before using the
 new client with an existing MariaDB installation.

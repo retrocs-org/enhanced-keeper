@@ -16,6 +16,7 @@ int kfx_hub_probe(const char *endpoint);
 int kfx_hub_busy(void);
 const char *kfx_hub_account_name(void);
 const char *kfx_hub_account_id(void);
+int kfx_hub_has_session(void);
 void kfx_hub_sign_out(void);
 void kfx_hub_remember_session(int remember);
 int kfx_hub_session_remembered(void);

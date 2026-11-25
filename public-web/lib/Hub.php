@@ -100,13 +100,26 @@ final class KeeperHub {
             }
             return $answer;
         }
+        if($route==='/api/cloud/saves'){
+            demand($uid,'Sign in first',401);
+            return ['saves'=>$this->rows('SELECT id,title,device,created FROM cloud_saves WHERE user=? ORDER BY created DESC,id DESC',[$uid])];
+        }
+        if(count($parts)===4&&$parts[1]==='cloud'&&$parts[2]==='saves'){
+            demand($uid,'Sign in first',401);
+            $backup=$this->one('SELECT data FROM cloud_saves WHERE user=? AND id=?',[$uid,$parts[3]]);
+            demand($backup,'Save backup not found',404);
+            return $backup;
+        }
         if($route==='/api/cloud/settings'){
             demand($uid,'Sign in first',401);
             $row=$this->one('SELECT revision,settings FROM cloud_settings WHERE user=?',[$uid]);
             return $row?['revision'=>(int)$row['revision'],'settings'=>$row['settings']]:['revision'=>0,'settings'=>''];
         }
         if($route==='/api/me'){demand($uid,'Sign in first',401);return $this->one('SELECT u.id,u.name,u.public,p.email,COALESCE(p.avatar,1) AS avatar FROM users u LEFT JOIN cloud_profiles p ON p.user=u.id WHERE u.id=?',[$uid]);}
-        if($route==='/api/servers'){$this->q("UPDATE matches SET ended=?,status=CASE WHEN status='lobby' THEN 'cancelled' ELSE 'abandoned' END WHERE ended=0 AND server IN (SELECT id FROM servers WHERE last_seen<?)",[$this->now,$this->now-90]);return ['servers'=>$this->rows('SELECT id,name,endpoint,engine,map,mods,players,capacity,password,region,kind,status FROM servers WHERE last_seen>? ORDER BY name LIMIT 128',[$this->now-90])];}
+        if($route==='/api/servers'){$this->q("UPDATE matches SET ended=?,status=CASE WHEN status='lobby' THEN 'cancelled' ELSE 'abandoned' END WHERE ended=0 AND server IN (SELECT id FROM servers WHERE last_seen<?)",[$this->now,$this->now-90]);$servers=$this->rows('SELECT s.id,s.name,s.endpoint,s.engine,s.map,s.mods,s.players,s.capacity,s.password,s.region,s.kind,s.status,c.versions FROM servers s LEFT JOIN server_compat c ON c.server=s.id WHERE s.last_seen>? ORDER BY s.name LIMIT 128',[$this->now-90]);
+            foreach($servers as &$server){$server['client_versions']=json_decode($server['versions']??'[]',true)?:[];unset($server['versions']);}
+            unset($server);
+            return ['servers'=>$servers];}
         if($route==='/api/friends'){demand($uid,'Sign in first',401);return ['friends'=>$this->rows('SELECT u.id,u.name,f.status,f.a AS requester FROM friends f JOIN users u ON u.id=CASE WHEN f.a=? THEN f.b ELSE f.a END WHERE f.a=? OR f.b=?',[$uid,$uid,$uid])];}
         if($route==='/api/matches'){demand($uid,'Sign in first',401);return ['matches'=>$this->rows("SELECT m.* FROM matches m JOIN participants p ON p.match=m.id WHERE p.user=? AND m.status NOT IN ('lobby','cancelled') ORDER BY started DESC LIMIT 50",[$uid])];}
         if($route==='/api/leaderboard'){

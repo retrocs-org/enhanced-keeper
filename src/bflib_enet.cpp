@@ -1115,8 +1115,14 @@ struct NetSP *InitEnetSP()
     return &ret;
 }
 
+extern "C" int kfx_network_retry_now(void){
+ if(!resuming)return 0;
+ resume_retry=0;
+ return 1;
+}
+
 extern "C" const char *kfx_network_recovery_status(void){
- if(resuming)return "Reconnecting to host - your player slot is reserved";
+ if(resuming)return "Reconnecting - slot reserved. F7: retry now";
  for(int i=1;i<MAX_NET_USERS;i++)if(reserved_until[i])return "Waiting for a player to reconnect - simulation held";
  return LbTimerClock()<recovered_until?"Connection recovered - same match and player slot":"";
 }

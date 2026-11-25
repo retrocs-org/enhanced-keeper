@@ -33,7 +33,7 @@ void live_reply(const VALUE *);void live_tick();
 std::string quote(const std::string &s){std::string out="\"";for(unsigned char c:s){if(c=='"'||c=='\\')out+='\\';if(c>=32)out+=c;}return out+'"';}
 struct Document{VALUE root;Document(const std::string &s){value_init_null(&root);json_dom_parse(s.data(),s.size(),nullptr,0,&root,nullptr);}~Document(){value_fini(&root);}};
 std::string field(const VALUE *r,const char *key){const VALUE *v=r?value_dict_get(r,key):nullptr;return v&&value_type(v)==VALUE_STRING?value_string(v):"";}
-size_t receive(char *p,size_t size,size_t n,void *data){auto *body=(std::string*)data;size_t bytes=size*n;if(bytes>1024*1024||body->size()>1024*1024-bytes)return 0;body->append(p,bytes);return bytes;}
+size_t receive(char *p,size_t size,size_t n,void *data){auto *body=(std::string*)data;size_t bytes=size*n;if(bytes>3*1024*1024||body->size()>3*1024*1024-bytes)return 0;body->append(p,bytes);return bytes;}
 Reply probe(const std::string &tag){std::string endpoint=tag.substr(5),hostname=endpoint;size_t colon=endpoint.rfind(':');int ping=-1;
  if(colon!=std::string::npos){hostname.resize(colon);int port=atoi(endpoint.c_str()+colon+1);sockaddr_storage dest={};socklen_t length=0;int family=AF_INET;if(hostname.size()>2&&hostname.front()=='['&&hostname.back()==']'){hostname=hostname.substr(1,hostname.size()-2);family=AF_INET6;auto *a=(sockaddr_in6*)&dest;a->sin6_family=AF_INET6;a->sin6_port=htons(port);if(inet_pton(AF_INET6,hostname.c_str(),&a->sin6_addr)==1)length=sizeof(*a);}else{auto *a=(sockaddr_in*)&dest;a->sin_family=AF_INET;a->sin_port=htons(port);if(inet_pton(AF_INET,hostname.c_str(),&a->sin_addr)==1)length=sizeof(*a);}
  if(length&&port>0&&port<65536){int sock=socket(family,SOCK_DGRAM,0);if(sock>=0){std::string packet="KFXQ1 "+std::to_string(SDL_GetPerformanceCounter());Uint64 began=SDL_GetTicks();sendto(sock,packet.data(),packet.size(),0,(sockaddr*)&dest,length);fd_set fds;FD_ZERO(&fds);FD_SET(sock,&fds);timeval timeout={0,400000};if(select(sock+1,&fds,nullptr,nullptr,&timeout)>0){char bytes[80];ssize_t n=recv(sock,bytes,sizeof(bytes),0);if(n==(ssize_t)packet.size()&&!memcmp(bytes,"KFXA1 ",6)&&!memcmp(bytes+6,packet.data()+6,packet.size()-6))ping=(int)(SDL_GetTicks()-began);}close(sock);}}}
@@ -93,6 +93,7 @@ extern "C" const char *kfx_hub_account_name(){return local_profile?"":name.c_str
 extern "C" void kfx_hub_remember_session(int remember){remember_next_login=remember!=0;}
 extern "C" int kfx_hub_session_remembered(){return remember_session&&!local_profile&&!name.empty();}
 extern "C" void kfx_hub_use_local_profile(){local_profile=true;identity_ticket.clear();match_id.clear();}
+extern "C" int kfx_hub_has_session(){return !local_profile&&!account.empty();}
 extern "C" const char *kfx_hub_account_id(){return local_profile?"":account_id.c_str();}
 extern "C" void kfx_hub_sign_out(){kfx_hub_request("logout","/api/logout","{}",1);account.clear();name.clear();account_id.clear();identity_ticket.clear();save_token();}
 extern "C" void kfx_hub_client_relay(const char *,int,const char *){registrations.clear();}

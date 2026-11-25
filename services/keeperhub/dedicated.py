@@ -26,6 +26,10 @@ def server_version(engine):
         raise RuntimeError('The dedicated engine did not report a Keeper Enhanced server version')
     return version
 
+def supported_clients(engine):
+    output = subprocess.check_output([str(engine), '--supported-client-versions'], text=True, timeout=5)
+    return output.splitlines()
+
 def rpc(port):
     with socket.create_connection(('127.0.0.1',port),timeout=2) as c:
         c.sendall(b'{"action":"get_network_info","ack":1}\n');raw=b''
@@ -101,6 +105,7 @@ def validate(config):
     for field in ('engine_binary','user_data','name','rotation'):assert field in config,'Missing '+field
     engine=Path(config['engine_binary']).resolve();profile=Path(config['user_data']).resolve();assert engine.is_file() and os.access(engine,os.X_OK),'Engine is not executable';assert any((profile/'GameData'/n).is_file() for n in ('keeper-enhanced.cfg','keeperfx.cfg')),'Prepare a separate dedicated profile first';assert '.app/' not in str(profile),'User data must be outside the application';assert 1<=config.get('humans',1)<=3,'Dedicated mode supports 1–3 humans plus its AI';assert config['rotation'] and len(config['rotation'])<=32,'Choose 1–32 maps'
     for item in config['rotation']:assert re.fullmatch('[A-Za-z0-9_-]{1,63}',item['campaign']) and type(item['level'])==int and 0<item['level']<=99999,'Invalid map'
+    assert type(config.get('cooperative', False)) is bool, 'cooperative must be true or false'
     assert config.get('visibility','public') in ('private','public'),'Visibility must be private or public'
     assert type(config.get('port',5556)) is int and 1<=config.get('port',5556)<=65535,'Invalid gameplay port'
     password=os.environ.get('KFX_SERVER_PASSWORD','')
@@ -136,6 +141,7 @@ class Host:
         cfg=self.config;public=cfg.get('visibility','public')=='public';base=cfg.get('hub_url','').rstrip('/');key=os.environ.get('KFX_HUB_ADMIN_KEY','');state=self.profile/'dedicated';state.mkdir(mode=0o700,exist_ok=True)
         stopfile=state/'stop.request';nextfile=state/'next.request';stopfile.unlink(missing_ok=True);nextfile.unlink(missing_ok=True)
         version=server_version(self.engine) if public else ''
+        clients=supported_clients(self.engine) if public else []
         endpoint=cfg.get('endpoint') or ''
         mapping=NatPmpMapping(cfg.get('port',5556)) if public and endpoint=='auto' else None
         while not self.stop:
@@ -149,7 +155,7 @@ class Host:
             if public:
                 registration = {
                     'name': cfg['name'], 'port': cfg.get('port', 5556),
-                    'engine': version, 'kind': 'dedicated',
+                    'engine': version, 'kind': 'dedicated', 'client_versions': clients,
                     'map': f"{item['campaign']}:{item['level']}",
                     'rotation': [f"{v['campaign']}:{v['level']}" for v in cfg['rotation']],
                     'password': bool(os.environ.get('KFX_SERVER_PASSWORD')),
@@ -170,6 +176,8 @@ class Host:
                 env.pop('KFX_PRIVATE_SERVER',None)
                 env['KFX_PUBLIC_DEDICATED']='1'
                 env.pop('KFX_HUB_ADMIN_KEY',None)
+            env.pop('KFX_DEDICATED_COOP',None)
+            if cfg.get('cooperative'):env['KFX_DEDICATED_COOP']='1'
             if cfg.get('app_resources'):env['KFX_APP_RESOURCES']=cfg['app_resources']
             replay=state/(room['id']+'.pck');port=int(cfg.get('port',5556));args=[str(runtime/'keeperfx'),'-nointro','-server',str(port),'-campaign',item['campaign'],'-level',str(item['level']),'-waitusers',str(cfg.get('humans',1)+1),'-nosound','-nick',cfg.get('ai_name','ServerAI'),'-packetsave',str(replay),'-log','dedicated.log']
             log=open(state/'engine-output.log','ab');self.process=subprocess.Popen(args,executable=str(self.engine),cwd=runtime,env=env,stdout=log,stderr=subprocess.STDOUT);offset=0;had_game=False;failures=0;verified=False;stream_truncated=False

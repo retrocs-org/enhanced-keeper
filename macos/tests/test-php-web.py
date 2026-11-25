@@ -251,6 +251,30 @@ class PHPWebsiteTests(unittest.TestCase):
             self.request(route, payload, csrf)
         self.assertEqual(error.exception.code, 409)
 
+    def test_cloud_save_backup_is_private_and_keeps_eight_copies(self):
+        import base64
+        password = 'cloud save test password'
+        def login(name):
+            self.jar.clear()
+            self.request('/api/register', {'name': name, 'password': password}).close()
+            self.jar.clear()
+            return json.load(self.request('/api/cloud/login', {'name': name, 'password': password}))['token']
+        upload = '/api/cloud/saves'
+        owner = {'Authorization': 'Bearer ' + login('SaveOwner')}
+        other = {'Authorization': 'Bearer ' + login('SaveOther')}
+        encoded = base64.b64encode(b'save test fixture'*8).decode()
+        ids = [json.load(self.request(upload, {'title': 'Map 52', 'device': 'Test Mac', 'data': encoded}, owner))['id']
+               for index in range(9)]
+        backups = json.load(self.request(upload, headers=owner))['saves']
+        self.assertEqual([item['id'] for item in backups], ids[:0:-1])
+        self.assertNotIn('data', backups[0])
+        self.assertEqual(json.load(self.request(upload+'/'+ids[-1], headers=owner))['data'], encoded)
+        self.assertEqual(json.load(self.request(upload, headers=other))['saves'], [])
+        for identifier, headers in [(ids[-1], other), (ids[0], owner)]:
+            with self.assertRaises(urllib.error.HTTPError) as missing:
+                self.request(upload+'/'+identifier, headers=headers)
+            self.assertEqual(missing.exception.code, 404)
+
     def test_friends_presence_and_party_flow(self):
         password = 'test password for party'
         def call(path, data, token=''):
@@ -277,8 +301,17 @@ class PHPWebsiteTests(unittest.TestCase):
         call('/api/friends', {'user': friend['id']}, owner['token'])
         call('/api/friends', {'user': owner['id']}, friend['token'])
         self.assertFalse(party(owner)['friends'][0]['online'])
+        self.assertEqual(party(owner)['friends'][0]['status'], 'offline')
         party(friend)
-        self.assertTrue(party(owner)['friends'][0]['online'])
+        self.assertEqual(party(owner)['friends'][0]['status'], 'online')
+        for activity in ('lobby', 'playing', 'idle'):
+            party(friend, activity=activity)
+            status = party(owner)['friends'][0]
+            self.assertTrue(status['online'])
+            self.assertEqual(status['status'], activity)
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            party(friend, activity='unknown')
+        self.assertEqual(error.exception.code, 400)
 
         state = party(owner, 'invite', user=friend['id'])
         room = state['party']
@@ -294,18 +327,53 @@ class PHPWebsiteTests(unittest.TestCase):
         state = party(owner, user=friend['id'])
         self.assertEqual([m['body'] for m in state['messages']], ['Party channel'])
         self.assertEqual([m['body'] for m in state['friend_messages']], ['Private conversation'])
+        self.assertEqual(state['unread'], 1)
+        self.assertEqual(party(owner, user=friend['id'], reading='friend')['unread'], 0)
+        self.assertEqual(party(friend)['party_unread'], 1)
+        self.assertEqual(party(friend, reading='party')['party_unread'], 0)
         self.assertEqual(party(stranger, user=friend['id'])['friend_messages'], [])
         self.assertEqual(party(stranger)['messages'], [])
 
         server = call('/api/servers/register', {'name': 'Party server', 'endpoint': '127.0.0.1:5556',
-                                               'engine': '0.1.0', 'kind': 'dedicated'})
-        for action, values in [('prompt', {'server': server['id']}), ('kick', {'user': owner['id']})]:
+                                               'engine': '0.1.0', 'kind': 'dedicated',
+                                               'client_versions': ['0.1.0', '0.1.1']})
+        listing = json.load(self.request('/api/servers'))['servers']
+        self.assertEqual(listing[0]['client_versions'], ['0.1.0', '0.1.1'])
+        for action, values in [('select-server', {'server': server['id']}),
+                               ('prompt', {'server': server['id']}), ('kick', {'user': owner['id']})]:
             with self.assertRaises(urllib.error.HTTPError) as error:
                 party(friend, action, **values)
             self.assertEqual(error.exception.code, 403)
+        selected = party(owner, 'select-server', server=server['id'])
+        revision = selected['target']['revision']
+        self.assertEqual(selected['target']['server']['client_versions'], ['0.1.0', '0.1.1'])
+        self.assertEqual({p['readiness'] for p in selected['members']}, {'Checking'})
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            party(stranger, 'readiness', revision=revision, message='Ready')
+        self.assertEqual(error.exception.code, 403)
+        party(owner, 'readiness', revision=revision, message='Ready')
+        party(friend, 'readiness', revision=revision, message='Missing sprites.zip')
+        self.assertIn('Missing sprites.zip', [p['readiness'] for p in party(owner)['members']])
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            party(owner, 'prompt', server=server['id'])
+        self.assertEqual(error.exception.code, 409)
+        selected = party(owner, 'select-server', server=server['id'])
+        self.assertEqual({p['readiness'] for p in selected['members']}, {'Checking'})
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            party(friend, 'readiness', revision=revision, message='Ready')
+        self.assertEqual(error.exception.code, 409)
+        for member in (owner, friend):
+            party(member, 'readiness', revision=selected['target']['revision'], message='Ready')
         party(owner, 'prompt', server=server['id'])
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            party(owner, 'prompt', server=server['id'])
+        self.assertEqual(error.exception.code, 409)
         self.assertEqual(party(friend)['prompt']['id'], server['id'])
         self.assertIsNone(party(stranger)['prompt'])
+        call('/api/servers/'+server['id']+'/heartbeat', {'map': 'classic:52'}, server['secret'])
+        changed = party(friend)
+        self.assertIsNone(changed['prompt'])
+        self.assertEqual({p['readiness'] for p in changed['members']}, {'Server changed. Select it again.'})
         party(owner, 'kick', user=friend['id'])
         self.assertEqual(party(friend)['party'], '')
         self.assertIsNone(party(friend)['prompt'])

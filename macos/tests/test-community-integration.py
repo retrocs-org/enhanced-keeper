@@ -71,10 +71,13 @@ def launch(p,apiport,token=None,endpoint=None,client_engine=engine):
  elif not (p/'save/community-session.cfg').exists():(p/'save/community-url.cfg').write_text(base)
  env=dict(os.environ,KFX_USER_DATA_DIR=str(p),KFX_HEADLESS='1',KFX_LOCAL_NETWORK_ONLY='1',SDL_VIDEODRIVER='dummy',SDL_RENDER_DRIVER='software',SDL_AUDIODRIVER='dummy',ALSOFT_DRIVERS='null',KFX_APP_RESOURCES=str(app/'Contents/Resources'))
  log=open(p/'stdout.log','w');proc=subprocess.Popen([str(p/'GameData/keeperfx'),'-nointro','-nosound','-nick','LocalTester','-log','community.log',*(['-connect',endpoint] if endpoint else [])],executable=str(client_engine),env=env,cwd=p/'GameData',stdout=log,stderr=subprocess.STDOUT,start_new_session=True);processes.append((proc,log));until(lambda:rpc(apiport,'community_status'));return proc
-test_party=os.environ.get('KFX_TEST_PARTY')=='1'
+coop_mode=os.environ.get('KFX_TEST_COOP')
+test_coop=coop_mode in ('1','3')
+coop_humans=3 if coop_mode=='3' else 2
+test_party=test_coop or os.environ.get('KFX_TEST_PARTY')=='1'
 lobby_only=test_party or os.environ.get('KFX_TEST_LOBBY_ONLY')=='1'
 try:
- hostprofile=profile('host');hostport=port(True);cfg=dict(name='Local Dedicated QA',engine_binary=os.environ.get('KFX_TEST_SERVER_ENGINE',str(engine)),user_data=str(hostprofile),hub_url=base,endpoint='127.0.0.1:'+str(hostport),visibility='public',port=hostport,rotation=[{'campaign':'original','level':52}],humans=3 if test_party else 2 if lobby_only else 1,spectators=not lobby_only,app_resources=str(app/'Contents/Resources'));os.environ['KFX_HUB_ADMIN_KEY']=hub.admin_key;supervisor=ded.Host(cfg);hosterrors=[]
+ hostprofile=profile('host');hostport=port(True);cfg=dict(name='Local Dedicated QA',engine_binary=os.environ.get('KFX_TEST_SERVER_ENGINE',str(engine)),user_data=str(hostprofile),hub_url=base,endpoint='127.0.0.1:'+str(hostport),visibility='public',port=hostport,rotation=[{'campaign':'original','level':52}],humans=coop_humans if test_coop else 3 if test_party else 2 if lobby_only else 1,cooperative=test_coop,spectators=not lobby_only,app_resources=str(app/'Contents/Resources'));os.environ['KFX_HUB_ADMIN_KEY']=hub.admin_key;supervisor=ded.Host(cfg);hosterrors=[]
  def run_host():
   try:supervisor.run()
   except Exception:hosterrors.append(traceback.format_exc())
@@ -100,9 +103,28 @@ try:
   rpc(buddy_port,'community_action',command=2120)
   rpc(buddy_port,'community_action',command=2128)
   until(lambda:rpc(buddy_port).get('active') and any(v.get('account')==member['id'] for v in supervisor.status.get('users',[])))
-  print('PASS: an owner sends a server prompt and the invited game client joins through it',flush=True)
+  def buddy_in_lobby():
+   state=hub.handle('POST','/api/party',{'action':'state'},user['token'])
+   return next((friend for friend in state['friends'] if friend['id']==member['id'] and friend.get('status')=='lobby'),None)
+  until(buddy_in_lobby,seconds=20)
+  print('PASS: the invited client joins through the party prompt and friends see its lobby status',flush=True)
  rpc(clientport,'community_action',command=2040)
- if lobby_only:
+ if test_coop:
+  ports=[clientport,buddy_port]
+  if coop_humans==3:
+   third=hub.handle('POST','/api/register',{'name':'ThirdKeeper','password':'local game test password'})
+   third_profile=profile('third-client')
+   third_port=port()
+   launch(third_profile,third_port,third['token'])
+   rpc(third_port,'community_action',command=2000)
+   until(lambda:rpc(third_port,'community_status').get('servers')==1)
+   rpc(third_port,'community_action',command=2010)
+   rpc(third_port,'community_action',command=2040)
+   ports.append(third_port)
+  until(lambda:all(rpc(apiport).get('turn',0)>20 for apiport in ports),seconds=75)
+  assert all(rpc(apiport)['coop_human_team'] for apiport in ports)
+  print(f'PASS: {coop_humans} humans play on one team against the dedicated AI',flush=True)
+ elif lobby_only:
   until(lambda:rpc(clientport).get('active') and any(user.get('account') for user in supervisor.status.get('users',[])))
   print('PASS: packaged client entered a public lobby with its cloud identity',flush=True)
  else:

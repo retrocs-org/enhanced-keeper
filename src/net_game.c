@@ -56,6 +56,47 @@ extern "C" {
 #endif
 /******************************************************************************/
 int kfx_dedicated_player=-1;
+static TbBool dedicated_coop;
+#define STARTUP_DEDICATED_AI 0x8000
+#define STARTUP_DEDICATED_COOP 0x4000
+
+TbBool dedicated_coop_team_ready(void)
+{
+    if(!dedicated_coop||kfx_dedicated_player<0)return false;
+    int humans=0;
+    for(NetUserId i=1;i<MAX_NET_USERS;++i){
+        const int a=get_net_user_player_number(i);
+        if(a<0||!network_user_active(i))continue;
+        ++humans;
+        if(!players_are_enemies(a,kfx_dedicated_player))return false;
+        for(NetUserId j=i+1;j<MAX_NET_USERS;++j){
+            const int b=get_net_user_player_number(j);
+            if(b>=0&&network_user_active(j)&&(players_are_enemies(a,b)||players_are_enemies(b,a)))return false;
+        }
+    }
+    return humans>=2;
+}
+
+void apply_dedicated_coop_alliances(void)
+{
+    if (!dedicated_coop || kfx_dedicated_player < 0) return;
+    for (NetUserId first = 1; first < MAX_NET_USERS; ++first) {
+        const int a = get_net_user_player_number(first);
+        if (a < 0 || !network_user_active(first)) continue;
+        set_ally_with_player(a, kfx_dedicated_player, false);
+        set_ally_with_player(kfx_dedicated_player, a, false);
+        set_player_ally_locked(a, kfx_dedicated_player, true);
+        set_player_ally_locked(kfx_dedicated_player, a, true);
+        for (NetUserId second = first + 1; second < MAX_NET_USERS; ++second) {
+            const int b = get_net_user_player_number(second);
+            if (b < 0 || !network_user_active(second)) continue;
+            set_ally_with_player(a, b, true);
+            set_ally_with_player(b, a, true);
+            set_player_ally_locked(a, b, true);
+            set_player_ally_locked(b, a, true);
+        }
+    }
+}
 struct TbNetworkUserInfo net_user_info[MAX_NET_USERS];
 extern int32_t multiplayer_speed_adjustment_ns;
 /******************************************************************************/
@@ -144,7 +185,7 @@ static void setup_players_from_startup_packets(const struct StartupSyncPacket st
         player->id_number = k;
         player->user_id = i;
         player->allocflags |= PlaF_Allocated;
-        if(i==SERVER_ID&&(sync->initial_tendencies&0x8000)){kfx_dedicated_player=k;player->allocflags|=PlaF_CompCtrl;}
+        if(i==SERVER_ID&&(sync->initial_tendencies&STARTUP_DEDICATED_AI)){kfx_dedicated_player=k;player->allocflags|=PlaF_CompCtrl;}
         switch (sync->video_rotate_mode) {
             case 0: player->view_mode_restore = PVM_IsoWibbleView; break;
             case 1: player->view_mode_restore = PVM_IsoStraightView; break;
@@ -258,7 +299,10 @@ static void build_local_startup_sync(void)
     uint16_t initial_tendencies = 0;
     if (IMPRISON_BUTTON_DEFAULT) {initial_tendencies |= CrTend_Imprison;}
     if (FLEE_BUTTON_DEFAULT) {initial_tendencies |= CrTend_Flee;}
-    if(network_is_host()&&getenv("KFX_HEADLESS"))initial_tendencies|=0x8000;
+    if(network_is_host()&&getenv("KFX_HEADLESS")){
+        initial_tendencies|=STARTUP_DEDICATED_AI;
+        if(getenv("KFX_DEDICATED_COOP"))initial_tendencies|=STARTUP_DEDICATED_COOP;
+    }
     s_local_startup_sync.initial_tendencies = initial_tendencies;
     s_local_startup_sync.isometric_view_zoom_level = settings.isometric_view_zoom_level;
     s_local_startup_sync.frontview_zoom_level = settings.frontview_zoom_level;
@@ -298,6 +342,7 @@ static TbBool net_startup_sync_exchange_and_apply(void)
     zoom_distance_setting = host_sync->zoom_distance_setting;
     frontview_zoom_distance_setting = host_sync->frontview_zoom_distance_setting;
     setup_players_from_startup_packets(s_startup_sync_packets);
+    dedicated_coop=(host_sync->initial_tendencies&STARTUP_DEDICATED_COOP)!=0;
     return true;
 }
 

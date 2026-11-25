@@ -23,7 +23,14 @@ trait HubServers {
                 $endpoint=(str_contains($ip,':')?'['.$ip.']':$ip).':'.$port;
             }
             $address=api_endpoint($endpoint);$engine=api_text($data['engine']??null,32);$region=api_text($data['region']??'Local',24);$rotation=$data['rotation']??[];demand(is_array($rotation)&&array_is_list($rotation)&&count($rotation)<=32,'Invalid map rotation');foreach($rotation as $map)demand(is_string($map)&&strlen($map)<=80,'Invalid map rotation');
-            $sid=bin2hex(random_bytes(12));$secret=api_token();$map=mb_substr((string)($data['map']??''),0,80);$this->q('INSERT INTO servers VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',[$sid,$name,$address,$engine,$map,mb_substr((string)($data['mods']??''),0,64),1,4,!empty($data['password'])?1:0,$region,$kind,$uid??'',hash('sha256',$secret),$this->now,'lobby',json_encode($rotation)]);$mid=bin2hex(random_bytes(16));$this->q("INSERT INTO matches(id,server,started,map,engine,status) VALUES(?,?,?,?,?,'lobby')",[$mid,$sid,$this->now,$map,$engine]);if($uid)$this->q('INSERT INTO participants(match,user) VALUES(?,?)',[$mid,$uid]);return ['id'=>$sid,'secret'=>$secret,'match_id'=>$mid,'endpoint'=>$address,'trusted'=>$trusted];
+            $clients=$data['client_versions']??[];
+            demand(is_array($clients)&&array_is_list($clients)&&count($clients)<=16,'Invalid client versions');
+            foreach($clients as $version)demand(is_string($version)&&strlen($version)<=24&&preg_match('/^[0-9]+\.[0-9]+\.[0-9]+$/D',$version),'Invalid client version');
+            $sid=bin2hex(random_bytes(12));$secret=api_token();$map=mb_substr((string)($data['map']??''),0,80);$this->q('INSERT INTO servers VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',[$sid,$name,$address,$engine,$map,mb_substr((string)($data['mods']??''),0,64),1,4,!empty($data['password'])?1:0,$region,$kind,$uid??'',hash('sha256',$secret),$this->now,'lobby',json_encode($rotation)]);$mid=bin2hex(random_bytes(16));$this->q("INSERT INTO matches(id,server,started,map,engine,status) VALUES(?,?,?,?,?,'lobby')",[$mid,$sid,$this->now,$map,$engine]);if($uid)$this->q('INSERT INTO participants(match,user) VALUES(?,?)',[$mid,$uid]);if($clients){
+                $this->q('DELETE FROM server_compat WHERE server NOT IN (SELECT id FROM servers WHERE last_seen>?)',[$this->now-86400]);
+                $this->q('INSERT INTO server_compat VALUES(?,?)',[$sid,json_encode(array_values(array_unique($clients)))]);
+            }
+            return ['id'=>$sid,'secret'=>$secret,'match_id'=>$mid,'endpoint'=>$address,'trusted'=>$trusted];
         }
         if(count($parts)<4||$parts[1]!=='servers')return null;$sid=$parts[2];$action=$parts[3];
         if($action==='join'){

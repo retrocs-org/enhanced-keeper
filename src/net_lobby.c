@@ -79,7 +79,9 @@ static const char *read_login_text(char **position, const char *end, size_t max_
 static TbBool dedicated_client_allowed(const char *version)
 {
     // Add a release here once its gameplay compatibility has been verified.
-    static const char *const supported_clients[] = {"0.1.0"};
+#define CLIENT_RELEASE(s) s,
+    static const char *const supported_clients[] = {KFX_SUPPORTED_CLIENT_RELEASES(CLIENT_RELEASE)};
+#undef CLIENT_RELEASE
     for (size_t i = 0; i < sizeof(supported_clients)/sizeof(supported_clients[0]); ++i) {
         if (version != NULL && strcmp(version, supported_clients[i]) == 0)
             return true;
@@ -144,7 +146,9 @@ TbError process_login_message(NetUserId source, char *read_pos, const char *end_
 #endif
     if (dedicated) {
         const char *version = read_login_text(&read_pos, end_pos, 32);
-        if (!dedicated_client_allowed(version) || !net_versions_match(&user->version, &net_current_version)) {
+        const char *feature = getenv("KFX_DEDICATED_COOP") ? read_login_text(&read_pos,end_pos,16) : NULL;
+        const TbBool coop_supported = !getenv("KFX_DEDICATED_COOP") || (feature && strcmp(feature,"coop-v1")==0);
+        if (!dedicated_client_allowed(version) || !coop_supported || !net_versions_match(&user->version, &net_current_version)) {
             NETMSG("Dedicated server refused an unsupported Keeper Enhanced client version");
             netstate.sp->drop_user(source);
             return Lb_OK;
@@ -231,7 +235,7 @@ TbError LbNetwork_ExchangeLogin(char *player_name)
     NETMSG("Logging in as %s", player_name);
     const char *ticket = kfx_hub_login_ticket();
     size_t ticket_size = ticket[0] ? strlen(ticket) + 1 : 0;
-    if (sizeof(KFX_APP_VERSION) + ticket_size + 1 + strlen(netstate.password) + 1 + strlen(player_name) + 1 + sizeof(net_current_version) >= sizeof(netstate.msg_buffer)) {
+    if (sizeof("coop-v1") + sizeof(KFX_APP_VERSION) + ticket_size + 1 + strlen(netstate.password) + 1 + strlen(player_name) + 1 + sizeof(net_current_version) >= sizeof(netstate.msg_buffer)) {
         ERRORLOG("Login credentials too long");
         return Lb_FAIL;
     }
@@ -248,6 +252,8 @@ TbError LbNetwork_ExchangeLogin(char *player_name)
     }
     memcpy(write_pos, KFX_APP_VERSION, sizeof(KFX_APP_VERSION));
     write_pos += sizeof(KFX_APP_VERSION);
+    memcpy(write_pos,"coop-v1",sizeof("coop-v1"));
+    write_pos += sizeof("coop-v1");
     send_message_buffer(SERVER_ID, write_pos);
     TbClockMSec wait_start_time = LbTimerClock();
     while (LbTimerClock() - wait_start_time < TIMEOUT_JOIN_LOBBY + (ticket_size ? 6000 : 0)) {

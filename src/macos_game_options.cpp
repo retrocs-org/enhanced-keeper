@@ -60,6 +60,7 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <filesystem>
 #include <fstream>
@@ -209,13 +210,80 @@ SDL_Surface *native_sprite(const TbSprite *sprite){
     for(int y=0;y<image->h;y++)for(int x=0;x<image->w;x++){int index=pixels[y*image->w+x];Uint8 *pixel=(Uint8*)image->pixels+y*image->pitch+x*4;pixel[0]=palette[index*3]*4;pixel[1]=palette[index*3+1]*4;pixel[2]=palette[index*3+2]*4;pixel[3]=index?255:0;}
     SDL_SetSurfaceBlendMode(image,SDL_BLENDMODE_BLEND);skin_cache[sprite->Data]=image;return image;
 }
+// The original menu sheets leave the @ slot blank. Match the neighbouring
+// glyphs by using the current font's ink and shadow colours.
+SDL_Surface *menu_at_sign(TbSpriteSheet *font)
+{
+    SDL_Surface *reference=native_sprite(get_sprite(font,'O'-31));
+    if(!reference)return nullptr;
+    Uint32 light=0, dark=0;
+    int brightest=-1, darkest=768, top=reference->h, bottom=-1;
+    for(int y=0;y<reference->h;++y){
+        for(int x=0;x<reference->w;++x){
+            const Uint8 *pixel=static_cast<const Uint8 *>(reference->pixels)+y*reference->pitch+x*4;
+            if(!pixel[3])continue;
+            const int brightness=pixel[0]+pixel[1]+pixel[2];
+            const Uint32 color=SDL_MapSurfaceRGBA(reference,pixel[0],pixel[1],pixel[2],255);
+            if(brightness>brightest){brightest=brightness;light=color;}
+            if(brightness<darkest){darkest=brightness;dark=color;}
+            top=std::min(top,y);
+            bottom=std::max(bottom,y);
+        }
+    }
+    if(bottom<top)return nullptr;
+    const int height=bottom-top+1;
+    const int width=std::max(6,reference->w);
+    SDL_Surface *glyph=SDL_CreateSurface(width+1,reference->h,SDL_PIXELFORMAT_RGBA32);
+    if(!glyph)return nullptr;
+    static constexpr const char *pattern[]={
+        "..#####..",
+        ".##...##.",
+        "##.....##",
+        "##.###.##",
+        "##.###.##",
+        "##.#.#.##",
+        "##..####.",
+        ".##......",
+        "..#####..",
+    };
+    for(int shadow=1;shadow>=0;--shadow){
+        for(int y=0;y<height;++y){
+            for(int x=0;x<width;++x){
+                if(pattern[y*9/height][x*9/width]!='#')continue;
+                SDL_Rect pixel={x+shadow,top+y+shadow,1,1};
+                SDL_FillSurfaceRect(glyph,&pixel,shadow?dark:light);
+            }
+        }
+    }
+    SDL_SetSurfaceBlendMode(glyph,SDL_BLENDMODE_BLEND);
+    return glyph;
+}
 SDL_Surface *native_label(const std::string &value,int size,bool accent){
     ensure_skin();TbSpriteSheet *chosen=accent?options_accent_font:options_font;TbSpriteSheet *font=chosen?chosen:(frontend_menu_state!=FeSt_INITIAL&&frontend_font[1]?frontend_font[1]:winfont);
-    if(!font||value.find('@')!=std::string::npos||std::any_of(value.begin(),value.end(),[](unsigned char c){return c>=128;}))return nullptr;
+    if(!font||std::any_of(value.begin(),value.end(),[](unsigned char c){return c>=128;}))return nullptr;
+    const bool contains_at=value.find('@')!=std::string::npos;
+    std::unique_ptr<SDL_Surface,decltype(&SDL_DestroySurface)> at_sign(
+        contains_at?menu_at_sign(font):nullptr,SDL_DestroySurface);
+    if(contains_at&&!at_sign)return nullptr;
     int height=1;for(unsigned char c=32;c<127;c++){const TbSprite *glyph=get_sprite(font,c-31);if(glyph)height=std::max(height,(int)glyph->SHeight);}
-    int width=0;for(unsigned char c:value){const TbSprite *glyph=c>=32&&c<127?get_sprite(font,c-31):nullptr;width+=glyph?glyph->SWidth+1:height/2;}
+    if(at_sign)height=std::max(height,at_sign->h);
+    const auto glyph_width=[&](unsigned char c){
+        if(c=='@')return at_sign->w+1;
+        const TbSprite *glyph=c>=32&&c<127?get_sprite(font,c-31):nullptr;
+        return glyph?glyph->SWidth+1:height/2;
+    };
+    int width=0;
+    for(unsigned char c:value)width+=glyph_width(c);
     SDL_Surface *image=SDL_CreateSurface(std::max(1,width),height,SDL_PIXELFORMAT_RGBA32);if(!image)return nullptr;
-    int x=0;for(unsigned char c:value){const TbSprite *glyph=c>=32&&c<127?get_sprite(font,c-31):nullptr;SDL_Surface *source=native_sprite(glyph);if(source){SDL_Rect to={x,0,source->w,source->h};SDL_BlitSurface(source,nullptr,image,&to);}x+=glyph?glyph->SWidth+1:height/2;}
+    int x=0;
+    for(unsigned char c:value){
+        SDL_Surface *source=c=='@'?at_sign.get():c>=32&&c<127?native_sprite(get_sprite(font,c-31)):nullptr;
+        if(source){
+            SDL_Rect to={x,0,source->w,source->h};
+            SDL_BlitSurface(source,nullptr,image,&to);
+        }
+        x+=glyph_width(c);
+    }
     SDL_Surface *scaled=SDL_CreateSurface(std::max(1,width*size/height),size+3,SDL_PIXELFORMAT_RGBA32);if(scaled){SDL_BlitSurfaceScaled(image,nullptr,scaled,nullptr,SDL_SCALEMODE_NEAREST);SDL_SetSurfaceBlendMode(scaled,SDL_BLENDMODE_BLEND);}SDL_DestroySurface(image);return scaled;
 }
 SDL_Surface *label(const std::string &text,int size,bool accent=false){
@@ -454,7 +522,8 @@ void save_feedback_draw();
 std::string cloud_name,cloud_email,cloud_password,cloud_code,cloud_ticket,cloud_confirmation;
 int cloud_avatar=1;
 bool cloud_create=false, choosing_local_profile=false, remember_cloud=false;
-bool startup_login=false;
+bool startup_login=false, cloud_login_rejected=false;
+void party_notification_draw();
 int local_profile_count();
 void choose_startup_profile();
 
@@ -508,10 +577,11 @@ void activate(int action){
     focus_action=action;
     if(action==901&&page==36){
         cloud_password.clear();cloud_confirmation.clear();cloud_ticket.clear();cloud_code.clear();
-        if(cloud_create){cloud_create=false;open_panel(36);}
+        if(cloud_create){cloud_create=false;cloud_login_rejected=false;open_panel(36); }
         else if(!startup_login)open_panel(22);
         return;
     }
+    if(action==901&&page==39){open_panel(2);scan_saves();return;}
     if(action==901&&page==38){close_panel();return;}
     if(action==901&&page==27&&choosing_local_profile){choosing_local_profile=false;open_panel(36);return;}
     if(action==901&&(page==11||page==20)&&frontend_menu_state==FeSt_NET_SERVICE){close_panel();return;}
@@ -577,9 +647,9 @@ std::string normalized_version(const std::string &value){
 void backup_step(int direction);
 void navigate(int direction){
     mouse_navigation=false;focus_action=-1;
-    if(page==38){if(!hits.empty()){const int count=static_cast<int>(hits.size());selected=(std::min(selected,count-1)+direction+count)%count;}return;}
+    if(page==38||page==39){if(!hits.empty()){const int count=static_cast<int>(hits.size());selected=(std::min(selected,count-1)+direction+count)%count;}return;}
     if(page==8){selected=(selected+direction+12)%12;return;}
-    if(page==36){int count=cloud_ticket.empty()?5:2;selected=(selected+direction+count)%count;return;}
+    if(page==36){if(!hits.empty()){const int count=static_cast<int>(hits.size());selected=(std::min(selected,count-1)+direction+count)%count;}return;}
     if(page>=30){int count=enhancement_count();selected=(selected+direction+count)%count;return;}
     if(page==27&&choosing_local_profile){
         int count=std::min(4,local_profile_count()+1);selected=(selected+direction+count)%count;return;
@@ -606,7 +676,7 @@ void backup_step(int direction){
 }
 void confirm_control(){
     mouse_navigation=false;
-    if(page==38){if(!hits.empty())activate(hits[std::min(selected,static_cast<int>(hits.size())-1)].action);return;}
+    if(page==38||page==39){if(!hits.empty())activate(hits[std::min(selected,static_cast<int>(hits.size())-1)].action);return;}
     if(page==8){const int sections[]={5,0,1,2,3,4,6,7};const int extra[]={1200,1300,800,901};activate(selected<8?100+sections[selected]:extra[selected-8]);return;}
     if(page>=30&&page<=35){enhancement_confirm();return;}
     if(page==27&&choosing_local_profile){const int count=local_profile_count();
@@ -615,9 +685,7 @@ void confirm_control(){
     if(page==28){activate(selected==6?1500:selected==5?1306:1301+selected);return;}
     if(page==29){activate(selected?1401:1402);return;}
     if(page==36){
-        const int signup[]={2101,2102,2103,2108,2105};
-        const int signin[]={2101,2103,2106,2105,2111};
-        activate(cloud_ticket.empty()?(cloud_create?signup[selected]:signin[selected]):selected?2105:2107);
+        if(!hits.empty())activate(hits[std::min(selected,static_cast<int>(hits.size())-1)].action);
         return;
     }
     if(page==1&&selected==4){activate(1540);return;}
@@ -860,6 +928,9 @@ void kfx_options_button(struct GuiButton *button){
     }
 }
 bool kfx_options_event(const SDL_Event *event){
+    if(event->type==SDL_EVENT_KEY_DOWN||event->type==SDL_EVENT_MOUSE_MOTION||
+       event->type==SDL_EVENT_MOUSE_BUTTON_DOWN||event->type==SDL_EVENT_GAMEPAD_BUTTON_DOWN||
+       event->type==SDL_EVENT_MOUSE_WHEEL)note_party_input();
     if(kfx_replay_available()){
         if(event->type==SDL_EVENT_KEY_DOWN&&!event->key.repeat){
             if(event->key.key==SDLK_F10){if(kfx_controller_guide_visible&&page==28)close_panel();else open_panel(28);return true;}
@@ -870,6 +941,7 @@ bool kfx_options_event(const SDL_Event *event){
     if(feature_event(event))return true;
     if(event->type==SDL_EVENT_WINDOW_FOCUS_LOST || (event->type==SDL_EVENT_GAMEPAD_REMOVED && controller_owns_event(event->gdevice.which)))repeat_button=255;
     if(event->type==SDL_EVENT_GAMEPAD_BUTTON_UP && controller_owns_event(event->gbutton.which) && event->gbutton.button==repeat_button)repeat_button=255;
+    if(event->type==SDL_EVENT_KEY_DOWN && event->key.key==SDLK_F7 && !event->key.repeat && kfx_network_retry_now())return true;
     if(event->type==SDL_EVENT_KEY_DOWN && event->key.key==SDLK_F8 && !event->key.repeat && !editing){
         if(kfx_controller_guide_visible&&page==38)close_panel();else activate(2120);
         return true;
@@ -890,6 +962,28 @@ bool kfx_options_event(const SDL_Event *event){
         if(preview_large){if(key==SDLK_ESCAPE||key==SDLK_RETURN)preview_large=false;return true;}
         if(display_confirmation){if(key==SDLK_RETURN)activate(501);else if(key==SDLK_ESCAPE)activate(502);return true;}
         if(key==SDLK_ESCAPE){if(capturing){capturing=false;notice="Remapping cancelled.";}else if(editing){editing=0;SDL_StopTextInput(SDL_GetKeyboardFocus());notice.clear();}else activate(901);return true;}
+        if(page==36&&key==SDLK_TAB&&!hits.empty()){
+            const auto is_input_action=[](int action){return action==2101||action==2102||action==2103||action==2107||action==2108;};
+            if(editing){
+                const int fields[]={2101,2102,2103,2107,2108};
+                const auto current=std::find_if(std::begin(fields),std::end(fields),[](int action){
+                    return (action<=2103?13+action-2100:action==2107?17:18)==editing;
+                });
+                if(current!=std::end(fields)){
+                    auto row=std::find_if(hits.begin(),hits.end(),[&](const Hit &hit){return hit.action==*current;});
+                    if(row!=hits.end())selected=static_cast<int>(row-hits.begin());
+                }
+            }
+            editing=0;SDL_StopTextInput(SDL_GetKeyboardFocus());
+            navigate(event->key.mod&SDL_KMOD_SHIFT?-1:1);
+            const int action=hits[selected].action;
+            focus_action=action;
+            if(is_input_action(action))activate(action);
+            return true;
+        }
+        if(page==36&&key==SDLK_RETURN&&(editing||(!hits.empty()&&hits[std::min(selected,static_cast<int>(hits.size())-1)].action==2101))){
+            editing=0;SDL_StopTextInput(SDL_GetKeyboardFocus());activate(2105);return true;
+        }
         if(editing){if(key==SDLK_A&&(event->key.mod&(SDL_KMOD_GUI|SDL_KMOD_CTRL))){edit_selected=true;return true;}if(key==SDLK_BACKSPACE)delete_input();else if(key==SDLK_RETURN){finish_edit();}else if(key==SDLK_V&&(event->key.mod&(SDL_KMOD_GUI|SDL_KMOD_CTRL))){char *value=SDL_GetClipboardText();if(value){append_input(value);SDL_free(value);}}return true;}
         if(capturing){if(key==SDLK_RETURN)activate(405);return true;}
         if(key==SDLK_TAB){switch_tab(event->key.mod&SDL_KMOD_SHIFT?-1:1);return true;}
@@ -897,6 +991,7 @@ bool kfx_options_event(const SDL_Event *event){
         if(key==SDLK_LEFT||key==SDLK_RIGHT){direction_control(key==SDLK_LEFT?-1:1);return true;}
         if(key==SDLK_RETURN){confirm_control();return true;}
         if(page==12 && key==SDLK_M){activate(842);return true;}
+        if((page==2||page==12)&&key==SDLK_B&&kfx_hub_has_session()){activate(page==2?2180:2181);return true;}
         if(page==2 && key==SDLK_H){activate(814);return true;}
         if(page==20 && key==SDLK_F&&(event->key.mod&(SDL_KMOD_GUI|SDL_KMOD_CTRL))){start_edit(6);return true;}
         if(page==2 && key==SDLK_I){activate(310);return true;}
@@ -938,13 +1033,13 @@ bool kfx_options_event(const SDL_Event *event){
 void kfx_options_draw(void){
     enhancement_sample();
     if(wheel_open){wheel_draw();return;}
-    if(!kfx_controller_guide_visible){captions_draw();save_feedback_draw();performance_draw();recovery_status_draw();return;}
+    if(!kfx_controller_guide_visible){captions_draw();save_feedback_draw();performance_draw();recovery_status_draw();party_notification_draw();return;}
     if(repeat_button!=255&&!editing&&!capturing&&!display_confirmation&&SDL_GetTicks()>=repeat_at){if(repeat_button==SDL_GAMEPAD_BUTTON_DPAD_LEFT||repeat_button==SDL_GAMEPAD_BUTTON_DPAD_RIGHT)direction_control(repeat_button==SDL_GAMEPAD_BUTTON_DPAD_LEFT?-1:1);else navigate(repeat_button==SDL_GAMEPAD_BUTTON_DPAD_UP?-1:1);repeat_at=SDL_GetTicks()+90;}
     if(!canvas)canvas=SDL_CreateSurface(WIDTH,HEIGHT,SDL_PIXELFORMAT_RGBA32);if(!canvas)return;
     if(label_model<0){int model=controller_device_model();if(model>=0)kfx_controller_guide_ps5=model;}else kfx_controller_guide_ps5=label_model;
     update_hover();hits.clear();background();
     const char *names[]={"Controller Options","Performance","Saved Games","Remap Controller","Controller Guide","Display Options","Network Options","Accessibility","More Options","Connection Test","Game Versions","Join by IP","Saved Game","About & Diagnostics","Saving Help","Connected Controllers","Accessibility Presets","Manage Saved Game","Delete Saved Game","Multiplayer Readiness","Server Browser","Server Details","Community Account","Host Public Game","Community","Community Service","Controller Test","Content Profiles","Replay Controls","Save Requirements","Replay Library","Personal Data Tools","Setup Guide","Comfort and Readability","Performance Capture","Save Recovery","Cloud Profile","Choose Profile"};
-    title(page==38?"Friends and Party":page==36?(cloud_create?"Create Cloud Account":"Sign In"):page==27&&choosing_local_profile?"Local Profiles":names[std::clamp(page,0,37)]);
+    title(page==39?"Cloud Save Backups":page==38?"Friends and Party":page==36?(cloud_create?"Create Cloud Account":"Sign In"):page==27&&choosing_local_profile?"Local Profiles":names[std::clamp(page,0,37)]);
     if(page==8){
         const char *sections[]={"Display","Controller","Performance","Saved Games","Remap","Controller Guide","Network","Accessibility"};const int pages[]={5,0,1,2,3,4,6,7};
         for(int i=0;i<8;i++)button(i<4?50:338,104+(i%4)*72,252,sections[i],100+pages[i],selected==i,46);
@@ -969,16 +1064,18 @@ void kfx_options_draw(void){
             button(179,366,113,"Recovery",1550);
             button(299,366,149,"Import Old Saves",310);
         }else button(216,366,208,"Recovery",1550);
+        if(kfx_hub_has_session())button(214,405,212,"Cloud Backups",2180,false,22);
     }else if(page==12){
         if(saves.empty()){page=2;}else{
             Save entry=selected_save();centered(83,short_text(entry.title,36),24);
             if(preview_path!=entry.path){SDL_DestroySurface(preview);preview=IMG_Load((entry.path+".png").c_str());preview_path=entry.path;}
             frame(24,120,426,194);if(preview){double scale=std::min(414.0/preview->w,182.0/preview->h);SDL_Rect to={30+(414-(int)(preview->w*scale))/2,126+(182-(int)(preview->h*scale))/2,(int)(preview->w*scale),(int)(preview->h*scale)};SDL_BlitSurfaceScaled(preview,nullptr,canvas,&to,SDL_SCALEMODE_LINEAR);}else text(62,196,"No preview available",22,350);
             text(472,132,"Slot "+std::to_string(entry.slot),22,144);button(472,176,144,"Enlarge",307,false,36);button(472,222,144,"Check",1400,false,36);button(472,268,144,"Manage",842,false,36);text(472,306,entry.backup?"Backup "+std::to_string(entry.backup):automatic_save(entry)?"Automatic":"Manual",20,144);
-            text(24,323,entry.campaign+" - Level "+std::to_string(entry.level),20,426);text(24,350,entry.date+"  |  "+(entry.seconds>=0?std::to_string(entry.seconds/60)+" min":"Time unknown"),18,592);
+            text(24,323,entry.campaign+" - Level "+std::to_string(entry.level),20,426);text(24,350,entry.date+"  |  "+(entry.seconds>=0?std::to_string(entry.seconds/60)+" min":"Time unknown"),18,402);
             const Save &group=saves[save_index];if(!group.backup)button(24,376,140,"Current",340,backup_choice==0,36);
             for(int number=1;number<=3;number++){bool exists=false;for(const Save &older:all_saves)if(older.slot==group.slot&&older.backup==number)exists=true;if(exists)button(24+number*148,376,140,"Backup "+std::to_string(number),340+number,entry.backup==number,36);}
             button(24,426,284,entry.backup?"Restore and Load":"Load Saved Game",302,false,42);button(332,426,284,"Return to Saves",901,false,42);
+            if(kfx_hub_has_session()&&!entry.backup&&!automatic_save(entry))button(434,340,182,"Back Up",2181,false,32);
         }
     }else if(page==3){
         if(!actions.empty()){
@@ -1016,8 +1113,8 @@ void kfx_options_draw(void){
     }else if(page==11){
         centered(106,"Hostname / IP address and UDP port",24);button(64,163,512,join_ip+(editing==3?"|":""),602,selected==0||editing==3,46);button(134,250,372,"Join Game",603,selected==1,46);centered(330,"Example: 192.168.1.20:5556",22);centered(368,"Enter the address supplied by the host.",20);
     }
-    polish_draw_page();feature_draw();browser_draw();play_tools_draw();enhancement_draw();party_draw();
-    if(page!=8&&page!=12&&(page!=36||cloud_create||!startup_login))button(134,426,372,page==38?"Close":page==36?(cloud_create?"Return to Sign In":"Return to Account"):(page==27&&choosing_local_profile)?"Return to Sign In":page==29?"Return to Saved Game":page==26?"Return to Devices":page==25?"Return to Account":page>=21&&page<=24?"Return to Browser":page==20?(frontend_menu_state==FeSt_NET_SERVICE?"Return to Multiplayer":"Return to Network"):page==15?"Return to Controller":page==16?"Return to Accessibility":page==17?"Return to Save":page==18?"Return to Management":page==19?"Return to Network":page==14?(help_parent==13?"Return to About":"Return to Saves"):page>=9&&page<=11?"Return to Network":"Return to Sections",901,false,42);
+    polish_draw_page();feature_draw();browser_draw();play_tools_draw();enhancement_draw();party_draw();cloud_save_draw();
+    if(page!=8&&page!=12&&(page!=36||cloud_create||!startup_login))button(134,426,372,page==39?"Return to Saves":page==38?"Close":page==36?(cloud_create?"Return to Sign In":"Return to Account"):(page==27&&choosing_local_profile)?"Return to Sign In":page==29?"Return to Saved Game":page==26?"Return to Devices":page==25?"Return to Account":page>=21&&page<=24?"Return to Browser":page==20?(frontend_menu_state==FeSt_NET_SERVICE?"Return to Multiplayer":"Return to Network"):page==15?"Return to Controller":page==16?"Return to Accessibility":page==17?"Return to Save":page==18?"Return to Management":page==19?"Return to Network":page==14?(help_parent==13?"Return to About":"Return to Saves"):page>=9&&page<=11?"Return to Network":"Return to Sections",901,false,42);
     if(!notice.empty()&&page<20&&page!=8&&page!=12&&page!=4&&page!=16&&page!=19)status_line(notice);
     if(preview_large&&page==12&&!saves.empty()){
         hits.clear();background();frame(18,82,604,328);if(preview){double scale=std::min(592.0/preview->w,316.0/preview->h);SDL_Rect to={24+(592-(int)(preview->w*scale))/2,88+(316-(int)(preview->h*scale))/2,(int)(preview->w*scale),(int)(preview->h*scale)};SDL_BlitSurfaceScaled(preview,nullptr,canvas,&to,SDL_SCALEMODE_LINEAR);}else centered(225,"No preview available",26);button(134,426,372,"Return to Saved Game",308,false,42);

@@ -84,7 +84,7 @@ trait HubAccounts {
         $this->q('DELETE FROM party_invites WHERE recipient=?',[$uid]);
         $this->q('DELETE FROM party_messages WHERE sender=?',[$uid]);
         $this->q('DELETE FROM friend_messages WHERE sender=? OR recipient=?',[$uid,$uid]);
-        foreach(['game_presence','sessions','devices','recovery','tickets','cloud_profiles','cloud_settings','cloud_email_changes','participants','identities','entrants','completions'] as $table)
+        foreach(['cloud_saves','social_reads','game_activity','game_presence','sessions','devices','recovery','tickets','cloud_profiles','cloud_settings','cloud_email_changes','participants','identities','entrants','completions'] as $table)
             $this->q("DELETE FROM $table WHERE user=?",[$uid]);
         $this->q('DELETE FROM friends WHERE a=? OR b=?',[$uid,$uid]);
         $this->q('DELETE FROM cloud_signup WHERE name=?',[$account['name']]);
@@ -97,6 +97,21 @@ trait HubAccounts {
     }
 
     private function accountWrite(string $route,array $data,string $token,?string $uid): ?array {
+        if($route==='/api/cloud/saves'){
+            demand($uid,'Sign in first',401);
+            $id=bin2hex(random_bytes(16));
+            $title=api_text($data['title']??null,100);
+            $device=api_text($data['device']??null,50);
+            $encoded=$data['data']??null;
+            demand(is_string($encoded)&&strlen($encoded)<=2796204,'Save backup exceeds 2 MiB',413);
+            $raw=base64_decode($encoded,true);
+            demand($raw!==false&&strlen($raw)>32&&strlen($raw)<=2097152,'Invalid save data');
+            if($this->mysql)$this->one('SELECT id FROM users WHERE id=? FOR UPDATE',[$uid]);
+            $existing=$this->rows('SELECT id FROM cloud_saves WHERE user=? ORDER BY created DESC,id DESC',[$uid]);
+            $this->q('INSERT INTO cloud_saves VALUES(?,?,?,?,?,?)',[$id,$uid,$title,$device,$this->now,$encoded]);
+            foreach(array_slice($existing,7) as $backup)$this->q('DELETE FROM cloud_saves WHERE user=? AND id=?',[$uid,$backup['id']]);
+            return ['id'=>$id];
+        }
         if($route==='/api/cloud/settings'){
             demand($uid,'Sign in first',401);
             $revision=$data['revision']??null;

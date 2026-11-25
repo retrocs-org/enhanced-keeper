@@ -8,5 +8,6 @@
 #endif
 
 #define KFX_SERVER_VERSION "0.1.0"
+#define KFX_SUPPORTED_CLIENT_RELEASES(X) X("0.1.0")
 
 #endif

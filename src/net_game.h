@@ -28,6 +28,8 @@ extern "C" {
 #endif
 
 extern int kfx_dedicated_player;
+void apply_dedicated_coop_alliances(void);
+TbBool dedicated_coop_team_ready(void);
 
 #define PACKETS_COUNT           9
 
