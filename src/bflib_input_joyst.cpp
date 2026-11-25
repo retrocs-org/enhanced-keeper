@@ -95,7 +95,8 @@ int controller_device_count(void){int count=0;SDL_JoystickID *ids=SDL_GetGamepad
 unsigned int controller_device_id(int index){int count=0;SDL_JoystickID *ids=SDL_GetGamepads(&count);unsigned int id=ids&&index>=0&&index<count?ids[index]:0;SDL_free(ids);return id;}
 const char *controller_name_for_id(unsigned int id){const char *name=SDL_GetGamepadNameForID(id);return name?name:"Disconnected controller";}
 TbBool controller_select(unsigned int id){
-    if(!id||!SDL_IsGamepad(id))return false;if(controller_active_id()==id)return true;
+    if(!id||!SDL_IsGamepad(id))return false;
+    if(controller_active_id()==id)return true;
     SDL_Gamepad *next=SDL_OpenGamepad(id);if(!next)return false;
     disconnect_pending=true;close_controller();controller=next;suppress_axes=true;internal_button_state=controller_button_state=0;
     int model=controller_device_model();if(model>=0)kfx_controller_guide_ps5=model;return true;
@@ -205,7 +206,7 @@ void JEvent(const SDL_Event *ev)
             if (ev->gaxis.value > deadzone || (!trigger && ev->gaxis.value < -deadzone))
                 last_used_input_device = ID_Controller;
             TbControllerButtons btn_pos = SDL_axis_to_controllerbutton(axis, 1);
-            TbControllerButtons btn_neg = trigger ? CBtn_NONE : SDL_axis_to_controllerbutton(axis, -1);
+            TbControllerButtons btn_neg = trigger ? static_cast<TbControllerButtons>(CBtn_NONE) : SDL_axis_to_controllerbutton(axis, -1);
 
             if (ev->gaxis.value > deadzone)
             {

@@ -37,7 +37,8 @@ function(apply_keeperfx_warnings TARGET)
             -Wall -Wextra -Werror -Wno-unused-parameter -Wno-unknown-pragmas
             -Wno-format-truncation -Wno-sign-compare
             -g -O3 -march=x86-64
-            $<$<COMPILE_LANGUAGE:C>:-Wno-absolute-value>)
+            $<$<COMPILE_LANGUAGE:C>:-Wno-absolute-value>
+            $<$<AND:$<BOOL:${KFX_DEDICATED}>,$<COMPILE_LANG_AND_ID:CXX,GNU>>:-Wno-error=misleading-indentation>)
     endif()
 endfunction()
 

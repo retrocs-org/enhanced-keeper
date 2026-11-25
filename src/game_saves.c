@@ -410,9 +410,10 @@ TbBool save_game(long slot_num)
         kfx_save_feedback(0,0,"No free save slot is available.");
         return false;
     }
-    char destination[1024], temporary[1100];TbBool rotate_preview=false;
+    char destination[1024];TbBool rotate_preview=false;
     snprintf(destination,sizeof(destination),"%s",prepare_file_fmtpath(FGrp_Save, saved_game_filename, slot_num));
 #if defined(__APPLE__)
+    char temporary[1100];
     rotate_preview=LbFileExists(destination);
     if(kfx_save_is_protected(destination)){kfx_save_feedback(0,0,"This favourite is protected. Unprotect it before overwriting.");return false;}
     snprintf(temporary,sizeof(temporary),"%s.pending",destination);
