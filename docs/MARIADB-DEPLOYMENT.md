@@ -279,3 +279,13 @@ The dump is saved under `/var/backups/keeperhub/`. Run the migration from
 `/srv/www/vhosts/keeper-enhanced.retrocs.org/lib/bin/migrate.php` on the web host
 before restoring traffic. To load the schema during the reset, omit `--empty`
 and use `--schema /path/to/mariadb.sql` when running a standalone copy.
+
+### Clear KeeperHub data from the web host
+
+Use the CLI-only `lib/bin/reset.php` when the schema is already installed.
+Pause website and game-server writes and take a backup before applying the
+reset. Run it as `wwwrun` with the deployed configuration. Start without
+arguments to preview the database and tables. Add `--reset keeperfx_e` to
+delete KeeperHub records in one transaction. Tables, indexes, auto-increment
+sequences, and database grants stay in place. The application account needs
+its normal SELECT and DELETE permissions. No CREATE or DROP grant is needed.
