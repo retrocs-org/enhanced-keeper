@@ -8,6 +8,13 @@ function web_url(string $path): string {
     $path=network_url($path);
     return $path==='/' ? '/' : '/index.php?route='.rawurlencode($path);
 }
+function profile_sections(): array {
+    return ['profile'=>'Profile','friends'=>'Friends','history'=>'Match history','security'=>'Account security'];
+}
+function profile_section(): string {
+    $section=$_GET['section']??'profile';
+    return is_string($section)&&isset(profile_sections()[$section])?$section:'profile';
+}
 function site_header(string $current = '/'): void {
     $current=network_url($current);
     $links=['/'=>'Overview','/features'=>'Features','/lair'=>'The Lair','/downloads'=>'Downloads'];
@@ -16,7 +23,15 @@ function site_header(string $current = '/'): void {
         $active=$current===$url;
         echo '<a href="'.web_escape(web_url($url)).'"'.($active?' aria-current="page"':'').($url==='/profile'?' data-account-label':'').'>'.$label.'</a>';
     }
-    echo '</nav><a class="account-link" href="'.web_escape(web_url('/profile')).'" data-account-link'.(in_array($current,['/profile','/device'],true)?' aria-current="page"':'').'><span data-account-label>Sign in</span><span class="profile-avatar nav-avatar" data-account-avatar aria-hidden="true" hidden></span></a></header>';
+    $profileUrl=web_escape(web_url('/profile'));
+    echo '</nav><a class="account-link" href="'.$profileUrl.'" data-guest-only>Sign in</a>';
+    echo '<details class="account-menu" data-auth-only hidden><summary aria-label="Keeper account"><span class="profile-avatar nav-avatar" data-account-avatar aria-hidden="true"></span></summary><ul>';
+    foreach(profile_sections() as $section=>$label){
+        $url=$profileUrl.($section==='profile'?'':'&amp;section='.$section);
+        $active=$current==='/profile'&&profile_section()===$section;
+        echo '<li><a href="'.$url.'"'.($active?' aria-current="page"':'').'>'.$label.'</a></li>';
+    }
+    echo '</ul></details></header>';
     if($current==='/lair'||str_starts_with($current,'/network/')){
         echo '<div class="wrap"><nav class="network-nav" aria-label="Community navigation">';
         foreach(['/lair'=>'The Lair','/network/events'=>'Events','/network/replays'=>'Replays','/network/challenges'=>'Challenges'] as $url=>$label)

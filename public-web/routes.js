@@ -22,14 +22,11 @@ function kfxAccountUI(session) {
  }
  document.querySelectorAll('[data-auth-only]').forEach(node=>node.hidden=!session.signed_in);
  document.querySelectorAll('[data-guest-only]').forEach(node=>node.hidden=session.signed_in);
- document.querySelectorAll('[data-account-link]').forEach(link=>{
-  link.classList.toggle('account-link-signed-in',session.signed_in);
-  link.setAttribute('aria-label',session.signed_in?'My Keeper profile':'Sign in');
-  const avatar=link.querySelector('[data-account-avatar]');
-  link.querySelector('[data-account-label]').hidden=session.signed_in;
-  avatar.hidden=!session.signed_in;
-  if(session.signed_in)kfxAvatar(avatar,session.avatar);
- });
+ const menu=document.querySelector('.account-menu');
+ if(menu){
+  if(session.signed_in)kfxAvatar(menu.querySelector('[data-account-avatar]'),session.avatar);
+  else menu.open=false;
+ }
  return session;
 }
 function kfxSession(force=false) {
@@ -41,4 +38,19 @@ function kfxSession(force=false) {
  }
  return kfxSessionRequest;
 }
-document.addEventListener('DOMContentLoaded',()=>{kfxSession().catch(()=>{});});
+document.addEventListener('DOMContentLoaded',()=>{
+ const menu=document.querySelector('.account-menu');
+ if(menu){
+  document.addEventListener('click',event=>{
+   if(menu.open&&!menu.contains(event.target))menu.open=false;
+  });
+  menu.addEventListener('keydown',event=>{
+   if(event.key==='Escape'&&menu.open){
+    event.preventDefault();
+    menu.open=false;
+    menu.querySelector('summary').focus();
+   }
+  });
+ }
+ kfxSession().catch(()=>{});
+});
