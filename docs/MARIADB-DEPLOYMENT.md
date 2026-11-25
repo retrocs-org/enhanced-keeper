@@ -268,3 +268,14 @@ SQL
 
 The command is inside the HTTP-protected `lib` directory and also refuses non-CLI
 execution. Refresh never runs migrations automatically.
+
+
+## Reset the KeeperHub database
+
+From the MariaDB host, pause the website and game server before resetting
+`keeperfx_e`. Run `scripts/reset-keeperhub-mariadb.sh --empty` to preview the
+target, then add `--reset keeperfx_e` to back up, drop, and recreate the database.
+The dump is saved under `/var/backups/keeperhub/`. Run the migration from
+`/srv/www/vhosts/keeper-enhanced.retrocs.org/lib/bin/migrate.php` on the web host
+before restoring traffic. To load the schema during the reset, omit `--empty`
+and use `--schema /path/to/mariadb.sql` when running a standalone copy.
