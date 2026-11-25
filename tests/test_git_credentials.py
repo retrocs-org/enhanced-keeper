@@ -8,8 +8,8 @@ spec=importlib.util.spec_from_file_location('credential',Path(__file__).resolve(
 m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 class CredentialTests(unittest.TestCase):
     def test_scoped_hosts_and_paths(self):
-        for host,user in m.HOSTS.items():
-            with patch.object(m.subprocess,'run',return_value=subprocess.CompletedProcess([],0,'fixture-token\n','')) as run:
+        for host,user in {'github.com':'x-access-token','git.example.test':'oauth2'}.items():
+            with patch.object(m,'destinations',return_value={host:{'repository':m.REPOSITORY,'username':user,'vault':'Private','item':host,'field':m.REPOSITORY+'-rw'}}), patch.object(m.subprocess,'run',return_value=subprocess.CompletedProcess([],0,'fixture-token\n','')) as run:
                 value=m.credentials({'protocol':'https','host':host,'path':m.REPOSITORY+'.git'})
                 self.assertEqual(value,{'username':user,'password':'fixture-token'})
                 self.assertIn('label='+m.REPOSITORY+'-rw',run.call_args.args[0])

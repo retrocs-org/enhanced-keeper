@@ -201,12 +201,12 @@ disc-derived content, generated runtimes and tool installations remain excluded.
 
 ## Repository-local Git authentication
 
-The canonical repositories are named `retrocs-org/keeper-enhanced` on GitHub and
-the private GitLab service. The private release profile is `keeper-enhanced.json`;
+The public repository is [retrocs-org/keeper-enhanced](https://github.com/retrocs-org/keeper-enhanced).
+Additional private destinations are configured only in the local release profile. The private release profile is `keeper-enhanced.json`;
 the old profile name remains a local compatibility alias.
 
 After provisioning repository-scoped tokens with the git-release token helper,
 run `python3 scripts/git-credential-project.py --install` in a checkout to use
 its concealed 1Password fields for HTTPS Git operations. This configures only
-that checkout, scopes credential lookup to its exact two repository URLs, and
+that checkout, scopes credential lookup to its configured repository URLs, and
 stores no token in Git configuration. Tokens must be renewed when they expire.
