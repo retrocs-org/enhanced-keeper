@@ -9,6 +9,8 @@ packages have already been published.
 ## 0.1.0
 
 ### Build and audio fixes
+- Keep the main-menu soundtrack playing through settings, credits, load, network
+  and selection menus without restarting it on navigation.
 - Fix macOS ENet socket lengths and remove unused declarations and duplicate library links.
 - Avoid excessive Mach-O common-symbol alignment for packed C globals.
 - Generate sound banks with fixed-width disk fields on 64-bit hosts; repair existing

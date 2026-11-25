@@ -2558,7 +2558,6 @@ void frontend_shutdown_state(FrontendMenuState pstate)
         frontstory_unload();
         break;
     case FeSt_CREDITS:
-        stop_music(true);
         break;
     case FeSt_LEVEL_STATS:
         stop_streamed_samples();
@@ -2583,7 +2582,6 @@ void frontend_shutdown_state(FrontendMenuState pstate)
         break;
     case FeSt_FEOPTIONS:
         turn_off_menu(GMnu_FEOPTION);
-        stop_music(true);
         break;
     case FeSt_LEVEL_SELECT:
         turn_off_menu(GMnu_FELEVEL_SELECT);
@@ -2646,8 +2644,6 @@ FrontendMenuState frontend_setup_state(FrontendMenuState nstate)
           if (!is_campaign_loaded()) {
               change_campaign(CampgnT_Default,"");
           }
-          // Resume the imported menu soundtrack after intros or gameplay.
-          play_music_track(2);
           turn_on_menu(GMnu_FEMAIN);
           last_mouse_x = GetMouseX();
           last_mouse_y = GetMouseY();
@@ -2714,7 +2710,6 @@ FrontendMenuState frontend_setup_state(FrontendMenuState nstate)
           credits_end = 0;
           LbTextSetWindow(0, 0, RendererPhysicalWidth(), lbDisplay.PhysicalScreenHeight);
           RendererSetDrawFlags(Lb_TEXT_HALIGN_CENTER);
-          play_music_track(7);
           break;
       case FeSt_LEVEL_STATS:
           turn_on_menu(GMnu_FESTATISTICS);
@@ -2745,7 +2740,6 @@ FrontendMenuState frontend_setup_state(FrontendMenuState nstate)
           turn_on_menu(GMnu_FEDEFINE_KEYS);
           break;
       case FeSt_FEOPTIONS:
-          play_music_track(3);
           turn_on_menu(GMnu_FEOPTION);
           set_pointer_graphic_menu();
           break;
@@ -2778,6 +2772,29 @@ FrontendMenuState frontend_setup_state(FrontendMenuState nstate)
   #endif
       default:
         ERRORLOG("Unhandled FRONTEND new state");
+        break;
+    }
+    // Keep the menu soundtrack through navigation. The audio player preserves
+    // playback position when this track is already playing.
+    switch (nstate)
+    {
+    case FeSt_MAIN_MENU:
+    case FeSt_FELOAD_GAME:
+    case FeSt_NET_SERVICE:
+    case FeSt_NET_SESSION:
+    case FeSt_NET_START:
+    case FeSt_CREDITS:
+    case FeSt_LEVEL_STATS:
+    case FeSt_HIGH_SCORES:
+    case FeSt_FEDEFINE_KEYS:
+    case FeSt_FEOPTIONS:
+    case FeSt_LEVEL_SELECT:
+    case FeSt_MAPPACK_SELECT:
+    case FeSt_CAMPAIGN_SELECT:
+    case FeSt_MP_MAPPACK_SELECT:
+        play_music_track(2);
+        break;
+    default:
         break;
     }
     return nstate;
