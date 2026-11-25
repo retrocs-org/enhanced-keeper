@@ -4,13 +4,19 @@ set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 BASE=${KFX_GAME_DIR:-$ROOT/.local/generated-runtime}
 OUT=${KFX_PACKAGE_DIR:-$ROOT/outputs/local-client-$(date +%Y%m%d-%H%M%S)}
-if [ ! -f "$BASE/keeper-enhanced.cfg" ] && [ ! -f "$BASE/keeperfx.cfg" ]; then
-    python3 "$ROOT/scripts/build-asset-runtime.py" --output "$BASE"
+GAME="$ROOT/.local/imported-client"
+if [ -z "${KFX_GAME_DIR:-}" ] && [ -z "${KFX_IMPORT_IMAGE:-}" ] && [ -f "$GAME/keeper-enhanced.cfg" ]; then
+    echo "Reusing imported client data: $GAME"
+else
+    if [ ! -f "$BASE/keeper-enhanced.cfg" ] && [ ! -f "$BASE/keeperfx.cfg" ]; then
+        python3 "$ROOT/scripts/build-asset-runtime.py" --output "$BASE"
+    fi
+    set --
+    if [ -n "${KFX_IMPORT_IMAGE:-}" ]; then set -- --image "$KFX_IMPORT_IMAGE"; fi
+    GAME="$OUT/imported-game"
+    python3 "$ROOT/macos/import-local-data.py" "$@" --base "$BASE" \
+        --import-dir "$ROOT/import" --output "$GAME"
 fi
-set --
-if [ -n "${KFX_IMPORT_IMAGE:-}" ]; then set -- --image "$KFX_IMPORT_IMAGE"; fi
-python3 "$ROOT/macos/import-local-data.py" "$@" --base "$BASE" \
-    --import-dir "$ROOT/import" --output "$OUT/imported-game"
 "$ROOT/macos/build-universal.sh"
-KFX_GAME_DIR="$OUT/imported-game" KFX_PACKAGE_DIR="$OUT" KFX_INCLUDE_LOCAL_DATA=1 \
+KFX_GAME_DIR="$GAME" KFX_PACKAGE_DIR="$OUT" KFX_INCLUDE_LOCAL_DATA=1 \
     KFX_SIGN_IDENTITY=- "$ROOT/macos/package-app.sh"
