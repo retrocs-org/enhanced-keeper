@@ -19,6 +19,7 @@ function api_catalog(): array {
         ['GET','/api/streams/{id}?offset=0','Replays','Public','A bounded chunk from a live spectator stream.',false],
         ['GET','/api/replays/{id}','Replays','Public','Replay data, required engine and SHA-256 checksum.',false],
         ['POST','/api/cloud/signup','Accounts','Public','Request an email code. Fields: name, email, password, optional avatar (1–15).',false],
+        ['POST','/api/cloud/resend','Accounts','Public','Request a new code with the original signup username, email and password.',false],
         ['POST','/api/cloud/verify','Accounts','Public','Complete registration using the signup ticket and emailed code.',false],
         ['POST','/api/login','Accounts','Public','Sign in. Browser credentials remain in an HttpOnly cookie.',false],
         ['POST','/api/logout','Accounts','Signed in + CSRF','End your session.',false],

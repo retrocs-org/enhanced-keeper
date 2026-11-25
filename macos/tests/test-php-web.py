@@ -106,8 +106,17 @@ class PHPWebsiteTests(unittest.TestCase):
         with self.request('/api-browser') as response:
             page=response.read().decode();self.assertIn('api-explorer',page);self.assertIn('Endpoint reference',page)
         with self.request('/services') as response:
-            page=response.read().decode();self.assertIn('Server browser',page);self.assertNotIn('Ways to play',page);self.assertIn('route=%2Fnetwork%2Fservers', response.geturl())
+            page=response.read().decode();self.assertIn('Server browser',page);self.assertNotIn('Ways to play',page);self.assertIn('route=%2Flair', response.geturl())
         with self.request('/profile') as response:self.assertIn('<form method="post" id="login"',response.read().decode())
+        for mode,title in (('register','Create your account'),('activation','Resend activation email'),('recover','Reset your password')):
+            with self.request('/index.php?route=%2Fprofile&mode='+mode) as response:
+                html=response.read().decode()
+                self.assertIn('tabindex="-1">'+title+'</h1>',html)
+                for label in ('Create an account','Sign in','Resend activation email','Forgot password?'):
+                    self.assertIn('>'+label+'</a>',html)
+        with self.request('/leaderboard') as response:
+            self.assertIn('route=%2Flair', response.geturl())
+            self.assertIn('id="lair-rankings"',response.read().decode())
 
     def test_original_landing_is_separate_from_community(self):
         with self.request('/') as response:
@@ -126,7 +135,7 @@ class PHPWebsiteTests(unittest.TestCase):
         import re
         with self.request('/network/events') as response:page=response.read().decode()
         main=re.search(r'<nav aria-label="Main navigation">(.*?)</nav>',page,re.S).group(1)
-        self.assertNotIn('>Network<',main);self.assertIn('>Servers<',main);self.assertIn('>Features<',main);self.assertIn('>Leaderboard<',main);self.assertIn('>Downloads<',main);self.assertNotIn('>Events<',main);self.assertNotIn('>Replays<',main)
+        self.assertNotIn('>Network<',main);self.assertIn('>The Lair<',main);self.assertIn('>Features<',main);self.assertNotIn('>Leaderboard<',main);self.assertIn('>Downloads<',main);self.assertNotIn('>Events<',main);self.assertNotIn('>Replays<',main)
         self.assertIn('aria-label="Community navigation"',page)
         self.assertIn('/index.php?route=%2Fnetwork%2Freplays',page)
         self.assertIn('<form method="post" id="event" hidden>',page)

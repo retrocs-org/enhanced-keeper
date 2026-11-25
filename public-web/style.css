@@ -134,15 +134,17 @@ summary { color: #d6c198; cursor: pointer; }
 }
 .portal-main .account-panel form button:hover { background: #832414; border-color: #832414; }
 .account-nav { display: flex; flex-wrap: wrap; gap: 10px 26px; margin-top: 25px; }
-.portal-main .account-nav button {
+.portal-main .account-nav a {
     padding: 6px 0;
     min-height: 44px;
     color: #8e2d1c;
     background: none;
     border: 0;
     text-align: left;
+    text-decoration: none;
 }
-.portal-main .account-nav button:hover { background: none; text-decoration: underline; }
+.portal-main .account-nav a:hover,
+.portal-main .account-nav a[aria-current=page] { color: #702515; text-decoration: underline; }
 .account-auth :focus-visible { outline-color: #a0311e; }
 @media (max-width: 540px) {
     .account-auth .portal-main { width: calc(100% - 36px); }

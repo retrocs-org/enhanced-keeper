@@ -3,28 +3,46 @@ if (!defined('KFX_API_INTERNAL')) { http_response_code(404); exit; }
 trait HubAccounts {
     private function newSession(string $uid): array {$token=api_token();$csrf=api_token(24);$this->q('INSERT INTO sessions VALUES(?,?,?,?)',[hash('sha256',$token),$uid,$csrf,$this->now+86400*30]);return [$token,$csrf];}
     private function passwordHash(string $password,string $salt): string {return hash_pbkdf2('sha256',$password,hex2bin($salt),310000,64);}
+    private function sendActivation(array $signup): array {
+        $ticket=api_token();
+        $digest=hash('sha256',$ticket);
+        $code=str_pad((string)random_int(0,999999),6,'0',STR_PAD_LEFT);
+        $this->q('INSERT INTO cloud_signup VALUES(?,?,?,?,?,?,?,?)',[
+            $digest,$signup['name'],$signup['email'],$signup['salt'],$signup['password'],
+            $signup['avatar'],hash_hmac('sha256',$code,$ticket),$this->now+900,
+        ]);
+        try {
+            kfx_smtp_send($signup['email'],'Verify your Keeper Enhanced account',"Your verification code is $code. It expires in 15 minutes.");
+        } catch (Throwable $error) {
+            $this->q('DELETE FROM cloud_signup WHERE ticket=?',[$digest]);
+            throw new ApiProblem(503,'The verification email could not be sent. Try again later.');
+        }
+        return ['ticket'=>$ticket,'expires_in'=>900];
+    }
     private function accountWrite(string $route,array $data,string $token,?string $uid): ?array {
-        if($route==='/api/cloud/signup'){
+        if(in_array($route,['/api/cloud/signup','/api/cloud/resend'],true)){
             demand(function_exists('web_settings')&&kfx_smtp_ready(),'Email verification is unavailable',503);
             $name=api_text($data['name']??null,24);
+            $email=strtolower($data['email']);
+            $this->q('DELETE FROM cloud_signup WHERE expires<?',[$this->now-86400]);
+            if($route==='/api/cloud/resend'){
+                $signup=$this->one('SELECT * FROM cloud_signup WHERE name=? AND email=? ORDER BY expires DESC LIMIT 1',[$name,$email]);
+                $password=api_text($data['password']??null,128);
+                $hash=$this->passwordHash($password,$signup['salt']??str_repeat('00',16));
+                if(!$signup||!hash_equals($signup['password'],$hash)||$this->one('SELECT 1 FROM users WHERE name=?',[$name]))
+                    return ['ticket'=>api_token(),'expires_in'=>900];
+                return $this->sendActivation($signup);
+            }
             $password=api_text($data['password']??null,128);
             demand(preg_match('/^[A-Za-z0-9_-]{3,24}$/D',$name)&&mb_strlen($password)>=12,'Use a 3–24 character name and a password of at least 12 characters');
-            $email=strtolower($data['email']);
             $avatar=$data['avatar']??1;
             demand(is_int($avatar)&&$avatar>=1&&$avatar<=15,'Invalid avatar');
             demand(!$this->one('SELECT 1 FROM users WHERE name=?',[$name]),'Name is already registered',409);
-            $ticket=api_token();
-            $code=str_pad((string)random_int(0,999999),6,'0',STR_PAD_LEFT);
             $salt=bin2hex(random_bytes(16));
-            $this->q('DELETE FROM cloud_signup WHERE expires<?',[$this->now]);
-            $this->q('INSERT INTO cloud_signup VALUES(?,?,?,?,?,?,?,?)',[hash('sha256',$ticket),$name,$email,$salt,$this->passwordHash($password,$salt),$avatar,hash_hmac('sha256',$code,$ticket),$this->now+900]);
-            try {
-                kfx_smtp_send($email,'Verify your Keeper Enhanced account',"Your verification code is $code. It expires in 15 minutes.");
-            } catch (Throwable $error) {
-                $this->q('DELETE FROM cloud_signup WHERE ticket=?',[hash('sha256',$ticket)]);
-                throw new ApiProblem(503,'The verification email could not be sent. Try again later.');
-            }
-            return ['ticket'=>$ticket,'expires_in'=>900];
+            return $this->sendActivation([
+                'name'=>$name,'email'=>$email,'salt'=>$salt,
+                'password'=>$this->passwordHash($password,$salt),'avatar'=>$avatar,
+            ]);
         }
         if($route==='/api/cloud/verify'){
             $ticket=api_text($data['ticket']??null,64);

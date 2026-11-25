@@ -57,7 +57,7 @@ final class KeeperHub {
         $route=parse_url($uri,PHP_URL_PATH);$parts=explode('/',trim((string)$route,'/'));parse_str((string)(parse_url($uri,PHP_URL_QUERY)??''),$query);
         demand(in_array($method,['GET','POST'],true),'Unsupported method',405);
         if($method==='POST')$this->limit($peer,$route==='/api/connectivity'?'connectivity':'requests',$route==='/api/connectivity'?5:360);
-        if($route==='/api/cloud/signup'&&$method==='POST'){
+        if(in_array($route,['/api/cloud/signup','/api/cloud/resend'],true)&&$method==='POST'){
             $this->limit($peer,'cloud-signup',5,900);
             $email=$data['email']??null;
             demand(is_string($email)&&strlen($email)<=254&&filter_var($email,FILTER_VALIDATE_EMAIL),'Enter a valid email address');
@@ -76,7 +76,7 @@ final class KeeperHub {
         if($route==='/api/device/start'&&$method==='POST')$this->limit($peer,'device',10);
         if($route==='/api/connectivity'&&$method==='POST')return $this->probe($data,$peer)+['relay_available'=>$this->relayAvailable(),'relay_path_verified'=>false];
         // The SMTP transaction can take seconds. Keep it outside the database transaction.
-        if($route==='/api/cloud/signup'&&$method==='POST')return $this->accountWrite($route,$data,$token,$uid);
+        if(in_array($route,['/api/cloud/signup','/api/cloud/resend'],true)&&$method==='POST')return $this->accountWrite($route,$data,$token,$uid);
         $this->db->beginTransaction();try{
             foreach(['sessions','devices','tickets'] as $table)$this->q("DELETE FROM $table WHERE expires<?",[$this->now]);
             if($method==='GET')$answer=$this->read($route,$parts,$query,$session,$uid);

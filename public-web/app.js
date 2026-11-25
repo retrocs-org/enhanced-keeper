@@ -19,11 +19,29 @@ async function refresh(){
  if(!session.signed_in){$('recovery-output').textContent='';$('recovery-output').hidden=true;me=null;}
  else if(route==='/profile')await loadProfile();
  else if(['/events','/community'].includes(route))me=await api('me');
- if(['/servers','/community'].includes(route)){servers=(await api('servers')).servers;drawServers();}
+ if(['/lair','/servers','/community'].includes(route)){servers=(await api('servers')).servers;drawServers();}
+ if(route==='/lair')await loadLairRankings();
  if(['/events','/community'].includes(route))await loadEvents();
  if(['/community','/challenges','/replays'].includes(route))await loadExtras();
 }
 
+async function loadLairRankings(){
+ const body=$('lair-rankings');
+ try {
+  const {players}=await api('leaderboard');
+  body.replaceChildren();
+  for(const [index,player] of players.entries()){
+   const row=node('tr','',body);
+   node('td',String(index+1),row);
+   const keeper=node('a',player.name,node('td','',row));
+   keeper.href=kfxRoute('/keeper/'+player.id);
+   node('td',String(player.wins),row);
+   node('td',String(player.matches),row);
+  }
+  $('lair-rank-table').hidden=players.length===0;
+  $('lair-rank-state').textContent=players.length?'':'No verified rankings yet.';
+ } catch(error) { $('lair-rank-state').textContent=error.message; }
+}
 function drawServers(){const q=$('filter').value.toLowerCase(),body=$('servers');body.replaceChildren();for(const s of servers.filter(s=>(s.name+' '+s.map+' '+s.region).toLowerCase().includes(q))){const tr=node('tr','',body);node('td',s.name+(s.password?' 🔒':''),tr);node('td',s.map||'Lobby',tr);node('td',s.players+'/'+s.capacity,tr);node('td',s.engine,tr);node('td',s.kind+' · '+s.region+' · '+s.status,tr);action('Copy address',async()=>{await navigator.clipboard.writeText(s.endpoint);note('Address copied. Use Direct Connect in the game.');},node('td','',tr));}$('server-state').textContent=servers.length?servers.length+' live servers. Refresh to update availability.':'No active servers. LAN and direct connections are still available.';}
 async function loadProfile(){me=await api('me');const portrait=$('profile-avatar');if(portrait){const index=Math.max(0,Math.min(14,Number(me.avatar)||1)-1);portrait.style.backgroundPosition=(index%5)*25+'% '+Math.floor(index/5)*50+'%';portrait.hidden=false;}$('profile-title').textContent=me.name+'’s Keeper';$('profile-id').textContent='Account ID: '+me.id;$('public').checked=!!me.public;node('span',' · ', $('profile-id'));const link=node('a','View public profile', $('profile-id'));link.href=kfxRoute('/keeper/'+me.id);const p=await api('profiles/'+me.id);$('statistics').textContent=(p.verified_stats.matches||0)+' verified matches · '+(p.verified_stats.wins||0)+' verified wins'+(p.achievements.length?' · '+p.achievements.join(', '):'');$('history').replaceChildren();for(const m of (await api('matches')).matches){const a=node('article','', $('history'));node('strong',m.map||'Match',a);node('p',new Date(m.started*1000).toLocaleString()+' · '+m.status+' · '+m.verification+' · Match ID: '+m.id,a);}$('friends').replaceChildren();for(const f of (await api('friends')).friends){const li=node('li',f.name+' · '+f.status+' ', $('friends'));if(f.status==='pending'&&f.requester!==me.id)action('Accept',async()=>{await api('friends',{user:f.id});await loadProfile();},li);action('Remove',async()=>{await api('friends',{user:f.id,action:'remove'});await loadProfile();},li);}}
 async function loadEvents(){$('events').replaceChildren();const events=(await api('events')).events;for(const e of events){const a=node('article','', $('events'));node('h3',e.title,a);node('p',new Date(e.starts*1000).toLocaleString()+' · '+e.kind+' · '+e.entrants+' signed up',a);node('p',e.description,a);if(session.signed_in)action('Join event',async()=>{await api('events/'+e.id+'/join',{});await loadEvents();},a);if(e.kind==='tournament'){action('Show bracket',async()=>{const b=await api('events/'+e.id+'/bracket');if(!b.games){node('p',b.round_one.map(p=>p.a.name+' vs '+(p.b?p.b.name:'bye')).join(' • ')||'Awaiting entrants',a);return;}for(const g of b.games){const row=node('article','Round '+g.round+' · '+g.a_name+' vs '+g.b_name+' · '+g.status+(g.winner?' · Winner: '+g.winner_name:''),a);if(me&&me.id===e.owner&&g.status==='pending'){const label=node('label','Verified match ID',row),input=document.createElement('input');input.maxLength=32;label.append(input);action('Record verified result',async()=>{await api('events/'+e.id+'/bracket/report',{round:g.round,position:g.position,match:input.value.trim()});note('Bracket advanced.');await loadEvents();},row);}}},a);if(me&&me.id===e.owner)action('Start tournament',async()=>{await api('events/'+e.id+'/bracket/start',{});note('Bracket created. Registration is closed.');await loadEvents();},a);}}if(!events.length)node('p','No scheduled events yet.', $('events'));}
@@ -36,10 +54,11 @@ $('recovery-codes-form').addEventListener('submit',async event=>{event.preventDe
 $('recover').addEventListener('submit',async event=>{event.preventDefault();try{const result=await api('recovery/reset',Object.fromEntries(new FormData(event.target)));event.target.reset();showAccountMode('login');note(result.message);await refresh();}catch(error){note(error.message);}});
 
 const route=kfxPage();
-for(const [id,paths] of Object.entries({'server-panel':['/community','/servers'],'events-panel':['/community','/events'],'challenge-panel':['/community','/challenges'],'replay-panel':['/community','/replays']}))$(id).hidden=!paths.includes(route);
+for(const [id,paths] of Object.entries({'server-panel':['/lair','/community','/servers'],'events-panel':['/community','/events'],'challenge-panel':['/community','/challenges'],'replay-panel':['/community','/replays']}))$(id).hidden=!paths.includes(route);
 
 let cloudTicket = '';
 const accountModes = {
+    activation: ['cloud-resend', 'Resend activation email', 'Enter the username, email address, and password you used to register.'],
     login: ['login', 'Sign in', 'Access your cloud profile, friends, and match history.'],
     signup: ['cloud-signup', 'Create your account', 'Keep your cloud profile and match history together. We’ll email you a six-digit code to verify your account.'],
     verify: ['cloud-verify', 'Check your email', 'Enter the six-digit verification code. It expires after 15 minutes.'],
@@ -48,31 +67,24 @@ const accountModes = {
 function showAccountMode(mode, moveFocus = true) {
     const [form, title, intro] = accountModes[mode];
     for (const [formId] of Object.values(accountModes)) $(formId).hidden = formId !== form;
-    for (const button of document.querySelectorAll('[data-account-mode]')) {
-        button.hidden = button.dataset.accountMode === mode;
-        if (button.dataset.accountMode === 'signup') {
-            button.textContent = mode === 'verify' ? 'Request a new code' : 'Create an account';
-        }
-    }
     $('account-heading').textContent = title;
     $('account-intro').textContent = intro;
     $('account-status').textContent = '';
     if (moveFocus) $('account-heading').focus();
 }
-for (const button of document.querySelectorAll('[data-account-mode]')) {
-    button.addEventListener('click', () => showAccountMode(button.dataset.accountMode));
+for (const [id,route] of [['cloud-signup','cloud/signup'],['cloud-resend','cloud/resend']]) {
+    $(id).addEventListener('submit', async event => {
+        event.preventDefault();
+        try {
+            const result = await api(route, Object.fromEntries(new FormData(event.target)));
+            cloudTicket = result.ticket;
+            event.target.reset();
+            showAccountMode('verify', false);
+            $('cloud-verify').elements.code.focus();
+            note(id==='cloud-resend'?'If a pending account matches, we sent a new code.':'Enter the six-digit code sent to your email.');
+        } catch (error) { note(error.message); }
+    });
 }
-$('cloud-signup').addEventListener('submit', async event => {
-    event.preventDefault();
-    try {
-        const result = await api('cloud/signup', Object.fromEntries(new FormData(event.target)));
-        cloudTicket = result.ticket;
-        event.target.reset();
-        showAccountMode('verify', false);
-        $('cloud-verify').elements.code.focus();
-        note('Enter the six-digit code sent to your email.');
-    } catch (error) { note(error.message); }
-});
 $('cloud-verify').addEventListener('submit', async event => {
     event.preventDefault();
     try {
