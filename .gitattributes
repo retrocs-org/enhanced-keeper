@@ -11,3 +11,4 @@
 
 # Preserve byte-identical upstream sources and their provenance hashes.
 assets/upstream/** -text
+assets/runtime/** -text

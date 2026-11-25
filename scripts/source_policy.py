@@ -15,6 +15,12 @@ def excluded(name):
     # Explicitly authorized GPL source asset trees; original disc imports stay excluded.
     if str(path).startswith(('assets/upstream/fxgraphics/', 'assets/upstream/fxsounds/')) and path.suffix.lower() not in {'.iso','.cue','.bin','.exe','.dll'}:
         return False
+    # Prebuilt open assets are checked against their runtime manifest.
+    if str(path).startswith('assets/runtime/') and path.suffix.lower() in {
+        '.cfg', '.dat', '.fxfont', '.json', '.jty', '.lua', '.mp3', '.pal',
+        '.png', '.raw', '.tab', '.toml', '.txt',
+    }:
+        return False
     # These are the controller-guide assets supplied for this project's UI.
     if str(path.parent) == 'macos/packaging/controllers' and path.suffix in {'.svg', '.png'}:
         return False

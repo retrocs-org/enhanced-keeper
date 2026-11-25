@@ -42,6 +42,16 @@ hashes for the vendored files. The upstream files and license texts are preserve
 without modification. Repository-level license declarations are recorded here;
 they do not relicense original Dungeon Keeper disc content.
 
+## Prebuilt open runtime
+
+`assets/runtime/` contains the output of `scripts/build-asset-runtime.py`.
+Its `asset-build.json` records the exact source revisions. The generated
+graphics and sounds use the source trees and licenses above. The configuration,
+maps, campaign scripts, translation sources, and packaging recipes come from
+the [pinned KeeperFX checkout](https://github.com/dkfans/keeperfx/tree/392c7ebdbbd6da6e9596ac769edb4353a01dca5f).
+The font inputs and generators are in `tools/fxfontmaker/`. Original game data
+is supplied separately by the local disc import.
+
 ## Keeper Enhanced
 
 Thanks to contributors to the macOS port, native builds, dedicated server,

@@ -2,7 +2,11 @@
 # Local-only app: imported originals remain outside all public release inputs.
 set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-BASE=${KFX_GAME_DIR:-$ROOT/.local/generated-runtime}
+DEFAULT_BASE="$ROOT/assets/runtime"
+if [ ! -f "$DEFAULT_BASE/keeper-enhanced.cfg" ]; then
+    DEFAULT_BASE="$ROOT/.local/generated-runtime"
+fi
+BASE=${KFX_GAME_DIR:-$DEFAULT_BASE}
 OUT=${KFX_PACKAGE_DIR:-$ROOT/outputs/local-client-$(date +%Y%m%d-%H%M%S)}
 GAME="$ROOT/.local/imported-client"
 if [ -z "${KFX_GAME_DIR:-}" ] && [ -z "${KFX_IMPORT_IMAGE:-}" ] && [ -f "$GAME/keeper-enhanced.cfg" ]; then

@@ -19,13 +19,11 @@ make server-linux JOBS=4
 
 Place the BIN/CUE files in `import/` before running these commands. If there are
 multiple CUE/ISO images, select one with `IMAGE="Dungeon Keeper.cue"`.
-The missing default runtime base is generated locally from the vendored GPL
-asset sources and pinned KeeperFX configuration/map/translation sources. Native
-conversion tools and their PNG/zlib dependencies are built under `tools/local/`;
-no prebuilt runtime bundle or Windows executable is downloaded. Your CD supplies original data,
-movies and music. Dedicated-server staging excludes standalone music and movies.
-All required conversion tools are built automatically under `tools/local/`.
-All imported and downloaded assets remain local and Git-ignored.
+The checked-in `assets/runtime/` supplies prebuilt open assets, configuration,
+maps, and translations. Imports use it directly and read original files from
+your CD. Dedicated-server staging excludes standalone music and movies.
+Disc imports remain local and Git-ignored. A checkout without the prebuilt base
+can generate it from the pinned sources using native tools under `tools/local/`.
 
 ## Build and import
 

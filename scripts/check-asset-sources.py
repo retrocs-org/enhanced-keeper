@@ -24,5 +24,20 @@ def verify(root):
             data=path.read_bytes();sha=hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
             if sha!=record['files'][relative]:raise ReleaseError('Upstream asset changed without provenance update: '+relative)
         if actual!=set(record['files']):raise ReleaseError('Missing vendored asset files: '+name)
+    runtime = Path(root) / 'assets/runtime'
+    if runtime.exists() or runtime.is_symlink():
+        manifest = runtime / 'manifest.json'
+        if runtime.is_symlink() or manifest.is_symlink() or not manifest.is_file():
+            raise ReleaseError('Prebuilt runtime requires a regular asset manifest')
+        expected = json.loads(manifest.read_text())
+        actual = {}
+        for path in runtime.rglob('*'):
+            if path.is_symlink():
+                raise ReleaseError('Linked prebuilt asset: ' + str(path))
+            if path.is_file() and path != manifest:
+                actual[path.relative_to(runtime).as_posix()] = hashlib.sha256(path.read_bytes()).hexdigest()
+        if actual != expected:
+            raise ReleaseError('Prebuilt runtime differs from its asset manifest')
+
 if __name__=='__main__':
     verify(Path(__file__).resolve().parents[1]);print('Vendored asset provenance verified.')

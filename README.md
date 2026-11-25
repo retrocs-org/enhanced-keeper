@@ -412,15 +412,14 @@ After cleaning, rerun `make import`; native tools and runtime data are rebuilt a
 
 ### Fresh-checkout import
 
-`make import` builds native asset converters under `tools/local/`, generates a
-runtime base at `.local/generated-runtime`, then overlays game data, movies and
-lossless CD audio from your own BIN/CUE. It does not download the prebuilt
-375 MB runtime bundle. Graphics and sound source assets are vendored in
-`assets/upstream/` with their GPLv3 licenses and credits. Configuration, maps,
-scripts and translations come from a pinned KeeperFX source checkout kept under
-`tools/local/src/keeperfx`.
+`make import` and `make import-server` use the prebuilt open runtime in
+`assets/runtime/` and read original game data from your own BIN/CUE. The client
+import also copies movies and lossless CD audio. Runtime provenance and licenses
+are recorded alongside the prebuilt files. Graphics and sound source assets
+are vendored in `assets/upstream/` with their GPLv3 licenses and credits.
 
-The first run fetches pinned converter, PNG/zlib and KeeperFX sources. All
+When the checked-in runtime is unavailable, the importer generates a base under
+`.local/generated-runtime` from pinned converter, PNG/zlib and KeeperFX sources. All
 converter executables are built natively; no system-wide helper installation is
 needed. A C/C++ compiler, CMake, Make, Git and Python 3 are prerequisites. The
 first conversion can take several minutes; later runs reuse generated files.
@@ -432,7 +431,7 @@ A custom `IMPORT_BASE` can still provide an already prepared matching runtime.
 
 `make tools` builds pngpal2raw, png2bestpal, po2ngdat, sndbanker, rnc and dernc
 natively under `tools/local/bin/`, including local static PNG/zlib dependencies.
-`make import` builds these tools automatically when generating its runtime base.
+The importer builds these tools when generating a runtime base from source.
 Tool downloads, executable, license and version metadata stay in `tools/local/`,
 which is Git-ignored and excluded by source-push policy. CMake's downloaded
 Windows icon helper also uses that prefix. `make clean` removes this entire
@@ -450,7 +449,7 @@ carry GPLv3 license files, preserved alongside their source assets. These assets
 are credited to their upstream contributors, not the Keeper Enhanced team.
 See [credits.md](credits.md) for revisions, licenses and attribution.
 
-This is an explicit exception to the source-only policy for these two pinned
-asset trees. Original Dungeon Keeper disc images and disc-derived files remain
-excluded from Git and public packages. Generated assets and downloaded tools
-remain local; `make clean` preserves the tracked upstream source assets.
+The source-only policy allows these pinned asset trees and the prebuilt open
+runtime under `assets/runtime/`. Original disc images, disc-derived files,
+locally generated runtime copies, and downloaded tools stay outside Git.
+`make clean` preserves the repository asset trees.

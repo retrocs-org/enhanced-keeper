@@ -1,0 +1,42 @@
+{
+  "source": "generated locally",
+  "native_asset_format": 2,
+  "revisions": {
+    "keeperfx": [
+      "dkfans/keeperfx",
+      "392c7ebdbbd6da6e9596ac769edb4353a01dca5f"
+    ],
+    "pngpal2raw": [
+      "dkfans/pngpal2raw",
+      "c6b1a52c5e0cf1bdc588f1a4b4d6d37e8fed61bd"
+    ],
+    "png2bestpal": [
+      "dkfans/png2bestpal",
+      "a8c54b8a2516e9d58fef696ef3c888fbc44c083c"
+    ],
+    "po2ngdat": [
+      "dkfans/po2ngdat",
+      "00f90177ee4266da6766d427066a080a3ee2f686"
+    ],
+    "sndbanker": [
+      "dkfans/sndbanker",
+      "b4cb6bd5d6c2d5ebaef23074453f94aacbcceabd"
+    ],
+    "rnctools": [
+      "dkfans/rnctools",
+      "338b795df97b359ea8b25db62b0d4ebfd5d983a3"
+    ],
+    "zlib": [
+      "madler/zlib",
+      "51b7f2abdade71cd9bb0e7a373ef2610ec6f9daf"
+    ],
+    "libpng": [
+      "pnggroup/libpng",
+      "cd952f49f95bb27154ae77dbb103032d95f6e580"
+    ]
+  },
+  "assets": {
+    "fxgraphics": "bc1b78e81cc5cade97d9c262c175a4bea0ed3a0f",
+    "fxsounds": "5258a75829f205aa01d2e7889bf6481ef468a7a0"
+  }
+}
