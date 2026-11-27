@@ -23,9 +23,9 @@ try {
     $native = $e instanceof PDOException ? (int)($e->errorInfo[1] ?? 0) : 0;
     $hint = match ($native) {
         1045 => 'Authentication failed. Check the deployed database user/password and the account host grant for 172.16.1.133.',
-        1044, 1142, 1143 => 'Database permission denied. Check the application account grants on keeperfx_e.*.',
-        1049 => 'Configured database does not exist. Create keeperfx_e and import its schema on the database server.',
-        1146 => 'A required table is missing. Import public-web/lib/mariadb.sql on the database server.',
+        1044, 1142, 1143 => 'Database permission denied. Check the application account grants on the configured database.',
+        1049 => 'Configured database does not exist. Create the configured database and run migrate.php from the deployed website.',
+        1146 => 'A required table is missing. Run migrate.php from the deployed website.',
         2002, 2003, 2005, 2006, 2013 => 'Database connection failed. Check host/port, DNS, MariaDB listening address and firewall access from the webserver.',
         2026 => 'Database TLS connection failed. Check the configured CA and database TLS settings.',
         default => 'Check the private configuration, database availability and schema. Consult the private server log if needed.',

@@ -147,3 +147,19 @@ The leaderboard lists only opt-in public profiles with completed server-verified
 matches; casual results and private profiles never enter it. Downloads use the
 validated release manifest when available, otherwise link to the GitHub releases
 page without inventing a current version or asset URL.
+
+### Apply the MariaDB schema from the deployed website
+
+Create the database and its web application account first. Give the configured
+account `CREATE` on its database during migration, in addition to its runtime
+`SELECT`, `INSERT`, `UPDATE` and `DELETE` privileges. Run these commands on
+the web server using the deployed `config.inc.php`:
+
+```sh
+sudo -u wwwrun php /srv/www/vhosts/enhanced-keeper.retrocs.org/migrate.php
+sudo -u wwwrun php /srv/www/vhosts/enhanced-keeper.retrocs.org/check-database.php
+```
+
+The bundled schema creates missing tables and can be reapplied. It does not
+change existing table definitions. Revoke `CREATE` after migration if the
+account should have runtime privileges only.
