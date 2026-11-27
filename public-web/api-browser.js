@@ -1,6 +1,6 @@
 'use strict';
 const el=id=>document.getElementById(id);let endpoints=[];
-function redact(value){if(Array.isArray(value))return value.map(redact);if(value&&typeof value==='object')return Object.fromEntries(Object.entries(value).map(([key,item])=>[key,/token|secret|csrf|password|(?:^|_)codes?$|device_code|recovery.*code/i.test(key)?'[redacted]':redact(item)]));return value;}
+function redact(value){if(Array.isArray(value))return value.map(redact);if(value&&typeof value==='object')return Object.fromEntries(Object.entries(value).map(([key,item])=>[key,/token|secret|credential|csrf|password|(?:^|_)codes?$|device_code|recovery.*code/i.test(key)?'[redacted]':redact(item)]));return value;}
 async function catalog(){const response=await fetch(kfxRoute('/api-catalog.json'));if(!response.ok)throw Error('Endpoint reference unavailable.');endpoints=await response.json();describe();}
 function describe(){el('api-description').textContent=endpoints.find(item=>item.path===el('api-endpoint').value)?.description||'';}
 el('api-endpoint').addEventListener('change',describe);

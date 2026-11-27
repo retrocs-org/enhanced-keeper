@@ -22,6 +22,15 @@
 extern "C" {
 #endif
 /******************************************************************************/
+struct KfxMatchTiming {
+    unsigned long turns;
+    double logic_ms;
+    double peak_ms;
+    unsigned long slow_frames;
+};
+extern struct KfxMatchTiming kfx_match_timing;
+double kfx_match_timing_p95(void);
+struct Thing;
 void process_dungeon_destroy(struct Thing* heartng);
 void initialise_devastate_dungeon_from_heart(PlayerNumber plyr_idx);
 /******************************************************************************/

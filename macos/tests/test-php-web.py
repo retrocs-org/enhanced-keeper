@@ -337,10 +337,11 @@ class PHPWebsiteTests(unittest.TestCase):
         self.assertEqual(party(stranger, user=friend['id'])['friend_messages'], [])
         self.assertEqual(party(stranger)['messages'], [])
 
+        provision = call('/api/dedicated-hosts', {'action': 'create', 'name': 'Party server'}, owner['token'])
         server = call('/api/servers/register', {'name': 'Party server', 'endpoint': '127.0.0.1:5556',
                                                'engine': '0.1.0', 'kind': 'dedicated',
                                                'client_versions': ['0.1.0', '0.1.1'],
-                                               'coop': {'humans': 2, 'ai_style': 'rush'}})
+                                               'coop': {'humans': 2, 'ai_style': 'rush'}}, provision['credential'])
         listing = json.load(self.request('/api/servers'))['servers']
         self.assertEqual(listing[0]['client_versions'], ['0.1.0', '0.1.1'])
         self.assertEqual((listing[0]['capacity'], listing[0]['ai_style']), (3, 'rush'))
@@ -435,19 +436,24 @@ class PHPWebsiteTests(unittest.TestCase):
         self.assertEqual(party(owner, 'leave')['party'], '')
 
     def test_public_dedicated_admission_requires_one_use_account_ticket(self):
-        host = json.load(self.request('/api/servers/register', {
-            'name': 'Public Keeper', 'endpoint': '127.0.0.1:5556',
-            'engine': '1.4.0.0', 'kind': 'dedicated',
-        }))
-        server = '/api/servers/' + host['id']
-        with self.assertRaises(urllib.error.HTTPError) as error:
-            self.request(server + '/join', {})
-        self.assertEqual(error.exception.code, 401)
-
         account = json.load(self.request('/api/register', {
             'name': 'CloudKeeper', 'password': 'a long password for admission',
         }))
         csrf = {'X-CSRF-Token': account['csrf']}
+        provision = json.load(self.request('/api/dedicated-hosts', {
+            'action': 'create', 'name': 'Public Keeper',
+        }, csrf))
+        host = json.load(self.request('/api/servers/register', {
+            'name': 'Public Keeper', 'endpoint': '127.0.0.1:5556',
+            'engine': '1.4.0.0', 'kind': 'dedicated',
+        }, {'Authorization': 'Bearer '+provision['credential']}))
+        server = '/api/servers/' + host['id']
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            urllib.request.urlopen(urllib.request.Request(
+                self.origin + server + '/join', data=b'{}',
+                headers={'Content-Type': 'application/json'}), timeout=4)
+        self.assertEqual(error.exception.code, 401)
+
         join = json.load(self.request(server + '/join', {}, csrf))
         self.assertTrue(join['login_ticket_required'])
         admit = {'peer': 1, 'occupied': 0, 'ticket': join['identity_ticket']}
@@ -495,10 +501,11 @@ class PHPWebsiteTests(unittest.TestCase):
         self.jar.clear()
         account=json.load(self.request('/api/cloud/login', {'name':'CodeKeeper','password':'a long room password'}))
         user={'Authorization':'Bearer '+account['token']}
+        provision=json.load(self.request('/api/dedicated-hosts', {'action':'create','name':'Unlisted Room'},user))
         room=json.load(self.request('/api/servers/register', {
             'name':'Unlisted Room','endpoint':'127.0.0.1:5556','kind':'dedicated',
             'engine':'0.1.0','code_room':True,
-        }))
+        },{'Authorization':'Bearer '+provision['credential']}))
         host={'Authorization':'Bearer '+room['secret']}
         path='/api/servers/'+room['id']
         self.assertEqual(json.load(self.request('/api/servers'))['servers'],[])

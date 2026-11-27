@@ -187,6 +187,7 @@ TbError process_login_message(NetUserId source, char *read_pos, const char *end_
     }
     NETMSG("User %s successfully logged in", user->name);
     user->progress = USER_LOGGEDIN;
+    if (network_is_host()) kfx_lobby_ready_peer_joined(source);
     play_non_3d_sample(snd_spell_stars);
     char *reply_pos = begin_net_message(NETMSG_LOGIN);
     *reply_pos = source;

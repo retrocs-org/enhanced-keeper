@@ -173,9 +173,9 @@ or `/var/lib/keeperfx-e`. Keep logs and uploads outside this managed document ro
 ## Dedicated game servers
 
 Use LAN, direct private connections or publicly listed servers. Relay connections
-are disabled. See [Linux server setup](LINUX-SERVER.md). A private `admin_key` or
-`admin_key_file` enables trusted public dedicated-host registration. Private hosts
-need no service key. Do not reuse the database password as a service key.
+are disabled. See [Linux server setup](LINUX-SERVER.md). Public and room-code hosts require a cloud owner credential. A separate
+`admin_key` or `admin_key_file` enables verified results for approved hosts.
+Private hosts need no service key. Do not reuse the database password as a service key.
 
 ## Existing data and backups
 

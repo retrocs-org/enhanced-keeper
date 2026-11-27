@@ -24,6 +24,14 @@ bool use_player_storage(const std::string &folder){
  if(lstat(save.c_str(),&info)==0&&!S_ISDIR(info.st_mode))return false;
  if(!SDL_CreateDirectory(save.c_str())||setenv("KFX_PLAYER_PROFILE_DIR",folder.c_str(),1)!=0)return false;
  load_settings();
+ load_profile_display_preferences(path("macos-options.cfg").c_str());
+ if(default_profile_display>=0){
+    display_mode=saved_display_mode>=0?saved_display_mode:default_profile_display;
+    resolution_index=saved_display_mode>=0?saved_resolution:default_profile_resolution;
+    hud_scale=saved_hud_scale;
+    restore_profile_display=true;
+    pending_display=true;
+ }
  load_game_save_catalogue();
  scan_saves();
  return true;

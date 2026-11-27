@@ -10,6 +10,8 @@ void kfx_readiness_check(void);
 void kfx_readiness_override(void);
 void kfx_readiness_cancel(void);
 const char *kfx_readiness_report(void);
+const char *kfx_readiness_details(void);
+void kfx_readiness_content_masks(unsigned *passed,unsigned *failed);
 #ifdef __cplusplus
 }
 #endif

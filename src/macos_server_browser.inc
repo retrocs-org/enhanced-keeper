@@ -54,13 +54,23 @@ std::string browser_search,hub_edit,host_title="My Dungeon",host_address="127.0.
 std::string browser_store(const BrowserServer &s){return s.address+"\t"+s.name+"\t"+s.engine+"\t"+s.id+"\n";}
 bool browser_save(const char *file,const std::vector<BrowserServer> &rows){std::string body;for(size_t i=0;i<std::min(rows.size(),(size_t)32);i++)body+=browser_store(rows[i]);return write_small_file(path(file),body);}
 void browser_load(const char *file,std::vector<BrowserServer> &rows){FILE *f=fopen(path(file).c_str(),"r");if(!f)return;rows.clear();char line[512];while(rows.size()<32&&fgets(line,sizeof(line),f)){std::string s=line;size_t a=s.find('\t'),b=s.find('\t',a+1);if(a==std::string::npos||b==std::string::npos)continue;BrowserServer r;r.address=s.substr(0,a);r.name=s.substr(a+1,b-a-1);size_t extra=s.find('\t',b+1);r.engine=s.substr(b+1,extra==std::string::npos?std::string::npos:extra-b-1);if(extra!=std::string::npos){r.id=s.substr(extra+1);while(!r.id.empty()&&(r.id.back()=='\n'||r.id.back()=='\r'))r.id.pop_back();}while(!r.engine.empty()&&(r.engine.back()=='\n'||r.engine.back()=='\r'))r.engine.pop_back();r.kind="saved";rows.push_back(r);}fclose(f);}
-void browser_filter(){
+void browser_filter(bool preserve_selection){
+ const auto previous=preserve_selection&&browser_index>=0&&browser_index<(int)browser_servers.size()
+    ? browser_servers[browser_index] : BrowserServer{};
+
  browser_servers=browser_tab==0?public_servers:browser_tab==2?favourite_servers:browser_tab==3?recent_servers:std::vector<BrowserServer>{};
  if(browser_tab==1){lan_refresh_sessions();for(int i=0;i<lan_session_count&&i<LAN_SESSIONS_MAX;i++){BrowserServer s;s.name=lan_sessions[i].text;s.address=lan_sessions[i].join_address;if(s.address.rfind("LAN:",0)==0)s.address.erase(0,4);s.kind="LAN";browser_servers.push_back(s);}}
  std::string q=browser_search;std::transform(q.begin(),q.end(),q.begin(),[](unsigned char c){return std::tolower(c);});browser_servers.erase(std::remove_if(browser_servers.begin(),browser_servers.end(),[&](const BrowserServer &s){std::string text=s.name+" "+s.map+" "+s.region;std::transform(text.begin(),text.end(),text.begin(),[](unsigned char c){return std::tolower(c);});return text.find(q)==std::string::npos||(browser_compatible&&!supported_server_version(s));}),browser_servers.end());std::sort(browser_servers.begin(),browser_servers.end(),[](const BrowserServer &a,const BrowserServer &b){if(browser_sort==1){int x=browser_pings.count(a.address)&&browser_pings[a.address]>=0?browser_pings[a.address]:999999,y=browser_pings.count(b.address)&&browser_pings[b.address]>=0?browser_pings[b.address]:999999;if(x!=y)return x<y;}else if(browser_sort==2&&a.players!=b.players)return a.players>b.players;else if(browser_sort==3&&a.map!=b.map)return a.map<b.map;return a.name<b.name;});browser_index=std::clamp(browser_index,0,std::max(0,(int)browser_servers.size()-1));
+ if(!previous.address.empty()){
+    const auto match=std::find_if(browser_servers.begin(),browser_servers.end(),[&](const BrowserServer &server){
+        return previous.id.empty()?server.address==previous.address:server.id==previous.id;
+    });
+    if(match!=browser_servers.end())browser_index=static_cast<int>(match-browser_servers.begin());
+    else if(page==21){page=20;selected=0;}
+ }
  for(int i=(browser_index/3)*3;i<std::min((int)browser_servers.size(),(browser_index/3)*3+3);i++)if(!browser_pings.count(browser_servers[i].address)&&kfx_hub_probe(browser_servers[i].address.c_str()))browser_pings[browser_servers[i].address]=-2;
 }
-void browser_refresh(){if(browser_tab==0||browser_tab==2||browser_tab==3){if(!kfx_hub_request("servers","/api/servers",nullptr,0))hub_message="A community request is still running.";else hub_message="Refreshing directory...";}else{browser_filter();hub_message=browser_servers.empty()?"No servers found in this tab.":"Server list updated.";}}
+void browser_refresh(){if(browser_tab==0||browser_tab==2||browser_tab==3){if(!kfx_hub_request("servers","/api/servers",nullptr,0))hub_message="A community request is still running.";else hub_message="Refreshing directory...";}else{browser_filter(true);hub_message=browser_servers.empty()?"No servers found in this tab.":"Server list updated.";}}
 void browser_initialize(){kfx_hub_initialize(path("").c_str());browser_load("servers-favourites.cfg",favourite_servers);browser_load("servers-recent.cfg",recent_servers);size_t length=0;char *url=(char*)SDL_LoadFile(path("community-url.cfg").c_str(),&length);if(url){std::string value(url,length);SDL_free(url);kfx_hub_set_url(value.c_str());}}
 std::string settings_account, synced_settings, uploading_settings, incoming_settings;
 int settings_revision=-1, incoming_revision=-1;
@@ -161,7 +171,7 @@ std::string picker_session_id;
 
 std::vector<StartupProfile> startup_profiles;
 int startup_profile_offset=0;
-enum class ProfilePickerDialog { None, Edit, Delete };
+enum class ProfilePickerDialog { None, Delete };
 ProfilePickerDialog profile_picker_dialog=ProfilePickerDialog::None;
 StartupProfile managed_picker_profile{};
 bool picked_startup_cloud=false;
@@ -323,27 +333,6 @@ void finish_profile_management(const std::string &message)
     notice=message;
 }
 
-bool save_picker_profile_name()
-{
-    if(!profile_name_valid(new_profile)){
-        notice="Use 1-32 letters, numbers, underscores or hyphens.";
-        return false;
-    }
-    const auto folder=profile_folder(managed_picker_profile);
-    struct stat info{};
-    if(!profile_storage_safe()||lstat(folder.c_str(),&info)!=0||!S_ISDIR(info.st_mode)||
-       !write_small_file(folder+"/profile-name",new_profile+"\n")){
-        notice="Could not save the profile name.";
-        return false;
-    }
-    if(!active_startup_profile.cloud&&active_startup_profile.id==managed_picker_profile.id){
-        active_profile_name=active_startup_profile.name=new_profile;
-        snprintf(net_player_name,sizeof(net_player_name),"%s",new_profile.c_str());
-    }
-    finish_profile_management("Profile name saved.");
-    return true;
-}
-
 void archive_picker_profile()
 {
     const auto &profile=managed_picker_profile;
@@ -423,39 +412,21 @@ bool startup_profile_action(int action)
     if(page!=37)return false;
     if(profile_picker_dialog!=ProfilePickerDialog::None){
         if(action==901||action==2231){finish_profile_management("");return true;}
-        if(action==2230){
-            if(profile_picker_dialog==ProfilePickerDialog::Edit)save_picker_profile_name();
-            else archive_picker_profile();
-        }
-        if(action==2232&&profile_picker_dialog==ProfilePickerDialog::Edit){
-            start_edit(20);
-            notice.clear();
-        }
+        if(action==2230)archive_picker_profile();
         return true;
     }
-    if(action>=2240&&action<=2253&&action%10<4){
-        const auto index=static_cast<size_t>(startup_profile_offset+action%10);
+    if(action>=2250&&action<=2253){
+        const auto index=static_cast<size_t>(startup_profile_offset+action-2250);
         if(index>=startup_profiles.size())return true;
         managed_picker_profile=startup_profiles[index];
         notice.clear();
         editing=0;
         SDL_StopTextInput(SDL_GetKeyboardFocus());
-        if(action>=2250){
-            profile_picker_dialog=ProfilePickerDialog::Delete;
-            selected=0;focus_action=-1;
-        }else if(managed_picker_profile.cloud){
-            const auto url=std::string(kfx_hub_url())+"/index.php?route=%2Fprofile";
-            notice=SDL_OpenURL(url.c_str())?"Cloud profile settings opened in your browser.":"Could not open cloud profile settings.";
-        }else{
-            profile_picker_dialog=ProfilePickerDialog::Edit;
-            new_profile=managed_picker_profile.name;
-            selected=0;focus_action=-1;
-            start_edit(20);
-            notice.clear();
-        }
+        profile_picker_dialog=ProfilePickerDialog::Delete;
+        selected=0;focus_action=-1;
         return true;
     }
-    if(action==2200){cloud_login_rejected=false;open_panel(36);start_edit(14);return true;}
+    if(action==2200){hub_message.clear();cloud_login_rejected=false;open_panel(36);start_edit(14);return true;}
     if(action==2201){choosing_local_profile=true;new_profile.clear();start_edit(11);return true;}
     if(action==2202||action==2203){
         startup_profile_offset=std::clamp(startup_profile_offset+(action==2202?-4:4),0,
@@ -463,18 +434,10 @@ bool startup_profile_action(int action)
         selected=0;
         return true;
     }
-    if((action>=2210&&action<=2213)||(action>=2220&&action<=2223)){
-        const bool sign_in=action>=2220;
-        const auto index=static_cast<size_t>(startup_profile_offset+action-(sign_in?2220:2210));
+    if(action>=2210&&action<=2213){
+        const auto index=static_cast<size_t>(startup_profile_offset+action-2210);
         if(index>=startup_profiles.size())return true;
         const auto profile=startup_profiles[index];
-        if(sign_in){
-            cloud_name=profile.name.rfind("Cloud account ",0)==0?"":profile.name;
-            cloud_login_rejected=false;
-            open_panel(36);
-            start_edit(cloud_name.empty()?14:16);
-            return true;
-        }
         if(profile.cloud&&profile.id==picker_session_id&&picker_session==PickerSession::Checking){
             notice="Checking your cloud session. Please try again in a moment.";
             return true;
@@ -506,6 +469,24 @@ bool startup_profile_action(int action)
     return false;
 }
 
+void draw_profile_avatar(const StartupProfile &profile,SDL_Rect target)
+{
+    static SDL_Surface *avatars=nullptr;
+    if(!avatars)if(const char *resources=getenv("KFX_APP_RESOURCES"))
+        avatars=IMG_Load((std::string(resources)+"/avatar-presets.png").c_str());
+    if(!avatars)return;
+    unsigned avatar=profile.avatar;
+    if(!avatar){
+        avatar=1;
+        for(unsigned char c:profile.id)avatar=(avatar*17+c)%15;
+        ++avatar;
+    }
+    --avatar;
+    const SDL_Rect source={(int)(avatar%5)*avatars->w/5,(int)(avatar/5)*avatars->h/3,
+                           avatars->w/5,avatars->h/3};
+    blit_canvas(avatars,&source,target,SDL_SCALEMODE_LINEAR);
+}
+
 void startup_profile_draw()
 {
     if(page!=37)return;
@@ -513,58 +494,38 @@ void startup_profile_draw()
         button(x,y,width,label,action,static_cast<int>(hits.size())==selected,height);
     };
     if(profile_picker_dialog!=ProfilePickerDialog::None){
-        const bool remove=profile_picker_dialog==ProfilePickerDialog::Delete;
         frame(54,107,532,245,true);
-        centered(130,remove?"Delete "+managed_picker_profile.name+"?":"Edit Local Profile",23);
-        if(remove){
-            centered(184,managed_picker_profile.cloud?"Remove the saved sign-in and local copy.":"Move the profile, saves and settings to RemovedProfiles.",18);
-            if(managed_picker_profile.cloud)centered(214,"Your cloud account stays available online.",18);
-        }else{
-            control(91,176,458,new_profile+(editing==20?"|":""),2232,36);
-        }
+        centered(130,"Delete "+managed_picker_profile.name+"?",23);
+        centered(184,managed_picker_profile.cloud?"Remove the saved sign-in and local copy.":"Move the profile, saves and settings to RemovedProfiles.",18);
+        if(managed_picker_profile.cloud)centered(214,"Your cloud account stays available online.",18);
         control(90,269,216,"Cancel",2231,40);
-        control(334,269,216,remove?"Delete Profile":"Save Name",2230,40);
+        control(334,269,216,"Delete Profile",2230,40);
         if(!notice.empty())small_line(62,376,notice,516);
         return;
     }
     if(startup_profiles.empty())small_line(34,105,"Create a local profile or sign in to a cloud account.",572);
-    static SDL_Surface *avatars=nullptr;
-    if(!avatars)if(const char *resources=getenv("KFX_APP_RESOURCES"))
-        avatars=IMG_Load((std::string(resources)+"/avatar-presets.png").c_str());
     const int rows=std::min(4,std::max(0,(int)startup_profiles.size()-startup_profile_offset));
     for(int i=0;i<rows;++i){
         const auto &profile=startup_profiles[startup_profile_offset+i];
-        const int y=85+i*55;
-        const bool online=profile.cloud&&profile.id==picker_session_id&&picker_session==PickerSession::SignedIn;
-        const char *status=!profile.cloud?"Local":online?"Signed in":
-            profile.id!=picker_session_id||picker_session==PickerSession::NeedsSignIn?"Sign-in needed":
-            picker_session==PickerSession::Checking?"Checking session":"Offline copy";
-        control(34,y,256,short_text(profile.name,26),2210+i,32);
-        if(avatars){
-            unsigned avatar=profile.avatar;
-            if(!avatar){avatar=1;for(unsigned char c:profile.id)avatar=(avatar*17+c)%15;avatar++;}
-            --avatar;
-            const SDL_Rect source={(int)(avatar%5)*avatars->w/5,(int)(avatar/5)*avatars->h/3,avatars->w/5,avatars->h/3};
-            const SDL_Rect target={43,y+3,24,24};
-            SDL_BlitSurfaceScaled(avatars,&source,canvas,&target,SDL_SCALEMODE_LINEAR);
+        const int y=78+i*74;
+        frame(34,y,70,70);
+        draw_profile_avatar(profile,{37,y+3,64,64});
+        control(116,y+17,356,profile.name,2210+i,36);
+        std::string details=profile.date;
+        if(!profile.campaign.empty()){
+            if(!details.empty())details+=" / ";
+            details+=profile.campaign;
         }
-        const auto details=std::string(status)+" / "+(profile.date.empty()?"No play history":profile.date)+
-            (profile.campaign.empty()?"":" / "+profile.campaign);
-        small_line(43,y+32,details,550);
+        if(!details.empty())small_line(121,y+51,details,484);
     }
-    for(int i=0;i<rows;++i){
-        const auto &profile=startup_profiles[startup_profile_offset+i];
-        const int y=85+i*55;
-        if(profile.cloud&&(profile.id!=picker_session_id||picker_session!=PickerSession::SignedIn))
-            control(298,y,106,"Sign In",2220+i,32);
-        control(412,y,82,"Edit",2240+i,32);
-        control(502,y,104,"Delete",2250+i,32);
-    }
-    if(startup_profile_offset>0)control(34,308,130,"Previous",2202,30);
-    if(startup_profile_offset+4<(int)startup_profiles.size())control(476,308,130,"Next",2203,30);
-    control(34,356,278,editing==11?new_profile+"|":"Create Local Profile",2201);
-    control(328,356,278,"Sign In to Cloud",2200);
-    if(!notice.empty())small_line(34,415,notice,572);
+    for(int i=0;i<rows;++i)
+        control(484,95+i*74,122,"Delete",2250+i,36);
+    if(startup_profile_offset>0)control(34,373,130,"Previous",2202,30);
+    if(startup_profile_offset+4<(int)startup_profiles.size())control(476,373,130,"Next",2203,30);
+    control(34,408,228,editing==11?new_profile+"|":"Create Local Profile",2201,34);
+    control(274,408,228,"Sign In to Cloud",2200,34);
+    control(514,408,92,"Quit",2204,34);
+    if(!notice.empty())small_line(34,445,notice,572);
 }
 void community_request(){const char *routes[]={"/api/events","/api/friends","/api/matches","/api/challenges","/api/replays"};kfx_hub_request("community",routes[community_tab],nullptr,community_tab==1||community_tab==2?1:0);community_text="Loading...";community_offset=0;}
 std::future<std::pair<bool,std::string>> content_scan;std::string content_key,content_value,content_error,content_join_id;bool content_host=false;int content_join_action=0;bool publish_after_scan=false;
@@ -645,18 +606,10 @@ bool social_drawer_event(const SDL_Event *event)
     return true;
 }
 
-bool profile_bar_visible()
+bool can_switch_profile_from_main_menu()
 {
     return frontend_menu_state==FeSt_MAIN_MENU&&!startup_login&&!kfx_controller_guide_visible&&
         !active_profile_name.empty()&&!network_is_active()&&game.game_kind==GKind_Unset;
-}
-
-SDL_Rect profile_bar_rect()
-{
-    const int screen_width=RendererScreenWidth(),screen_height=RendererScreenHeight();
-    const int width=std::min(screen_width-16,640);
-    const int height=std::max(12,screen_height*22/480);
-    return {(screen_width-width)/2,screen_height/240,width,height};
 }
 
 void switch_player_profile()
@@ -673,56 +626,39 @@ void switch_player_profile()
     choose_startup_profile();
 }
 
-void profile_bar_action(int item)
+void active_profile_draw()
 {
-    if(item==0){open_panel(22);return;}
-    if(item==4){switch_player_profile();return;}
-    open_social_panel(item==3?7:item==1?0:1);
+    if(page!=41)return;
+    frame(88,123,464,212);
+    draw_profile_avatar(active_startup_profile,{112,146,88,88});
+    text(222,154,active_profile_name,24,306);
+    small_line(222,191,active_startup_profile.cloud?"Cloud profile":"Local profile",306);
+    button(112,266,200,"Logout",2263,selected==0,38);
+    button(328,266,200,"Quit Game",2204,selected==1,38);
 }
 
-void profile_bar_draw()
+bool active_profile_action(int action)
 {
-    if(!profile_bar_visible()||!winfont)return;
-    const auto bar=profile_bar_rect();
-    if(bar.w<16)return;
-    const int flags=RendererGetDrawFlags();
-    const auto unread=social_unread();
-    const std::string labels[]={short_text(active_profile_name,22),
-        "Friends","Party",unread?"Inbox ("+std::to_string(unread)+")":"Inbox","Switch Profile"};
-    for(int item=0;item<5;++item){
-        const int x=bar.x+bar.w*item/5,w=bar.w*(item+1)/5-bar.w*item/5;
-        RendererSetDrawFlags(0);
-        LbDrawBox(x,bar.y,w-2,bar.h,0);
-        LbTextSetFont(winfont);
-        const int units=std::clamp(bar.h*9/std::max(1,(int)LbTextLineHeight()),8,24);
-        LbTextSetWindow(x,bar.y+bar.h/4,w-2,bar.h);
-        RendererSetDrawFlags(Lb_TEXT_HALIGN_CENTER);
-        LbTextDrawResized(0,0,units,labels[item].c_str());
-    }
-    RendererSetDrawFlags(flags);
-}
-
-bool profile_bar_event(const SDL_Event *event)
-{
-    if(!profile_bar_visible())return false;
-    if(event->type==SDL_EVENT_KEY_DOWN&&event->key.key==SDLK_F6&&!event->key.repeat){
-        switch_player_profile();
+    if(action==2204&&(page==41||(page==37&&profile_picker_dialog==ProfilePickerDialog::None))){
+        close_panel();
+        frontend_set_state(FeSt_QUIT_GAME);
         return true;
     }
-    if(event->type!=SDL_EVENT_MOUSE_BUTTON_DOWN||event->button.button!=SDL_BUTTON_LEFT)return false;
-    auto *window=SDL_GetWindowFromID(event->button.windowID);
-    int width=0,height=0;
-    if(!window||!SDL_GetWindowSize(window,&width,&height)||width<=0||height<=0)return false;
-    const SDL_Point point={(int)(event->button.x*RendererScreenWidth()/width),
-                           (int)(event->button.y*RendererScreenHeight()/height)};
-    const auto bar=profile_bar_rect();
-    if(!SDL_PointInRect(&point,&bar))return false;
-    profile_bar_action(std::min(4,(point.x-bar.x)*5/bar.w));
+    if(page!=41)return false;
+    if(action==2263){switch_player_profile();return true;}
+    return false;
+}
+
+bool profile_switch_key_event(const SDL_Event *event)
+{
+    if(!can_switch_profile_from_main_menu()||event->type!=SDL_EVENT_KEY_DOWN||
+       event->key.key!=SDLK_F6||event->key.repeat)return false;
+    switch_player_profile();
     return true;
 }
 
-
 bool browser_join_blocked(const std::string &reason);
+int rejoin_seconds=0;
 void browser_tick(){
  if(frontend_menu_state==FeSt_MAIN_MENU)profile_game_recorded=false;
  if(!profile_game_recorded&&!active_startup_profile.id.empty()&&frontend_menu_state==FeSt_INITIAL&&
@@ -778,7 +714,10 @@ void browser_tick(){
   else if(!error.empty()){
    hub_message=error;
    if(tag=="room-code"&&page==11)notice=error;
-   if(tag=="join"&&kfx_hub_result_status()==401)hub_message="Cloud session expired. Sign in again.";
+   if(tag=="join"){
+    if(kfx_hub_result_status()==401)hub_message="Cloud session expired. Sign in again.";
+    browser_join_error=true;
+   }
    if((tag=="join"&&party_join_connecting)||(tag=="servers"&&!party_join_server.empty())){
     party_join_server.clear();
     party_join_result(hub_message);
@@ -799,7 +738,7 @@ void browser_tick(){
     const long status=kfx_hub_result_status();
     cloud_login_rejected=status==401;
     if(cloud_login_rejected)hub_message="Username, email, or password incorrect.";
-    else if(status==0)hub_message="Account service unreachable. Use a local or cached profile.";
+    else if(status==0)hub_message=error;
     else if(status>=500&&error.find("verification email")==std::string::npos)
         hub_message="Account service unavailable. Try again or play offline.";
     else hub_message=error;
@@ -808,7 +747,7 @@ void browser_tick(){
    if(tag=="community")community_text=error;
   }
   else if(tag.rfind("ping:",0)==0){browser_pings[hub_field(&d.root,"address")]=hub_integer(&d.root,"ping_ms");}
-  else if(tag=="servers"){public_servers.clear();const VALUE *list=value_dict_get(&d.root,"servers");for(size_t i=0;list&&i<std::min(value_array_size(list),(size_t)128);i++){const VALUE *r=value_array_get(list,i);      public_servers.push_back(browser_server_from_json(r));}for(auto *saved:{&favourite_servers,&recent_servers})for(auto &entry:*saved)for(const auto &fresh:public_servers)if(entry.address==fresh.address&&entry.name==fresh.name)entry=fresh;browser_filter();
+  else if(tag=="servers"){public_servers.clear();const VALUE *list=value_dict_get(&d.root,"servers");for(size_t i=0;list&&i<std::min(value_array_size(list),(size_t)128);i++){const VALUE *r=value_array_get(list,i);      public_servers.push_back(browser_server_from_json(r));}for(auto *saved:{&favourite_servers,&recent_servers})for(auto &entry:*saved)for(const auto &fresh:public_servers)if(entry.address==fresh.address&&entry.name==fresh.name)entry=fresh;browser_filter(true);browser_join_error=false;
     if(party_rematch_pending){
      party_rematch_pending=false;
      const auto next=std::find_if(public_servers.begin(),public_servers.end(),[](const BrowserServer &server){
@@ -836,6 +775,22 @@ void browser_tick(){
     party_join_result(party_notice);
     }
     hub_message=public_servers.empty()?"No public servers. LAN and direct play are available.":"Directory updated.";}
+  else if(tag=="rejoin-lobby"&&page==20){
+   const VALUE *row=value_dict_get(&d.root,"server");
+   rejoin_seconds=hub_integer(&d.root,"seconds_left");
+   if(!row||value_type(row)!=VALUE_DICT||rejoin_seconds<=0){
+      hub_message="No lobby seat is currently held for this account.";
+   }else{
+      const auto server=browser_server_from_json(row);
+      browser_filter();
+      auto existing=std::find_if(browser_servers.begin(),browser_servers.end(),[&](const BrowserServer &item){return item.id==server.id;});
+      if(existing==browser_servers.end()){browser_servers.push_back(server);browser_index=browser_servers.size()-1;}
+      else{*existing=server;browser_index=existing-browser_servers.begin();}
+      server_password.clear();browser_join_error=false;
+      open_panel(21);
+      hub_message="Seat held for up to "+std::to_string(rejoin_seconds)+" seconds. Choose Rejoin Lobby.";
+   }
+  }
   else if(tag=="room-code"){
    const VALUE *row=value_dict_get(&d.root,"server");
    if(!row||value_type(row)!=VALUE_DICT){notice="Room code did not return a lobby.";return;}
@@ -860,7 +815,8 @@ void browser_tick(){
     if(page==36){if(activate_cloud_storage()){
       StartupProfile profile{kfx_hub_account_id(),kfx_hub_account_name(),true,{},{},std::clamp(hub_integer(&d.root,"avatar"),0,15)};
       remember_profile(profile);
-      startup_login=false;close_panel();
+      startup_login=false;
+      close_panel();
     }else hub_message="Could not open the cloud profile on this Mac.";}
    }
   }
@@ -885,6 +841,7 @@ void browser_tick(){
 bool browser_join_blocked(const std::string &reason)
 {
     hub_message=reason;
+    browser_join_error=true;
     if(party_join_connecting){
         party_join_result(reason);
         party_notice=reason;
@@ -894,7 +851,7 @@ bool browser_join_blocked(const std::string &reason)
 }
 
 bool browser_action(int action){
- if(startup_profile_action(action)||party_action(action)||cloud_save_action(action))return true;
+ if(active_profile_action(action)||startup_profile_action(action)||party_action(action)||cloud_save_action(action))return true;
  if(action==2114||action==2115){
   if(!settings_conflict||settings_account!=kfx_hub_account_id())return true;
   if(game.game_kind!=GKind_Unset||network_is_active()){
@@ -911,7 +868,6 @@ bool browser_action(int action){
   return true;
  }
  if(action==2111){start_local_profile_picker();return true;}
- if(action==2106){remember_cloud=!remember_cloud;return true;}
  if(action==2112&&cloud_login_rejected&&page==36){
   cloud_create=true;
   cloud_login_rejected=false;
@@ -952,7 +908,6 @@ bool browser_action(int action){
    body+="}";
   }
   if(kfx_hub_request(tag.c_str(),route.c_str(),body.c_str(),0)){
-   kfx_hub_remember_session(remember_cloud);
    if(tag!="cloud-login"){cloud_password.clear();cloud_confirmation.clear();}
    hub_message="Contacting the account service...";
   }
@@ -968,7 +923,7 @@ bool browser_action(int action){
  }
  if(action==2000){page=20;selected=0;browser_tab=0;browser_filter();browser_refresh();return true;}
  if(action>=2001&&action<=2004){browser_tab=action-2001;browser_index=0;browser_filter();browser_refresh();return true;}
- if(action>=2010&&action<2013){int index=(browser_index/3)*3+action-2010;if(index<(int)browser_servers.size()){browser_index=index;server_password.clear();page=21;selected=0;}return true;}
+ if(action>=2010&&action<2013){int index=(browser_index/3)*3+action-2010;if(index<(int)browser_servers.size()){browser_index=index;rejoin_seconds=0;server_password.clear();browser_join_error=false;page=21;selected=0;}return true;}
  if(action==2090){
   open_folder(keeper_runtime_directory);
   hub_message="Game Data folder opened in Finder.";
@@ -979,20 +934,27 @@ bool browser_action(int action){
   return true;
  }
  if(action==2020){browser_refresh();return true;}
+ if(action==2029&&page==20){
+    if(!kfx_hub_has_session())hub_message="Sign in to check for a held lobby seat.";
+    else if(kfx_hub_request("rejoin-lobby","/api/rejoin-lobby",nullptr,1))hub_message="Checking for a held lobby seat...";
+    else hub_message="Wait for the current community request.";
+    return true;
+ }
+ if(action==2028&&page==21){page=20;selected=0;browser_refresh();return true;}
  if(action==2021){start_edit(6);return true;}
  if(action==2022){page=23;selected=0;return true;}
  if(action==2023){page=22;selected=0;return true;}
  if(action==2024){page=24;selected=0;community_request();return true;}
- if(action==2025){if(network_is_active()||game.game_kind==GKind_LocalGame){hub_message="Return to the main menu first.";return true;}page=11;selected=0;return true;}
+ if(action==2025){browser_listing_join=false;if(network_is_active()||game.game_kind==GKind_LocalGame){hub_message="Return to the main menu first.";return true;}page=11;selected=0;return true;}
  if(action==2027){browser_sort=(browser_sort+1)%4;browser_filter();return true;}
  if(action==2026){browser_compatible=!browser_compatible;browser_filter();return true;}
  if(action==2030||action==2031){browser_index=std::clamp(browser_index+(action==2030?-3:3),0,std::max(0,(int)browser_servers.size()-1));browser_filter();return true;}
- if(action==2040){if(browser_servers.empty())return true;const auto &s=browser_servers[browser_index];if(network_is_active()||game.game_kind==GKind_LocalGame){return browser_join_blocked("Return to the main menu before joining.");}if(!supported_server_version(s)){std::string requirement="Supported clients: ";
+ if(action==2040){browser_join_error=false;if(browser_servers.empty())return true;const auto &s=browser_servers[browser_index];if(s.status=="maintenance")return browser_join_blocked("Server is draining for maintenance.");if(network_is_active()||game.game_kind==GKind_LocalGame){return browser_join_blocked("Return to the main menu before joining.");}if(!supported_server_version(s)){std::string requirement="Supported clients: ";
 for(const auto &version:s.clients){if(requirement.size()>19)requirement+=", ";requirement+=version;}
 return browser_join_blocked(s.clients.empty()?"Supported engine: "+s.engine:requirement);}
 if(dedicated_listing(s)&&!kfx_hub_has_session()){return browser_join_blocked("Sign in with a cloud account to join.");}
 const auto missing=missing_server_assets();
-if(!missing.empty()){return browser_join_blocked("Missing "+missing);}if(!s.content.empty()){start_content_scan(s.map,false);if(content_scan.valid()){content_join_action=action;content_join_id=s.id;hub_message="Checking campaign, map, configuration and mods before joining...";return true;}if(!content_error.empty()){return browser_join_blocked(content_error);}if(content_value!=s.content){return browser_join_blocked("Content differs: campaign/map, configuration or mods. Use the host's content profile.");}}browser_join_id=s.id;browser_join_content=s.content.empty()?"":content_value;if(s.id.empty()){join_ip=s.address;pending_join=true;}else{std::string body="{\"content\":"+hub_quote(browser_join_content);if(s.kind=="listen")body+=",\"engine\":"+hub_quote(normalized_version(VER_STRING));body+="}";if(!kfx_hub_request("join",("/api/servers/"+s.id+"/join").c_str(),body.c_str(),1))return browser_join_blocked("Server request queue is full. Try again.");}recent_servers.erase(std::remove_if(recent_servers.begin(),recent_servers.end(),[&](const BrowserServer &r){return r.address==s.address;}),recent_servers.end());recent_servers.insert(recent_servers.begin(),s);if(recent_servers.size()>32)recent_servers.resize(32);browser_save("servers-recent.cfg",recent_servers);return true;}
+if(!missing.empty()){return browser_join_blocked("Missing "+missing);}if(!s.content.empty()){start_content_scan(s.map,false);if(content_scan.valid()){content_join_action=action;content_join_id=s.id;hub_message="Checking campaign, map, configuration and mods before joining...";return true;}if(!content_error.empty()){return browser_join_blocked(content_error);}if(content_value!=s.content){return browser_join_blocked("Content differs: campaign/map, configuration or mods. Use the host's content profile.");}}browser_join_id=s.id;browser_listing_join=true;browser_join_content=s.content.empty()?"":content_value;if(s.id.empty()){join_ip=s.address;pending_join=true;}else{std::string body="{\"content\":"+hub_quote(browser_join_content);if(s.kind=="listen")body+=",\"engine\":"+hub_quote(normalized_version(VER_STRING));body+="}";if(!kfx_hub_request("join",("/api/servers/"+s.id+"/join").c_str(),body.c_str(),1))return browser_join_blocked("Server request queue is full. Try again.");}recent_servers.erase(std::remove_if(recent_servers.begin(),recent_servers.end(),[&](const BrowserServer &r){return r.address==s.address;}),recent_servers.end());recent_servers.insert(recent_servers.begin(),s);if(recent_servers.size()>32)recent_servers.resize(32);browser_save("servers-recent.cfg",recent_servers);return true;}
  if(action==2044){start_edit(10);return true;}
  if(action==2045&&!browser_servers.empty()){if(network_is_active()||game.game_kind==GKind_LocalGame){hub_message="Return to the main menu before spectating.";return true;}kfx_hub_request("spectate-start",("/api/servers/"+browser_servers[browser_index].id+"/spectate").c_str(),nullptr,0);return true;}
  if(action==2042&&!browser_servers.empty()){BrowserServer s=browser_servers[browser_index];auto i=std::find_if(favourite_servers.begin(),favourite_servers.end(),[&](const BrowserServer &v){return v.address==s.address;});if(i==favourite_servers.end())favourite_servers.push_back(s);else favourite_servers.erase(i);hub_message=browser_save("servers-favourites.cfg",favourite_servers)?"Favourites updated.":"Could not save favourites. Check folder permissions.";browser_filter();return true;}
@@ -1020,6 +982,7 @@ if(!missing.empty()){return browser_join_blocked("Missing "+missing);}if(!s.cont
 }
 void browser_draw(){
  startup_profile_draw();
+ active_profile_draw();
  if(page==36){
   if(!cloud_ticket.empty()){
    button(24,135,592,"Code: "+cloud_code+(editing==17?"|":""),2107,selected==0,42);
@@ -1038,14 +1001,13 @@ void browser_draw(){
     button(104,274,432,"Confirm password "+masked(cloud_confirmation)+(editing==18?"|":""),2108,selected==3,38);
     button(104,325,432,"Send Verification Code",2105,selected==4,42);
    }else{
-    button(176,244,288,remember_cloud?"Remember Me: On":"Remember Me: Off",2106,selected==2,34);
     if(cloud_login_rejected){
-     button(104,291,204,"Try Again",2105,selected==3,43);
-     button(320,291,216,"Create Account",2112,selected==4,43);
-    }else button(104,291,432,"Sign In or Create Account",2105,selected==3,43);
+     button(104,253,204,"Try Again",2105,selected==2,43);
+     button(320,253,216,"Create Account",2112,selected==3,43);
+    }else button(104,253,432,"Sign In or Create Account",2105,selected==2,43);
     if(!startup_login){
         const bool cached=kfx_hub_session_remembered();
-        const int local_index=cloud_login_rejected?5:4;
+        const int local_index=cloud_login_rejected?4:3;
         button(104,347,cached?210:432,"Use a Local Profile",2111,selected==local_index,38);
         if(cached)button(326,347,210,"Use Cached Profile",2116,selected==local_index+1,38);
     }
@@ -1066,14 +1028,14 @@ void browser_draw(){
        std::to_string(browser_pings[server.address])+" ms":"Ping unavailable";
    button(24,138+i*65,592,server.name+"  "+std::to_string(server.players)+"/"+std::to_string(server.capacity),2010+i,selected==i,35);
    small_line(36,174+i*65,std::string(type)+"  /  "+(server.map.empty()?"Map pending":server.map)
-       +"  /  "+(server.status=="playing"?"In progress":"Lobby")+(server.password?"  /  Password":""),568);
+       +"  /  "+(server.status=="maintenance"?"Maintenance":server.status=="playing"?"In progress":"Lobby")+(server.password?"  /  Password":""),568);
    small_line(36,188+i*65,server.engine+"  /  "+server.region+"  /  "+ping,568);
   }
   if(browser_servers.empty())centered(228,hub_message=="Refreshing directory..."?hub_message:"No public servers found.",22);
   button(24,341,108,"Prev",2030,selected==3,34);button(144,341,108,"Next",2031,selected==4,34);
   button(264,341,108,"Refresh",2020,selected==5,34);button(384,341,108,"Host",2022,selected==6,34);
   button(504,341,112,"Account",2023,selected==7,34);
-  button(24,382,184,"Community",2024,selected==8,32);button(228,382,184,"Direct Connect",2025,selected==9,32);button(432,382,184,social_unread()==0?"Friends and Party":"Social ("+std::to_string(social_unread())+")",2120,selected==13,32);
+  button(24,382,134,"Community",2024,selected==8,32);button(176,382,134,"Direct Connect",2025,selected==9,32);button(328,382,134,"Rejoin Lobby",2029,selected==14,32);button(480,382,136,social_unread()==0?"Friends and Party":"Social ("+std::to_string(social_unread())+")",2120,selected==13,32);
  }else if(page==21&&!browser_servers.empty()){const auto &s=browser_servers[browser_index];centered(88,s.name,24);small_line(24,126,s.address+" / "+s.engine,592);small_line(24,149,s.map+" / "+s.region+(s.password?" / Password required":""),592);
     const auto missing=missing_server_assets();
     const std::string version_status=!supported_server_version(s)?"Your client version is unsupported":
@@ -1081,8 +1043,9 @@ void browser_draw(){
     small_line(24,170,version_status,592);
     small_line(24,191,missing.empty()?"Required sprite archives present":"Missing "+missing,592);
     if(dedicated_listing(s))small_line(24,212,kfx_hub_has_session()?"Cloud sign-in present":"Cloud sign-in required",592);
-    button(64,235,512,"Password: "+std::string(server_password.size(),'*'),2044,selected==0,32);button(64,272,512,"Join Server",2040,selected==1,38);button(64,315,250,"Toggle Favourite",2042,selected==2,38);button(323,315,139,"Copy Address",2043,selected==3,38);button(470,315,106,"Spectate",2045,selected==4,38);if(hub_message.rfind("Cloud session expired",0)==0)button(64,368,512,"Sign In Again",2113,selected==5,38);else if(hub_message.rfind("Lobby is full",0)==0||hub_message.rfind("Match already started",0)==0)button(64,368,512,"Find Another Server",2000,selected==5,38);else if(hub_message.rfind("Missing ",0)==0)button(64,368,512,"Open Game Data Folder",2090,selected==5,38);
-    else if(hub_message.rfind("Supported ",0)==0)button(64,368,512,"Open Client Downloads",2091,selected==5,38);
+    button(64,235,512,"Password: "+std::string(server_password.size(),'*'),2044,selected==0,32);button(64,272,512,browser_join_error?"Retry Join":rejoin_seconds?"Rejoin Lobby":"Join Server",2040,selected==1,38);button(64,315,250,"Toggle Favourite",2042,selected==2,38);button(323,315,139,"Copy Address",2043,selected==3,38);button(470,315,106,"Spectate",2045,selected==4,38);if(hub_message.rfind("Cloud session expired",0)==0||hub_message.rfind("Sign in with a cloud account",0)==0)button(64,368,512,"Sign In Again",2113,selected==5,38);else if(hub_message.rfind("Lobby is full",0)==0||hub_message.rfind("Match already started",0)==0)button(64,368,512,"Refresh Server List",2028,selected==5,38);else if(hub_message.rfind("Missing ",0)==0)button(64,368,512,"Open Game Data Folder",2090,selected==5,38);
+    else if(hub_message.rfind("Supported ",0)==0)button(64,368,512,"Get Compatible Client",2091,selected==5,38);
+    else if(browser_join_error)button(64,368,512,"Refresh Server List",2028,selected==5,38);
     else if(party_owner()&&!s.id.empty()){if(s.voting)button(326,368,250,"Vote on Map",2138,selected==5,38);button(64,368,s.voting?250:512,party.target.id==s.id&&party.target_blocker.empty()?"View Party Readiness":"Check Party Readiness",2121,selected==(s.voting?6:5),38);}
  }else if(page==22&&settings_conflict){
   centered(100,"Settings changed on both devices",22);
@@ -1107,8 +1070,8 @@ void coop_lobby_draw()
     const auto server=std::find_if(public_servers.begin(),public_servers.end(),[](const BrowserServer &row){
         return row.id==browser_join_id;
     });
-    if(server==public_servers.end()||server->ai_style.empty())return;
-    const std::string summary=server->map+" / Humans vs "+server->ai_style+" AI";
+    if(server==public_servers.end()||!dedicated_listing(*server))return;
+    const std::string summary=server->map+(server->ai_style.empty()?"":" / Humans vs "+server->ai_style+" AI");
     const int width=RendererScreenWidth();
     const int flags=RendererGetDrawFlags();
     LbTextSetFont(winfont);
@@ -1135,7 +1098,7 @@ void coop_lobby_draw()
 
 bool browser_join_failed(){
  const char *reason=kfx_join_failure_reason[0]?kfx_join_failure_reason:"Connection failed. Retry from the server browser.";
- if(!party_join_connecting){open_panel(browser_join_id.empty()?11:21);notice=reason;}
+ if(!party_join_connecting){open_panel(browser_listing_join?21:11);notice=reason;}
  return browser_join_blocked(reason);
 }
 

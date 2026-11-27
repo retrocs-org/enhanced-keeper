@@ -126,10 +126,10 @@ bool feature_event(const SDL_Event *event){
     return false;
 }
 void wheel_draw(){
-    if(!canvas)canvas=SDL_CreateSurface(WIDTH,HEIGHT,SDL_PIXELFORMAT_RGBA32);if(!canvas)return;
+    if(!ensure_options_canvas())return;
     SDL_FillSurfaceRect(canvas,nullptr,SDL_MapSurfaceRGBA(canvas,0,0,0,170));hits.clear();
     const char *names[]={"Rooms","Spells","Map","Heart","Battle","Units","Traps","Cancel"};const int positions[][2]={{245,62},{410,105},{440,222},{410,335},{245,378},{80,335},{50,222},{80,105}};
     for(int i=0;i<8;i++)button(positions[i][0],positions[i][1],150,names[i],1200+i,wheel_choice==i,40);
     frame(210,185,220,106);text(226,196,"Quick Menu",22,188);text(226,236,"Left stick",18,188);text(226,265,"Release R3",18,188);
-    int w=RendererScreenWidth(),h=RendererScreenHeight();double scale=std::min(w/(double)WIDTH,h/(double)HEIGHT);RendererPresentImageDesc desc={};desc.dst_w=WIDTH*scale;desc.dst_h=HEIGHT*scale;desc.dst_x=(w-desc.dst_w)/2;desc.dst_y=(h-desc.dst_h)/2;desc.src=(const unsigned char*)canvas->pixels;desc.src_pitch=canvas->pitch;desc.src_w=WIDTH;desc.src_h=HEIGHT;desc.format=PRESENT_FORMAT_RGBA8;desc.kind=PRESENT_KIND_TRANSPARENT;desc.filter=PRESENT_FILTER_NEAREST;desc.exclusive=0;RendererPresentImage(&desc);
+    int w=RendererScreenWidth(),h=RendererScreenHeight();double scale=std::min(w/(double)WIDTH,h/(double)HEIGHT);RendererPresentImageDesc desc={};desc.dst_w=WIDTH*scale;desc.dst_h=HEIGHT*scale;desc.dst_x=(w-desc.dst_w)/2;desc.dst_y=(h-desc.dst_h)/2;desc.src=(const unsigned char*)canvas->pixels;desc.src_pitch=canvas->pitch;desc.src_w=canvas->w;desc.src_h=canvas->h;desc.format=PRESENT_FORMAT_RGBA8;desc.kind=PRESENT_KIND_TRANSPARENT;desc.filter=PRESENT_FILTER_NEAREST;desc.exclusive=0;RendererPresentImage(&desc);
 }

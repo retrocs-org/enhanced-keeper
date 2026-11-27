@@ -23,6 +23,7 @@
 #include "bflib_video.h"
 #include "bflib_inputctrl.h"
 #include "front_landview.h"
+#include "front_network.h"
 #include "frontend.h"
 #include "game_legacy.h"
 #include "keeperfx.hpp"
@@ -164,6 +165,7 @@ static TbError handle_chat_message(NetUserId source, char *read_pos, size_t mess
         process_gameplay_chat_message(sender, message);
     } else {
         if(strncmp(message,"KFXH_ID1|",9)==0){if(network_is_host()&&source==sender&&sender>0&&sender<MAX_NET_USERS)kfx_hub_receive_identity(sender,message+9);}
+        else if(kfx_lobby_ready_message(source,sender,message))return Lb_OK;
         else if(!kfx_readiness_message(source,sender,message))process_frontend_chat_message(sender, message);
     }
     if (netstate.my_id == SERVER_ID && source != SERVER_ID) {

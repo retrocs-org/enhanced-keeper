@@ -80,6 +80,18 @@ unsigned short units_per_pixel_menu;
 unsigned short units_per_pixel_landview;
 unsigned short units_per_pixel_landview_frame;
 unsigned short units_per_pixel_ui;
+#if defined(__APPLE__)
+static int macos_hud_scale = 100;
+
+void set_macos_hud_scale(int percent)
+{
+    macos_hud_scale = percent;
+    // The original HUD is 400 units tall, including the minimap and bottom row.
+    long fit = (MyScreenHeight * 16L) / 400;
+    long scaled = (units_per_pixel_best * (long)percent + 50) / 100;
+    units_per_pixel_ui = percent == 100 ? units_per_pixel_best : max(1, min(fit, scaled));
+}
+#endif
 unsigned long aspect_ratio_factor_HOR_PLUS;
 unsigned long aspect_ratio_factor_HOR_PLUS_AND_VERT_PLUS;
 unsigned long first_person_horizontal_fov;
@@ -763,6 +775,10 @@ TbBool update_screen_mode_data(long width, long height)
   // In-game scaling: UI (for the side bar menu and escape menu)
   long ui_scale = UI_NORMAL_SIZE; // UI_NORMAL_SIZE, UI_HALF_SIZE, or UI_DOUBLE_SIZE (not fully implemented yet)
   units_per_pixel_ui = resize_ui(units_per_pixel_best, ui_scale);
+#if defined(__APPLE__)
+  if (macos_hud_scale != 100)
+      set_macos_hud_scale(macos_hud_scale);
+#endif
 
   // In-game scaling: Posession Mode (a 3D 1st person perspective camera)
   calculate_aspect_ratio_factor(width, height);

@@ -16,6 +16,7 @@ void kfx_options_recover_display(void);
 int kfx_options_confirm_display(int keep);
 int kfx_options_set_display(int fullscreen,int width,int height);
 int kfx_options_startup_pending(void);
+const char *kfx_options_profile_name(void);
 void kfx_options_show_page(int page);
 void kfx_options_preview(int page);
 void kfx_options_open(struct GuiButton *button);

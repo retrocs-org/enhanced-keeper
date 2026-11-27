@@ -22,8 +22,19 @@
 #include "keeper_release.h"
 #if defined(__APPLE__) || defined(_WIN32)
 #include "macos_game_options.h"
+#include "macos_readiness.h"
+#include "net_hub.h"
+#include <string>
+#include <cstdio>
+#include <cstring>
+#if defined(_WIN32)
+#include "json-dom.h"
+#include "net_main.h"
+#endif
 #include <SDL3/SDL.h>
 #include <algorithm>
+#include <ctime>
+#include <sys/stat.h>
 #include <cmath>
 #include <vector>
 #endif
@@ -114,32 +125,529 @@ MenuID vid_change_query_menu = GMnu_CREATURE_QUERY1;
 TbBool right_click_tag_mode_toggle = false;
 unsigned char default_tag_mode = 1;
 
-#ifdef __APPLE__
-static void frontend_switch_profile(struct GuiButton *)
+#if defined(__APPLE__)
+static char continue_summary[256];
+
+static void refresh_continue_summary()
 {
-    kfx_options_show_page(40);
+    continue_summary[0] = 0;
+    if (!continue_game_option_available)
+        return;
+    struct stat info{};
+    char saved_at[32] = {};
+    if (stat(prepare_file_path(FGrp_Save, continue_game_filename), &info) == 0)
+    {
+        struct tm local{};
+        if (localtime_r(&info.st_mtime, &local))
+            strftime(saved_at, sizeof(saved_at), "%Y-%m-%d %H:%M", &local);
+    }
+    const auto level = get_continue_level_number();
+    char progress[32];
+    if (level == SINGLEPLAYER_FINISHED)
+        snprintf(progress, sizeof(progress), "Completed");
+    else
+        snprintf(progress, sizeof(progress), "Level %d", static_cast<int>(level));
+    snprintf(continue_summary, sizeof(continue_summary), "%.80s / %s%s%s",
+        campaign.name, progress, *saved_at ? " / " : "", saved_at);
 }
 
-static void frontend_draw_switch_profile(struct GuiButton *button)
+static void frontend_draw_continue_details(struct GuiButton *button)
 {
-    frontend_draw_button(button, 0, "Switch Profile", Lb_TEXT_HALIGN_CENTER);
+    frontend_draw_large_menu_button(button);
+    if (!*continue_summary)
+        return;
+    LbTextSetFont(frontend_font[2]);
+    const int height = std::max(1, button->height / 4);
+    const int units = std::max(1, height * 16 / std::max(1, static_cast<int>(LbTextLineHeight())));
+    const unsigned int flags = RendererGetDrawFlags();
+    RendererSetDrawFlags(Lb_TEXT_HALIGN_CENTER);
+    LbTextSetWindow(button->scr_pos_x, button->scr_pos_y + button->height - height,
+        button->width, height);
+    LbTextDrawResized(0, 0, units, continue_summary);
+    RendererSetDrawFlags(flags);
 }
+
+enum MainProfileButton { ViewProfileButton = 115, LogoutProfileButton };
+
+static void frontend_open_profile(struct GuiButton *)
+{
+    if (*kfx_options_profile_name())
+        kfx_options_show_page(41);
+}
+
+static void frontend_logout_profile(struct GuiButton *)
+{
+    if (*kfx_options_profile_name())
+        kfx_options_show_page(40);
+}
+
+static void frontend_draw_profile_button(struct GuiButton *button)
+{
+    if (!*kfx_options_profile_name())
+        return;
+    const char *caption = button->content.lval == ViewProfileButton ? "Profile" : "Logout";
+    frontend_draw_button(button, 0, caption, Lb_TEXT_HALIGN_CENTER);
+}
+#endif
+
+#if defined(__APPLE__) || defined(_WIN32)
+#if defined(_WIN32)
+extern const char *kfx_join_failure_reason;
+static std::string windows_pair_code, windows_device_code, windows_rejoin_notice;
+static Uint64 windows_pair_poll, windows_pair_deadline;
+static char windows_lobby_password[sizeof(netstate.password)];
+
+struct WindowsLobby {
+    std::string id,name,endpoint,versions,status;
+    int ping=-1;
+    bool compatible=false,password=false;
+};
+static std::vector<WindowsLobby> windows_lobbies;
+static size_t windows_lobby_offset, windows_lobby_selected;
+static bool windows_password_editing,windows_join_pending;
+static std::string windows_browser_notice;
+
+static const VALUE *win_value(const VALUE *root,const char *key)
+{
+    return root?value_dict_get(root,key):nullptr;
+}
+
+static std::string win_string(const VALUE *root,const char *key)
+{
+    const auto *value=win_value(root,key);
+    return value&&value_type(value)==VALUE_STRING?value_string(value):"";
+}
+
+static void windows_public_directory(const VALUE *root)
+{
+    const auto *list=win_value(root,"servers");
+    const std::string selected=windows_lobby_selected<windows_lobbies.size()?
+        windows_lobbies[windows_lobby_selected].id:"";
+    windows_lobbies.clear();
+    for(size_t i=0;list&&value_type(list)==VALUE_ARRAY&&i<value_array_size(list)&&i<128;++i){
+        const auto *entry=value_array_get(list,i);
+        const auto kind=win_string(entry,"kind");
+        if(kind!="dedicated"&&kind!="community")continue;
+        WindowsLobby lobby;
+        lobby.id=win_string(entry,"id");lobby.name=win_string(entry,"name");
+        lobby.endpoint=win_string(entry,"endpoint");lobby.status=win_string(entry,"status");
+        if(lobby.id.size()!=24||lobby.endpoint.empty())continue;
+        const auto *password=win_value(entry,"password");
+        lobby.password=password&&((value_type(password)==VALUE_BOOL&&value_bool(password))||
+            (value_type(password)==VALUE_INT32&&value_int32(password)>0));
+        const auto *versions=win_value(entry,"client_versions");
+        for(size_t v=0;versions&&value_type(versions)==VALUE_ARRAY&&v<value_array_size(versions);++v){
+            const auto *version=value_array_get(versions,v);
+            if(!version||value_type(version)!=VALUE_STRING)continue;
+            const std::string number=value_string(version);
+            if(!lobby.versions.empty())lobby.versions+=", ";
+            lobby.versions+=number;
+            lobby.compatible|=number==KFX_APP_VERSION;
+        }
+        if(lobby.versions.empty())lobby.versions="Unknown";
+        windows_lobbies.push_back(std::move(lobby));
+    }
+    auto found=std::find_if(windows_lobbies.begin(),windows_lobbies.end(),[&](const auto &row){return row.id==selected;});
+    windows_lobby_selected=found==windows_lobbies.end()?0:found-windows_lobbies.begin();
+    windows_lobby_offset=(windows_lobby_selected/3)*3;
+    windows_browser_notice=windows_lobbies.empty()?"No public dedicated lobbies.":"Choose a public lobby.";
+}
+
+static void windows_browser_probe()
+{
+    for(size_t i=windows_lobby_offset;i<windows_lobbies.size()&&i<windows_lobby_offset+3;++i)
+        if(windows_lobbies[i].ping==-1&&kfx_hub_probe(windows_lobbies[i].endpoint.c_str()))
+            windows_lobbies[i].ping=-2;
+}
+
+static void windows_public_open(struct GuiButton *)
+{
+    turn_on_menu(GMnu_FEPUBLIC_LOBBIES);
+    windows_browser_notice="Loading public lobbies...";
+    kfx_hub_request("windows-directory","/api/servers",nullptr,0);
+}
+
+static void windows_public_action(struct GuiButton *button)
+{
+    const auto action=button->btype_value;
+    if(windows_join_pending&&action!=9)return;
+    if(action<=2){
+        const size_t index=windows_lobby_offset+action;
+        if(index!=windows_lobby_selected)windows_lobby_password[0]=0;
+        if(index<windows_lobbies.size())windows_lobby_selected=index;
+    }else if(action==3||action==4){
+        if(action==3&&windows_lobby_offset>=3)windows_lobby_offset-=3;
+        if(action==4&&windows_lobby_offset+3<windows_lobbies.size())windows_lobby_offset+=3;
+    }else if(action==5){
+        if(kfx_hub_request("windows-directory","/api/servers",nullptr,0))windows_browser_notice="Loading public lobbies...";
+    }else if(action==6&&windows_lobby_selected<windows_lobbies.size()){
+        const auto &lobby=windows_lobbies[windows_lobby_selected];
+        if(lobby.password){
+            windows_password_editing=true;
+            windows_browser_notice="Enter the lobby password. Enter to finish.";
+        }
+    }else if(action==7&&windows_lobby_selected<windows_lobbies.size()){
+        const auto &lobby=windows_lobbies[windows_lobby_selected];
+        if(!kfx_hub_has_session()){windows_browser_notice="Sign in to your cloud account first.";return;}
+        if(!lobby.compatible){windows_browser_notice="This server has not listed this client version.";return;}
+        if(lobby.status!="lobby"){windows_browser_notice="This lobby is unavailable.";return;}
+        if(lobby.password&&!windows_lobby_password[0]){windows_browser_notice="Enter the lobby password first.";return;}
+        const std::string route="/api/servers/"+lobby.id+"/join";
+        windows_join_pending=kfx_hub_request("windows-public-join",route.c_str(),"{}",1);
+        if(windows_join_pending)windows_browser_notice="Requesting a lobby seat...";
+    }else if(action==8){
+        if(!kfx_hub_has_session()&&!kfx_hub_busy())kfx_hub_request("pair-start","/api/device/start","{}",0);
+        if(!windows_pair_code.empty()) SDL_OpenURL((std::string(kfx_hub_url())+"/index.php?route=%2Fdevice").c_str());
+    }else if(action==9){
+        windows_join_pending=windows_password_editing=false;
+        std::memset(windows_lobby_password,0,sizeof(windows_lobby_password));
+        turn_off_menu(GMnu_FEPUBLIC_LOBBIES);
+    }
+}
+
+static void windows_public_draw(struct GuiButton *button)
+{
+    std::string label;
+    const auto action=button->btype_value;
+    if(action<=2){
+        const size_t index=windows_lobby_offset+action;
+        if(index>=windows_lobbies.size())return;
+        const auto &lobby=windows_lobbies[index];
+        label=(windows_lobby_selected==index?"> ":"")+lobby.name;
+        if(lobby.ping>=0)label+=" / "+std::to_string(lobby.ping)+" ms";
+        label+=" / "+(lobby.compatible?std::string("Compatible"):std::string("Check version"));
+    }else if(action==6){
+        label=windows_password_editing||windows_lobby_password[0]?
+            "Password: "+std::string(std::strlen(windows_lobby_password),'*'):"Password";
+    }else if(action==8){
+        label=kfx_hub_has_session()?"Cloud linked":windows_pair_code.empty()?"Cloud Sign In":"Code "+windows_pair_code;
+    }else if(action==11){
+        if(windows_lobby_selected>=windows_lobbies.size())return;
+        const auto &lobby=windows_lobbies[windows_lobby_selected];
+        label="Clients: "+lobby.versions+" / "+lobby.status;
+    }else if(action==12)label=windows_browser_notice;
+    else{
+        const char *const labels[]={"Previous","Next","Refresh","Password","Join","Cloud Sign In","Back","Public Lobbies"};
+        label=labels[action-3];
+    }
+    if(action==11||action==12){
+        LbTextSetFont(frontend_font[2]);
+        const int height=std::max(1,static_cast<int>(LbTextLineHeight()));
+        LbTextSetWindow(button->scr_pos_x,button->scr_pos_y,button->width,button->height);
+        RendererSetDrawFlags(Lb_TEXT_HALIGN_CENTER);
+        LbTextDrawResized(0,0,button->height*16/height,label.c_str());
+        return;
+    }
+    frontend_draw_button(button,action<=2||action==10?1:0,label.c_str(),Lb_TEXT_HALIGN_CENTER);
+}
+
+static void windows_public_input()
+{
+    if(!windows_password_editing)return;
+    if(lbInkey==KC_RETURN||lbInkey==KC_ESCAPE){
+        if(lbInkey==KC_ESCAPE)std::memset(windows_lobby_password,0,sizeof(windows_lobby_password));
+        windows_password_editing=false;
+        windows_browser_notice="Choose Join.";
+    }else if(lbInkey==KC_BACK){
+        const size_t length=std::strlen(windows_lobby_password);
+        if(length){
+            size_t index=length-1;
+            while(index&&((unsigned char)windows_lobby_password[index]&0xc0)==0x80)--index;
+            windows_lobby_password[index]=0;
+        }
+        clear_key_pressed(KC_BACK);
+    }else{
+        add_input_text_to_message(windows_lobby_password,sizeof(windows_lobby_password),frontend_font[1],370);
+    }
+    lbInkey=KC_UNASSIGNED;
+}
+
+#define WIN_PUBLIC_BUTTON(action,x,y,w,h) { LbBtnT_NormalBtn,BID_DEFAULT,0,0,windows_public_action,NULL,frontend_over_button,action,x,y,x,y,w,h,windows_public_draw,0,GUIStr_Empty,0,{15},0,NULL }
+static struct GuiButtonInit windows_public_buttons[]={
+    WIN_PUBLIC_BUTTON(10,134,25,371,46),
+    WIN_PUBLIC_BUTTON(0,134,91,371,46),
+    WIN_PUBLIC_BUTTON(1,134,141,371,46),
+    WIN_PUBLIC_BUTTON(2,134,191,371,46),
+    WIN_PUBLIC_BUTTON(3,86,268,140,26),
+    WIN_PUBLIC_BUTTON(4,250,268,140,26),
+    WIN_PUBLIC_BUTTON(5,414,268,140,26),
+    WIN_PUBLIC_BUTTON(6,86,321,140,26),
+    WIN_PUBLIC_BUTTON(7,250,321,140,26),
+    WIN_PUBLIC_BUTTON(8,414,321,140,26),
+    WIN_PUBLIC_BUTTON(9,250,415,140,26),
+    WIN_PUBLIC_BUTTON(11,50,244,540,16),
+    WIN_PUBLIC_BUTTON(12,50,368,540,20),
+    {-1,BID_DEFAULT,0,0,NULL,NULL,NULL,0,0,0,0,0,0,0,NULL,0,GUIStr_Empty,0,{0},0,NULL},
+};
+#undef WIN_PUBLIC_BUTTON
+static struct GuiMenu windows_public_menu={
+    GMnu_FEPUBLIC_LOBBIES,0,1,windows_public_buttons,POS_SCRCTR,POS_SCRCTR,640,480,
+    NULL,0,NULL,NULL,0,1,0,
+};
+
+static void windows_join_held_lobby(const char *endpoint,const char *ticket)
+{
+    if(!std::strlen(endpoint)||std::strlen(endpoint)>=sizeof(TbNetworkSessionNameEntry::join_address)-4||
+       std::strlen(ticket)!=43||network_is_active()){
+        windows_rejoin_notice="Could not rejoin lobby";
+        return;
+    }
+    LbNetwork_Stop();
+    if(!setup_network_service(FrontendNetSvc_LAN)){
+        windows_rejoin_notice="Network setup failed";
+        return;
+    }
+    frontnet_service_setup();
+    frontnet_session_setup();
+    std::snprintf(net_player_name,sizeof(net_player_name),"%s",kfx_hub_account_name());
+    std::snprintf(netstate.password,sizeof(netstate.password),"%s",windows_lobby_password);
+    static TbNetworkSessionNameEntry direct={};
+    direct.in_use=1;
+    direct.joinable=1;
+    std::snprintf(direct.join_address,sizeof(direct.join_address),"LAN:%s",endpoint);
+    std::snprintf(direct.text,sizeof(direct.text),"%s",endpoint);
+    net_session[0]=&direct;
+    net_number_of_sessions=1;
+    net_session_index_active=0;
+    kfx_hub_set_login_ticket(ticket);
+    frontnet_session_join(nullptr);
+    kfx_hub_set_login_ticket(nullptr);
+    windows_rejoin_notice=frontend_menu_state==FeSt_NET_START?"":"Could not rejoin lobby";
+}
+
+static void windows_cloud_menu_update()
+{
+    static bool initialized;
+    if(!initialized){
+        initialized=true;
+        kfx_hub_initialize(prepare_file_path(FGrp_Save,""));
+    }
+    if(kfx_hub_tick(0,0,0,nullptr)){
+        const std::string tag=kfx_hub_result_tag();
+        if(tag=="pair-start"||tag=="pair-poll"||tag=="windows-rejoin"||tag=="windows-public-join"||tag=="windows-directory"||tag.rfind("ping:",0)==0){
+            VALUE root;
+            value_init_null(&root);
+            const char *json=kfx_hub_result();
+            json_dom_parse(json,std::strlen(json),nullptr,0,&root,nullptr);
+            const auto json_string=[&](const char *key){
+                const VALUE *value=value_dict_get(&root,key);
+                return value&&value_type(value)==VALUE_STRING?value_string(value):"";
+            };
+            if(tag=="windows-directory"){
+                if(kfx_hub_result_status()==200)windows_public_directory(&root);
+                else windows_browser_notice="Public directory unavailable.";
+            }else if(tag.rfind("ping:",0)==0){
+                const auto endpoint=win_string(&root,"address");
+                const auto *ping=win_value(&root,"ping_ms");
+                for(auto &lobby:windows_lobbies)if(lobby.endpoint==endpoint&&ping&&value_type(ping)==VALUE_INT32)
+                    lobby.ping=value_int32(ping);
+            }else if(tag=="windows-public-join"){
+                if(windows_join_pending&&menu_id_to_number(GMnu_FEPUBLIC_LOBBIES)!=MENU_INVALID_ID){
+                    windows_join_pending=false;
+                    if(kfx_hub_result_status()==200){
+                        windows_join_held_lobby(json_string("endpoint"),json_string("identity_ticket"));
+                        if(frontend_menu_state==FeSt_NET_START)turn_off_menu(GMnu_FEPUBLIC_LOBBIES);
+                        else windows_browser_notice=kfx_join_failure_reason[0]?kfx_join_failure_reason:"Could not join the lobby.";
+                    }else windows_browser_notice=win_string(&root,"error");
+                }
+            }else if(tag=="pair-start"&&kfx_hub_result_status()==200){
+                windows_device_code=json_string("device_code");
+                windows_pair_code=json_string("user_code");
+                windows_pair_poll=SDL_GetTicks()+3000;
+                windows_pair_deadline=SDL_GetTicks()+600000;
+                SDL_OpenURL((std::string(kfx_hub_url())+"/index.php?route=%2Fdevice").c_str());
+            }else if(tag=="pair-poll"&&kfx_hub_has_session()){
+                windows_pair_code.clear();
+                windows_device_code.clear();
+            }else if(tag=="windows-rejoin"&&kfx_hub_result_status()==200){
+                windows_join_held_lobby(json_string("endpoint"),json_string("identity_ticket"));
+            }else if(kfx_hub_result_status()>=400||kfx_hub_result_status()==0){
+                windows_pair_code.clear();
+                windows_device_code.clear();
+                windows_rejoin_notice=tag=="windows-rejoin"?"Could not rejoin lobby":"Cloud service unavailable";
+            }
+            value_fini(&root);
+        }
+    }
+    if(menu_id_to_number(GMnu_FEPUBLIC_LOBBIES)!=MENU_INVALID_ID)windows_browser_probe();
+    const auto now=SDL_GetTicks();
+    if(!windows_device_code.empty()&&now>=windows_pair_deadline){
+        windows_device_code.clear();windows_pair_code.clear();
+    }
+    if(!windows_device_code.empty()&&now>=windows_pair_poll&&!kfx_hub_busy()){
+        const auto body="{\"device_code\":\""+windows_device_code+"\"}";
+        kfx_hub_request("pair-poll","/api/device/poll",body.c_str(),0);
+        windows_pair_poll=now+3000;
+    }
+}
+#endif
+
+#if defined(_WIN32)
+static void windows_public_main_draw(struct GuiButton *button){
+    frontend_draw_button(button,0,"Public Lobbies",Lb_TEXT_HALIGN_CENTER);
+}
+#endif
+
+static void frontend_rejoin_maintain(struct GuiButton *button)
+{
+    bool visible=kfx_hub_rejoin_seconds()>0;
+#if defined(_WIN32)
+    visible=visible||!kfx_hub_has_session()||!windows_rejoin_notice.empty();
+#endif
+    if(visible)button->flags|=LbBtnF_Visible|LbBtnF_Enabled;
+    else button->flags&=~(LbBtnF_Visible|LbBtnF_Enabled);
+}
+
+static void frontend_rejoin_draw(struct GuiButton *button)
+{
+    std::string caption="Rejoin Lobby ("+std::to_string(kfx_hub_rejoin_seconds())+"s)";
+#if defined(_WIN32)
+    if(!windows_pair_code.empty())caption="Code "+windows_pair_code;
+    else if(!windows_rejoin_notice.empty())caption=windows_rejoin_notice;
+    else if(!kfx_hub_has_session())caption="Cloud Sign In";
+#endif
+    frontend_draw_button(button,0,caption.c_str(),Lb_TEXT_HALIGN_CENTER);
+}
+
+static void frontend_rejoin_click(struct GuiButton *)
+{
+#if defined(__APPLE__)
+    kfx_options_show_page(20);
+    kfx_options_community_action(2029);
+#else
+    windows_rejoin_notice.clear();
+    if(!windows_pair_code.empty()){
+        SDL_OpenURL((std::string(kfx_hub_url())+"/index.php?route=%2Fdevice").c_str());
+        return;
+    }
+    if(!kfx_hub_has_session()){
+        if(!kfx_hub_busy())kfx_hub_request("pair-start","/api/device/start","{}",0);
+        return;
+    }
+    if(kfx_hub_rejoin_seconds()>0){
+        const std::string route=std::string("/api/servers/")+kfx_hub_rejoin_id()+"/join";
+        kfx_hub_request("windows-rejoin",route.c_str(),"{}",1);
+    }
+#endif
+}
+#endif
+
+#if defined(__APPLE__) || defined(_WIN32)
+static int lobby_pending_kick=-1;
+static std::string lobby_selected_player;
+
+void lobby_manage_open(struct GuiButton *)
+{
+    lobby_pending_kick=-1;
+    turn_on_menu(GMnu_FEMANAGE_LOBBY);
+    kfx_lobby_manage_request("state",-1);
+}
+
+void lobby_manage_maintain(struct GuiButton *button)
+{
+    if(kfx_lobby_manage_available())button->flags|=LbBtnF_Visible|LbBtnF_Enabled;
+    else button->flags&=~(LbBtnF_Visible|LbBtnF_Enabled);
+}
+
+void lobby_copy_content(struct GuiButton *){SDL_SetClipboardText(kfx_readiness_details());}
+void lobby_copy_content_draw(struct GuiButton *button){
+    frontend_draw_button(button,0,"Copy Details",Lb_TEXT_HALIGN_CENTER);
+}
+void lobby_manage_open_draw(struct GuiButton *button)
+{
+    frontend_draw_button(button,0,"Manage Lobby",Lb_TEXT_HALIGN_CENTER);
+}
+
+static void lobby_manage_action(struct GuiButton *button)
+{
+    switch(button->btype_value){
+    case 0:case 1:case 2:
+        lobby_pending_kick=button->btype_value;
+        lobby_selected_player=kfx_lobby_manage_player(lobby_pending_kick);
+        if(lobby_selected_player.empty())lobby_pending_kick=-1;
+        return;
+    case 3:kfx_lobby_manage_request(kfx_lobby_manage_locked()?"unlock":"lock",-1);return;
+    case 4:
+        if(lobby_pending_kick>=0&&lobby_selected_player==kfx_lobby_manage_player(lobby_pending_kick))
+            kfx_lobby_manage_request("kick",lobby_pending_kick);
+        lobby_pending_kick=-1;return;
+    case 5:SDL_SetClipboardText(kfx_lobby_manage_audit());return;
+    case 6:turn_off_menu(GMnu_FEMANAGE_LOBBY);return;
+    default:return;
+    }
+}
+
+static void lobby_manage_draw(struct GuiButton *button)
+{
+    const auto item=button->btype_value;
+    std::string caption;
+    if(item<=2){
+        const char *player=kfx_lobby_manage_player(item);
+        if(!*player)return;
+        caption=std::string(lobby_pending_kick==item?"Selected: ":"Select: ")+player;
+    }else if(item==3)caption=kfx_lobby_manage_locked()?"Unlock Joins":"Lock Joins";
+    else if(item==4)caption=lobby_pending_kick>=0?"Kick "+lobby_selected_player:"Select a Player";
+    else if(item==5)caption="Copy Audit";
+    else if(item==6)caption="Close";
+    else if(item==7)caption="Manage Lobby";
+    else{
+        caption=item==8?kfx_lobby_manage_notice():kfx_lobby_manage_last_action();
+        LbTextSetFont(frontend_font[2]);
+        const int height=std::max(1,static_cast<int>(LbTextLineHeight()));
+        RendererSetDrawFlags(Lb_TEXT_HALIGN_CENTER);
+        LbTextSetWindow(button->scr_pos_x,button->scr_pos_y,button->width,button->height);
+        LbTextDrawResized(0,0,button->height*16/height,caption.c_str());
+        return;
+    }
+    frontend_draw_button(button,item<=2||item==7?1:0,caption.c_str(),Lb_TEXT_HALIGN_CENTER);
+}
+
+#define LOBBY_PANEL_BUTTON(action,x,y,w,h) {LbBtnT_NormalBtn,BID_DEFAULT,0,0,lobby_manage_action,NULL,frontend_over_button,action,x,y,x,y,w,h,lobby_manage_draw,0,GUIStr_Empty,0,{15},0,NULL}
+static struct GuiButtonInit lobby_manage_buttons[]={
+    LOBBY_PANEL_BUTTON(7,134,25,371,46),
+    LOBBY_PANEL_BUTTON(0,134,92,371,46),
+    LOBBY_PANEL_BUTTON(1,134,143,371,46),
+    LOBBY_PANEL_BUTTON(2,134,194,371,46),
+    LOBBY_PANEL_BUTTON(3,86,282,140,26),
+    LOBBY_PANEL_BUTTON(4,250,282,140,26),
+    LOBBY_PANEL_BUTTON(5,414,282,140,26),
+    LOBBY_PANEL_BUTTON(8,50,335,540,18),
+    LOBBY_PANEL_BUTTON(9,50,374,540,17),
+    LOBBY_PANEL_BUTTON(6,250,416,140,26),
+    {-1,BID_DEFAULT,0,0,NULL,NULL,NULL,0,0,0,0,0,0,0,NULL,0,GUIStr_Empty,0,{0},0,NULL},
+};
+#undef LOBBY_PANEL_BUTTON
+static struct GuiMenu lobby_manage_menu={
+    GMnu_FEMANAGE_LOBBY,0,1,lobby_manage_buttons,POS_SCRCTR,POS_SCRCTR,640,480,NULL,0,NULL,NULL,0,1,0,
+};
 #endif
 
 struct GuiButtonInit frontend_main_menu_buttons[] = {
   { LbBtnT_NormalBtn,  BID_MENU_TITLE, 0, 0, NULL,               NULL,        NULL,                 0, 999,  26, 999,  26, 371, 46, frontend_draw_large_menu_button,  0, GUIStr_Empty,  0,       {1},            0, NULL },
   { LbBtnT_NormalBtn,  BID_DEFAULT, 0, 0, frontend_start_new_game,NULL,frontend_over_button,     3, 999,  92, 999,  92, 371, 46, frontend_draw_large_menu_button,  0, GUIStr_Empty,  0,       {2},            0, NULL },
+#if defined(__APPLE__)
+  { LbBtnT_NormalBtn,  BID_DEFAULT, 0, 0, frontend_load_continue_game,NULL,frontend_over_button, 0, 999, 138, 999, 138, 371, 46, frontend_draw_continue_details,  0, GUIStr_Empty,  0,       {8},            0, frontend_continue_game_maintain },
+#else
   { LbBtnT_NormalBtn,  BID_DEFAULT, 0, 0, frontend_load_continue_game,NULL,frontend_over_button, 0, 999, 138, 999, 138, 371, 46, frontend_draw_large_menu_button,  0, GUIStr_Empty,  0,       {8},            0, frontend_continue_game_maintain },
+#endif
   { LbBtnT_NormalBtn,  BID_DEFAULT, 0, 0, frontend_load_mappacks,NULL,frontend_over_button,     34, 999, 184, 999, 184, 371, 46, frontend_draw_large_menu_button,  0, GUIStr_Empty,  0,     {106},            0, frontend_mappacks_maintain },
   { LbBtnT_NormalBtn,  BID_DEFAULT, 0, 0, frontend_change_state,NULL, frontend_over_button,    2, 999, 230,   999, 230, 371, 46, frontend_draw_large_menu_button,  0, GUIStr_Empty,  0,       {3},            0, frontend_main_menu_load_game_maintain },
   { LbBtnT_NormalBtn,  BID_DEFAULT, 0, 0, frontend_netservice_change_state,NULL, frontend_over_button,4,999,276,999,276,371, 46, frontend_draw_large_menu_button,  0, GUIStr_Empty,  0,       {4},            0, frontend_main_menu_netservice_maintain },
   { LbBtnT_NormalBtn,  BID_DEFAULT, 0, 0, frontend_change_state,NULL, frontend_over_button,   27, 999, 322,   999, 322, 371, 46, frontend_draw_large_menu_button,  0, GUIStr_Empty,  0,      {97},            0, NULL },
   { LbBtnT_NormalBtn,  BID_DEFAULT, 0, 0, frontend_ldcampaign_change_state,NULL, frontend_over_button,18,999,368,999,368,371,46, frontend_draw_large_menu_button,  0, GUIStr_Empty,  0,     {104},            0, frontend_main_menu_highscores_maintain },
+#if defined(__APPLE__)
+  { LbBtnT_NormalBtn, BID_DEFAULT, 0, 0, frontend_open_profile, NULL, frontend_over_button, 0, 134, 421, 134, 421, 172, 32, frontend_draw_profile_button, 0, GUIStr_Empty, 0, {ViewProfileButton}, 0, NULL },
+  { LbBtnT_NormalBtn, BID_DEFAULT, 0, 0, frontend_logout_profile, NULL, frontend_over_button, 0, 334, 421, 334, 421, 172, 32, frontend_draw_profile_button, 0, GUIStr_Empty, 0, {LogoutProfileButton}, 0, NULL },
+#else
   { LbBtnT_NormalBtn,  BID_DEFAULT, 0, 0, frontend_change_state,NULL, frontend_over_button,      9, 999, 414, 999, 414, 371, 46, frontend_draw_large_menu_button,  0, GUIStr_Empty,  0,       {5},            0, NULL },
-#ifdef __APPLE__
-  { LbBtnT_NormalBtn, BID_DEFAULT, 0, 0, frontend_switch_profile, NULL, frontend_over_button, 0, 525, 398, 525, 398, 110, 34, frontend_draw_switch_profile, 0, GUIStr_Empty, 0, {0}, 0, NULL },
 #endif
   { LbBtnT_NormalBtn,  BID_DEFAULT, 0, 0, NULL,               NULL,        NULL,                 0, 0,   455, 0,   455, 371, 46, frontend_draw_product_version,    0, GUIStr_Empty,  0,       {0},            0, NULL },
+#if defined(__APPLE__) || defined(_WIN32)
+  { LbBtnT_NormalBtn, BID_DEFAULT, 0, 0, frontend_rejoin_click, NULL, frontend_over_button, 0, 4, 2, 4, 2, 128, 24, frontend_rejoin_draw, 0, GUIStr_Empty, 0, {15}, 0, frontend_rejoin_maintain },
+#endif
+#if defined(_WIN32)
+  { LbBtnT_NormalBtn,BID_DEFAULT,0,0,windows_public_open,NULL,frontend_over_button,0,508,2,508,2,128,24,windows_public_main_draw,0,GUIStr_Empty,0,{15},0,NULL },
+#endif
   {-1,  BID_DEFAULT, 0, 0, NULL,               NULL,        NULL,                 0,   0,   0,   0,   0,   0,  0, NULL,                             0, GUIStr_Empty,  0,       {0},            0, NULL },
 };
 
@@ -230,7 +738,16 @@ struct GuiMenu *menu_list[] = {
     &room_menu2,
     &trap_menu2,
     &frontend_select_mp_mappack_menu,
+#if defined(_WIN32)
+    &windows_public_menu,
+#else
     NULL,
+#endif
+#if defined(__APPLE__) || defined(_WIN32)
+    &lobby_manage_menu,
+#else
+    NULL,
+#endif
 };
 
 /** Array used for mapping buttons to text messages.
@@ -353,6 +870,8 @@ struct FrontEndButtonData frontend_button_info[FRONTEND_BUTTON_INFO_COUNT] = {
     {GUIStr_MnuMapPacks, 2},
     {GUIStr_MnuMpMapPacks, 2},
     {GUIStr_MnuReturnToLobby, 1},
+    {GUIStr_Empty, 1},
+    {GUIStr_Empty, 1},
 };
 
 // bttn_sprite, tooltip_stridx, msg_stridx, lifespan_turns, turns_between_events, replace_event_kind_button;
@@ -1896,6 +2415,8 @@ short is_toggleable_menu(short mnu_idx)
   case GMnu_FENET_SERVICE:
   case GMnu_FENET_SESSION:
   case GMnu_FENET_START:
+  case GMnu_FEPUBLIC_LOBBIES:
+  case GMnu_FEMANAGE_LOBBY:
   case GMnu_FESTATISTICS:
   case GMnu_FEHIGH_SCORE_TABLE:
   case GMnu_RESURRECT_CREATURE:
@@ -2574,6 +3095,10 @@ void frontend_shutdown_state(FrontendMenuState pstate)
         break;
     case FeSt_NET_START:
         LbStopTextInput();
+#if defined(__APPLE__) || defined(_WIN32)
+        turn_off_menu(GMnu_FEMANAGE_LOBBY);
+        kfx_lobby_manage_poll(0);
+#endif
         turn_off_menu(GMnu_FENET_START);
         break;
     case FeSt_STORY_POEM:
@@ -2667,6 +3192,9 @@ FrontendMenuState frontend_setup_state(FrontendMenuState nstate)
           if (!is_campaign_loaded()) {
               change_campaign(CampgnT_Default,"");
           }
+#if defined(__APPLE__)
+          refresh_continue_summary();
+#endif
           turn_on_menu(GMnu_FEMAIN);
           last_mouse_x = GetMouseX();
           last_mouse_y = GetMouseY();
@@ -2993,6 +3521,9 @@ void frontend_input(void)
     switch (frontend_menu_state)
     {
     case FeSt_MAIN_MENU:
+#if defined(_WIN32)
+        if(menu_id_to_number(GMnu_FEPUBLIC_LOBBIES)!=MENU_INVALID_ID)windows_public_input();
+#endif
         get_gui_inputs(0);
         input_consumed = frontscreen_end_input(false);
         if (input_consumed) {
@@ -3008,6 +3539,9 @@ void frontend_input(void)
         break;
     case FeSt_NET_START:
         get_gui_inputs(0);
+#if defined(_WIN32)
+        std::snprintf(windows_lobby_password,sizeof(windows_lobby_password),"%s",netstate.password);
+#endif
         frontnet_start_input();
         break;
     case FeSt_STORY_POEM:
@@ -3172,12 +3706,17 @@ void draw_active_menus_buttons(void)
     int k;
     long menu_num;
     Gf_Mnu_Callback callback;
+    const bool public_lobbies = menu_id_to_number(GMnu_FEPUBLIC_LOBBIES) != MENU_INVALID_ID;
+    const bool managing_lobby = menu_id_to_number(GMnu_FEMANAGE_LOBBY) != MENU_INVALID_ID;
     SYNCDBG(8,"Starting with %d active menus",no_of_active_menus);
     for (k=0; k < no_of_active_menus; k++)
     {
         menu_num = menu_id_to_number(menu_stack[k]);
         if (menu_num < 0) continue;
         gmnu = &active_menus[menu_num];
+        if ((public_lobbies && gmnu->ident == GMnu_FEMAIN) ||
+            (managing_lobby && gmnu->ident == GMnu_FENET_START))
+            continue;
         //SYNCMSG("DRAW menu %d, fields %d, %d",menu_num,gmnu->visual_state,gmnu->is_turned_on);
         if ((gmnu->visual_state != 0) && (gmnu->is_turned_on))
         {
@@ -3711,8 +4250,24 @@ void frontend_update(short *finish_menu)
                 choose_profile = false;
                 kfx_options_show_page(37);
             }
-            if(kfx_options_startup_pending()){time_last_played_demo=LbTimerClock();break;}
+            static bool was_picking_profile = false;
+            if(kfx_options_startup_pending()){
+                was_picking_profile = true;
+                time_last_played_demo = LbTimerClock();
+                break;
+            }
+            if(was_picking_profile){
+                was_picking_profile = false;
+                continue_game_option_available = continue_game_available();
+                refresh_continue_summary();
+            }
         }
+#endif
+#if defined(_WIN32)
+        if(!getenv("KFX_HEADLESS"))windows_cloud_menu_update();
+#endif
+#if defined(__APPLE__) || defined(_WIN32)
+        if(!network_is_active())kfx_hub_rejoin_poll();
 #endif
         frontend_button_info[8].font_index = (continue_game_option_available?1:3);
         //this uses original timing function for compatibility with frontend_set_state()
@@ -3734,6 +4289,12 @@ void frontend_update(short *finish_menu)
         frontnet_session_update();
         break;
     case FeSt_NET_START:
+#if defined(_WIN32)
+        if(!getenv("KFX_HEADLESS"))windows_cloud_menu_update();
+#endif
+#if defined(__APPLE__) || defined(_WIN32)
+        kfx_lobby_manage_poll(1);
+#endif
         frontnet_start_update();
         break;
     case FeSt_START_KPRLEVEL:

@@ -26,4 +26,18 @@
             <button>Verify new email</button>
         </form>
     </details>
+    <details id="dedicated-profile">
+        <summary>Dedicated Servers</summary>
+        <p>Link a public host to this account. Administrators can start lobbies and advance the map.</p>
+        <form id="dedicated-host-form" method="post">
+            <label>Server name<input name="name" required maxlength="64"></label>
+            <button>Create Server Credential</button>
+        </form>
+        <div id="dedicated-credential-panel" hidden>
+            <p>Copy the credential now. On the server, run the dedicated supervisor with <code>--link</code> and paste it when prompted.</p>
+            <label>Server credential<input id="dedicated-credential" readonly autocomplete="off"></label>
+        </div>
+        <div id="dedicated-hosts"></div>
+        <button type="button" id="dedicated-refresh">Refresh Servers</button>
+    </details>
 </div>

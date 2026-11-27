@@ -107,10 +107,20 @@ KFX_SERVER_PASSWORD=replace-with-your-game-password
 ```
 
 Omit it for an open server. Maximum password length is 31 UTF-8 bytes.
-Public listings need no administrator key. Hosts authorized to submit verified
-results or spectator streams can use `KFX_HUB_ADMIN_KEY` with the existing
-directory credential. Keep credentials in the service environment. The listing
-only indicates whether a password is required. Keep this environment file local.
+Public and room-code servers require a cloud owner credential. Sign in to
+**My Keeper**, open **Dedicated Servers**, and create a credential for the
+listing. Run the link command below as the service user and paste the credential
+at the hidden prompt. The supervisor stores it in the dedicated profile with
+owner-only file permissions. You can revoke it from the same web page.
+
+The account that creates the credential owns the listing. The owner can add or
+remove other administrators by cloud username. Administrators can advance an
+open lobby to the next map or start a manual co-op lobby. These permissions
+follow the server across restarts and map rotation.
+
+Hosts authorized for verified results or spectator streams can additionally use
+the directory operator's `KFX_HUB_ADMIN_KEY`. That key does not replace the
+owner credential. Keep the environment file local.
 
 Allow incoming **UDP 5556** (or the configured port) and forward it to the host
 if using manual forwarding behind NAT. LAN broadcast discovery uses UDP 5557 on the same subnet. HTTP
@@ -120,6 +130,8 @@ outbound HTTPS to the directory. Direct players need no website account.
 ## Run
 
 ```sh
+# Public or room-code servers only
+sudo -u keeper-enhanced python3 /opt/keeper-enhanced-server/dedicated.py /etc/keeper-enhanced/server.json --link
 sudo -u keeper-enhanced python3 /opt/keeper-enhanced-server/dedicated.py /etc/keeper-enhanced/server.json --check
 install -m 644 /opt/keeper-enhanced-server/keeper-enhanced-server.service /etc/systemd/system/
 systemctl daemon-reload
@@ -201,3 +213,27 @@ the original campaign and original multiplayer maps; optional community packs
 without supplied layout data are omitted from the menus. The server template
 uses the original multiplayer pack, map 52. Existing configurations are preserved;
 select a pack/map actually present in your imported runtime.
+
+
+In `server.json`, set `"ready_check": true` to require every connected human
+to mark Ready using the button or **F5**. The lobby player list shows readiness
+and content verification separately.
+
+An authenticated player who loses their connection in an open public lobby
+gets a 60-second seat hold. Both desktop clients show **Rejoin Lobby** and
+the time left on the main menu. Windows players can pair their cloud account
+using **Cloud Sign In**. Rejoining uses the lobby's normal admission checks.
+
+The **Dedicated Servers** panel shows heartbeat, map, occupancy, supported
+client versions, and recent match timing. The supervisor also writes local
+timing reports under the dedicated profile's `dedicated/performance` folder.
+
+
+**Drain for Maintenance** closes admission while the current match finishes.
+The browser marks the server as under maintenance. An empty lobby can restart
+immediately. The supervisor exits with status 75 after closing cleanly, which
+triggers the documented systemd restart policy. Restart it manually when
+running outside a service manager.
+
+Match reports include sampled turns and the 95th-percentile logic time. The
+dashboard can export the 50 latest reports as a CSV with map and engine version.

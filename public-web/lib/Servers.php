@@ -1,7 +1,181 @@
 <?php
 if (!defined('KFX_API_INTERNAL')) { http_response_code(404); exit; }
 trait HubServers {
-    private function hostCredential(string $id,string $token): array {$row=$this->one('SELECT * FROM servers WHERE id=?',[$id]);demand($row&&hash_equals($row['secret'],hash('sha256',$token)),'Server credential rejected',403);return $row;}
+    private function lobbyManagement(array $data,?string $uid): array {
+        demand($uid,'Sign in first',401);
+        $sid=api_text($data['server']??null,24);
+        $host=$this->one('SELECT id,owner FROM dedicated_hosts WHERE server=?',[$sid]);
+        demand($host&&($host['owner']===$uid||$this->one('SELECT 1 FROM dedicated_admins WHERE host=? AND user=?',
+            [$host['id'],$uid])),'Server administrator access required',403);
+        $server=$this->lockLobby($sid);
+        demand($server&&$server['status']==='lobby'&&$server['last_seen']>$this->now-90,'Lobby is closed',409);
+        $match=$this->one("SELECT id FROM matches WHERE server=? AND status='lobby' AND ended=0",[$sid]);
+        demand($match,'Lobby is closed',409);
+        $action=$data['action']??'state';
+        if($action!=='state'){
+            demand(in_array($action,['lock','unlock','kick'],true),'Invalid moderation action');
+            $target='';
+            if($action==='kick'){
+                $target=api_text($data['user']??null,32);
+                demand($target!==$host['owner']&&$target!==$uid,'You cannot kick the owner or yourself',403);
+                demand($this->one('SELECT 1 FROM identities WHERE match=? AND user=?',[$match['id'],$target]),
+                    'That player is no longer connected',409);
+                $this->q('INSERT OR IGNORE INTO lobby_kicks(server,user) VALUES(?,?)',[$sid,$target]);
+                $this->q('DELETE FROM tickets WHERE server=? AND user=?',[$sid,$target]);
+                $this->q('DELETE FROM lobby_reconnects WHERE server=? AND user=?',[$sid,$target]);
+                $this->q('DELETE FROM party_seat_holds WHERE server=? AND user=?',[$sid,$target]);
+            }else{
+                $this->q('DELETE FROM lobby_locks WHERE server=?',[$sid]);
+                if($action==='lock'){
+                    $this->q('INSERT INTO lobby_locks(server) VALUES(?)',[$sid]);
+                    $this->q('DELETE FROM tickets WHERE server=?',[$sid]);
+                }
+            }
+            $this->q('INSERT INTO lobby_audit VALUES(?,?,?,?,?,?)',
+                [bin2hex(random_bytes(12)),$host['id'],$uid,$action,$target,$this->now]);
+            $older=$this->rows('SELECT id FROM lobby_audit WHERE host=? ORDER BY created DESC,id DESC LIMIT 50',[$host['id']]);
+            $this->q('DELETE FROM lobby_audit WHERE host=? AND id NOT IN ('.implode(',',array_fill(0,count($older),'?')).')',
+                [$host['id'],...array_column($older,'id')]);
+        }
+        return ['locked'=>$this->lobbyLocked($sid),'players'=>$this->rows(
+            'SELECT i.peer,i.user,u.name FROM identities i JOIN users u ON u.id=i.user
+                WHERE i.match=? AND NOT EXISTS(SELECT 1 FROM lobby_kicks k WHERE k.server=? AND k.user=i.user)
+                ORDER BY i.peer',[$match['id'],$sid]),'audit'=>$this->rows(
+            "SELECT a.action,a.created,COALESCE(u.name,'Deleted account') AS actor,
+                COALESCE(t.name,'') AS target FROM lobby_audit a LEFT JOIN users u ON u.id=a.actor
+                LEFT JOIN users t ON t.id=a.target WHERE a.host=? ORDER BY a.created DESC,a.id DESC LIMIT 12",[$host['id']])];
+    }
+
+    private function lobbyLocked(string $sid): bool {
+        return (bool)$this->one('SELECT 1 FROM lobby_locks WHERE server=?',[$sid]);
+    }
+
+    private function lobbyKicked(string $sid,?string $uid): bool {
+        return $uid&&$this->one('SELECT 1 FROM lobby_kicks WHERE server=? AND user=?',[$sid,$uid]);
+    }
+
+    private function clearLobbyModeration(string $sid): void {
+        $this->q('DELETE FROM lobby_locks WHERE server=?',[$sid]);
+        $this->q('DELETE FROM lobby_kicks WHERE server=?',[$sid]);
+    }
+
+
+    private function dedicatedHosts(?string $uid): array {
+        demand($uid,'Sign in first',401);
+        $hosts=$this->rows("SELECT h.id,h.name,h.owner,h.server,u.name AS owner_name,s.last_seen,s.map,s.players,s.capacity,c.versions,d.state AS maintenance,
+                CASE WHEN s.last_seen>? AND s.status<>'offline' THEN s.status ELSE 'offline' END AS status
+            FROM dedicated_hosts h JOIN users u ON u.id=h.owner
+            LEFT JOIN servers s ON s.id=h.server
+            LEFT JOIN server_compat c ON c.server=s.id
+            LEFT JOIN dedicated_maintenance d ON d.host=h.id
+            LEFT JOIN dedicated_admins a ON a.host=h.id AND a.user=?
+            WHERE h.owner=? OR a.user=? ORDER BY h.name,h.id",[$this->now-90,$uid,$uid,$uid]);
+        foreach($hosts as &$host){
+            $host['is_owner']=$host['owner']===$uid;
+            $host['admins']=$this->rows("SELECT u.name FROM dedicated_admins a
+                JOIN users u ON u.id=a.user WHERE a.host=? ORDER BY u.name",[$host['id']]);
+            $host['client_versions']=json_decode($host['versions']??'[]',true)?:[];
+            $host['performance']=$this->rows('SELECT m.map,m.engine,m.started,p.turns,p.logic_ms,p.peak_ms,q.p95_ms,p.slow_frames,p.reconnects
+                FROM matches m JOIN dedicated_performance p ON p.match=m.id
+                JOIN dedicated_host_history h ON h.server=m.server
+                LEFT JOIN dedicated_percentiles q ON q.match=m.id
+                WHERE h.host=? ORDER BY m.started DESC LIMIT 50',[$host['id']]);
+            unset($host['owner'],$host['versions']);
+        }
+        unset($host);
+        return ['hosts'=>$hosts];
+    }
+
+    private function dedicatedHostWrite(array $data,?string $uid): array {
+        demand($uid,'Sign in first',401);
+        $action=$data['action']??'';
+        if($action==='create'){
+            $name=api_text($data['name']??null,64);
+            $this->one('SELECT id FROM users WHERE id=?'.($this->mysql?' FOR UPDATE':''),[$uid]);
+            demand(count($this->rows('SELECT id FROM dedicated_hosts WHERE owner=?',[$uid]))<16,
+                'Remove an unused server before adding another',409);
+            $id=bin2hex(random_bytes(12));$credential=api_token();
+            $this->q('INSERT INTO dedicated_hosts(id,name,owner,credential,server) VALUES(?,?,?,?,?)',
+                [$id,$name,$uid,hash('sha256',$credential),'']);
+            return ['id'=>$id,'credential'=>$credential];
+        }
+        $id=api_text($data['host']??null,24);
+        $host=$this->one('SELECT * FROM dedicated_hosts WHERE id=?'.($this->mysql?' FOR UPDATE':''),[$id]);
+        demand($host,'Dedicated server not found',404);
+        $owner=$host['owner']===$uid;
+        if(in_array($action,['maintenance','cancel-maintenance'],true)){
+            demand($owner||$this->one('SELECT 1 FROM dedicated_admins WHERE host=? AND user=?',[$id,$uid]),
+                'Server administrator access required',403);
+            $server=$this->lockLobby($host['server']);
+            demand($server&&$server['status']!=='offline'&&$server['last_seen']>$this->now-90,
+                'The server must be online',409);
+            $this->q('DELETE FROM dedicated_maintenance WHERE host=?',[$id]);
+            if($action==='maintenance'){
+                $this->q("INSERT INTO dedicated_maintenance(host,state) VALUES(?,'draining')",[$id]);
+                $this->q('DELETE FROM tickets WHERE server=?',[$host['server']]);
+                $this->q('DELETE FROM party_seat_holds WHERE server=?',[$host['server']]);
+                $this->q('DELETE FROM lobby_reconnects WHERE server=?',[$host['server']]);
+                $this->q('DELETE FROM dedicated_commands WHERE server=?',[$host['server']]);
+            }
+            return ['ok'=>true];
+        }
+        if(in_array($action,['next','start'],true)){
+            demand($owner||$this->one('SELECT 1 FROM dedicated_admins WHERE host=? AND user=?',[$id,$uid]),
+                'Server administrator access required',403);
+            $live=$this->one("SELECT 1 FROM servers WHERE id=? AND status='lobby' AND last_seen>?",
+                [$host['server'],$this->now-90]);
+            demand($live,'The server must be in an open lobby',409);
+            $this->requireAvailableForJoins($host['server']);
+            $this->q('DELETE FROM dedicated_commands WHERE server=?',[$host['server']]);
+            $this->q('INSERT INTO dedicated_commands(server,requester,command,expires) VALUES(?,?,?,?)',
+                [$host['server'],$uid,$action,$this->now+15]);
+            return ['ok'=>true];
+        }
+        demand($owner,'Only the server owner can manage administrators',403);
+        if($action==='revoke'){
+            $this->removeDedicatedHost($host);
+            return ['ok'=>true];
+        }
+        demand(in_array($action,['add-admin','remove-admin'],true),'Invalid server action');
+        $account=$this->one('SELECT id FROM users WHERE name=?',[api_text($data['name']??null,24)]);
+        demand($account,'Cloud account not found',404);
+        demand($account['id']!==$uid,'The owner is always an administrator',409);
+        if($action==='add-admin'){
+            demand(count($this->rows('SELECT user FROM dedicated_admins WHERE host=?',[$id]))<32||
+                $this->one('SELECT 1 FROM dedicated_admins WHERE host=? AND user=?',[$id,$account['id']]),
+                'This server has 32 administrators',409);
+            $this->q('INSERT OR IGNORE INTO dedicated_admins(host,user) VALUES(?,?)',[$id,$account['id']]);
+        }else{
+            $this->q('DELETE FROM dedicated_admins WHERE host=? AND user=?',[$id,$account['id']]);
+            $this->q('DELETE FROM dedicated_commands WHERE server=? AND requester=?',[$host['server'],$account['id']]);
+        }
+        return ['ok'=>true];
+    }
+
+    private function removeDedicatedHost(array $host): void {
+        $this->retireDedicatedLobby($host['server']);
+        $this->q('DELETE FROM dedicated_maintenance WHERE host=?',[$host['id']]);
+        $this->q('DELETE FROM lobby_audit WHERE host=?',[$host['id']]);
+        $this->q('DELETE FROM dedicated_host_history WHERE host=?',[$host['id']]);
+        $this->q('DELETE FROM dedicated_admins WHERE host=?',[$host['id']]);
+        $this->q('DELETE FROM dedicated_hosts WHERE id=?',[$host['id']]);
+    }
+
+    private function retireDedicatedLobby(string $server): void {
+        if($server==='')return;
+        $this->lockLobby($server);
+        $this->clearLobbyModeration($server);
+        $this->q('DELETE FROM lobby_reconnects WHERE server=?',[$server]);
+        $this->q('DELETE FROM dedicated_commands WHERE server=?',[$server]);
+        $this->q('DELETE FROM tickets WHERE server=?',[$server]);
+        $this->q('DELETE FROM party_seat_holds WHERE server=?',[$server]);
+        $this->q("UPDATE matches SET ended=?,status=CASE WHEN status='lobby' THEN 'cancelled' ELSE 'abandoned' END
+            WHERE server=? AND ended=0",[$this->now,$server]);
+        $this->q("UPDATE servers SET status='offline',secret='' WHERE id=?",[$server]);
+    }
+
+
+    private function hostCredential(string $id,string $token): array {$row=$this->lockLobby($id);demand($row&&hash_equals($row['secret'],hash('sha256',$token)),'Server credential rejected',403);return $row;}
     private function lockLobby(string $server): array|false {
         return $this->one('SELECT * FROM servers WHERE id=?'.($this->mysql?' FOR UPDATE':''),[$server]);
     }
@@ -11,10 +185,43 @@ trait HubServers {
             ($lock&&$this->mysql?' FOR UPDATE':''),[$match]);
     }
 
+    private function maintenanceState(string $server): string {
+        $row=$this->one('SELECT d.state FROM dedicated_hosts h JOIN dedicated_maintenance d ON d.host=h.id
+            WHERE h.server=?',[$server]);
+        return $row['state']??'';
+    }
+
+    private function requireAvailableForJoins(string $server): void {
+        demand($this->maintenanceState($server)==='','Server is draining for maintenance',409);
+    }
+
+    private function lobbyReconnect(?string $uid): array {
+        demand($uid,'Sign in first',401);
+        $hold=$this->one("SELECT r.server,r.expires,s.endpoint FROM lobby_reconnects r JOIN servers s ON s.id=r.server
+            WHERE r.user=? AND r.expires>? AND s.last_seen>? AND s.status='lobby' ORDER BY r.expires DESC LIMIT 1",
+            [$uid,$this->now,$this->now-90]);
+        $server=$hold?$this->partyServer($hold['server']):false;
+        if($server){
+            $server['endpoint']=$hold['endpoint'];
+            $server['client_versions']=json_decode($server['versions']??'[]',true)?:[];
+        }
+        return ['server'=>$server?:null,
+            'seconds_left'=>$hold?min(60,max(0,(int)ceil($hold['expires']-$this->now))):0];
+    }
+
+    private function reserveLobbyReconnect(string $server,string $user): void {
+        if($this->maintenanceState($server)!==''||$this->lobbyKicked($server,$user))return;
+        $this->q('DELETE FROM lobby_reconnects WHERE server=? AND (expires<=? OR user=?)',[$server,$this->now,$user]);
+        $this->q('INSERT INTO lobby_reconnects(server,user,expires) VALUES(?,?,?)',[$server,$user,$this->now+60]);
+    }
+
     private function lobbyHeldUsers(string $server,array $joined,bool $lock=false): array {
         $rows=$this->rows('SELECT user FROM party_seat_holds WHERE server=? AND expires>?'.
             ($lock&&$this->mysql?' FOR UPDATE':''),[$server,$this->now]);
-        return array_values(array_diff(array_unique(array_column($rows,'user')),$joined));
+        $reconnects=$this->rows('SELECT user FROM lobby_reconnects WHERE server=? AND expires>?' .
+            ($lock&&$this->mysql?' FOR UPDATE':''),[$server,$this->now]);
+        return array_values(array_diff(array_unique(array_merge(array_column($rows,'user'),
+            array_column($reconnects,'user'))),$joined));
     }
 
     private function requireLobbySeat(array $server,?string $user,array $joined,int $occupied): void {
@@ -46,6 +253,8 @@ trait HubServers {
     }
 
     private function serverWrite(string $route,array $parts,array $data,string $token,?string $uid,string $peer): ?array {
+        if($route==='/api/lobby-management')return $this->lobbyManagement($data,$uid);
+        if($route==='/api/dedicated-hosts')return $this->dedicatedHostWrite($data,$uid);
         if($route==='/api/servers/redeem'){
             demand($uid,'Sign in before joining a code room',401);
             $code=strtoupper(trim(api_text($data['code']??null,12)));
@@ -54,6 +263,7 @@ trait HubServers {
             $room=$this->one('SELECT server FROM server_room_codes WHERE digest=? AND expires>?',[$digest,$this->now]);
             demand($room,'Room code expired or invalid',404);
             $server=$this->lockLobby($room['server']);
+            $this->requireAvailableForJoins($room['server']);
             demand($server&&$server['status']==='lobby'&&$server['last_seen']>$this->now-90&&
                 $this->one('SELECT 1 FROM server_room_codes WHERE server=? AND digest=? AND expires>?'.
                     ($this->mysql?' FOR UPDATE':''),[$room['server'],$digest,$this->now]),'Room code expired or lobby unavailable',404);
@@ -66,11 +276,21 @@ trait HubServers {
             demand(!array_key_exists('password',$data)||is_bool($data['password']),'Password-required flag must be boolean');
             $kind=$data['kind']??'listen';
             demand(in_array($kind,['listen','dedicated'],true),'Invalid host type');
+            $host=false;
+            if($kind==='dedicated'){
+                demand($token!=='','Authenticate the dedicated server with an owner-issued credential',401);
+                $host=$this->one('SELECT h.* FROM dedicated_hosts h JOIN users u ON u.id=h.owner
+                    WHERE h.credential=?'.($this->mysql?' FOR UPDATE':''),[hash('sha256',$token)]);
+                demand($host,'Dedicated server credential rejected',403);
+                $this->retireDedicatedLobby($host['server']);
+                $this->q('DELETE FROM servers WHERE id=?',[$host['server']]);
+                $uid=$host['owner'];
+            }
             $key=$data['admin_key']??'';
             $trusted=$kind==='dedicated'&&$key!==''&&$this->admin!==''&&is_string($key)&&hash_equals($this->admin,$key);
             if($kind==='dedicated'&&$key!=='')demand($trusted,'Dedicated administrator key rejected',403);
             if($kind==='dedicated'&&!$trusted)$kind='community';
-            $name=api_text($data['name']??null,64);
+            $name=$host?$host['name']:api_text($data['name']??null,64);
             $endpoint=$data['endpoint']??'';
             if($endpoint===''){
                 $port=$data['port']??null;
@@ -87,8 +307,13 @@ trait HubServers {
             foreach($clients as $version)demand(is_string($version)&&strlen($version)<=24&&preg_match('/^[0-9]+\.[0-9]+\.[0-9]+$/D',$version),'Invalid client version');
             $this->q('DELETE FROM party_seat_holds WHERE expires<=?',[$this->now]);
             $this->q('DELETE FROM lobby_epochs WHERE server NOT IN (SELECT id FROM servers WHERE last_seen>?)',[$this->now-86400]);
-            $sid=bin2hex(random_bytes(12));$secret=api_token();$map=mb_substr((string)($data['map']??''),0,80);$this->q('INSERT INTO servers VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',[$sid,$name,$address,$engine,$map,mb_substr((string)($data['mods']??''),0,64),1,4,!empty($data['password'])?1:0,$region,$kind,$uid??'',hash('sha256',$secret),$this->now,'lobby',json_encode($rotation)]);$mid=bin2hex(random_bytes(16));$this->q("INSERT INTO matches(id,server,started,map,engine,status) VALUES(?,?,?,?,?,'lobby')",[$mid,$sid,$this->now,$map,$engine]);if($uid)$this->q('INSERT INTO participants(match,user) VALUES(?,?)',[$mid,$uid]);if($clients){
-                $this->q('DELETE FROM server_compat WHERE server NOT IN (SELECT id FROM servers WHERE last_seen>?)',[$this->now-86400]);
+            $sid=bin2hex(random_bytes(12));$secret=api_token();$map=mb_substr((string)($data['map']??''),0,80);$this->q('INSERT INTO servers VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',[$sid,$name,$address,$engine,$map,mb_substr((string)($data['mods']??''),0,64),1,4,!empty($data['password'])?1:0,$region,$kind,$uid??'',hash('sha256',$secret),$this->now,'lobby',json_encode($rotation)]);$mid=bin2hex(random_bytes(16));$this->q("INSERT INTO matches(id,server,started,map,engine,status) VALUES(?,?,?,?,?,'lobby')",[$mid,$sid,$this->now,$map,$engine]);if($uid&&!$host)$this->q('INSERT INTO participants(match,user) VALUES(?,?)',[$mid,$uid]);if($host){
+                $this->q('UPDATE dedicated_hosts SET server=? WHERE id=?',[$sid,$host['id']]);
+                $this->q('INSERT INTO dedicated_host_history(host,server) VALUES(?,?)',[$host['id'],$sid]);
+                $this->q("DELETE FROM dedicated_maintenance WHERE host=? AND state='restarting'",[$host['id']]);
+                $this->q('DELETE FROM lobby_reconnects WHERE expires<=?',[$this->now]);
+            }if($clients){
+                $this->q('DELETE FROM server_compat WHERE server NOT IN (SELECT id FROM servers WHERE last_seen>?) AND server NOT IN (SELECT server FROM dedicated_hosts)',[$this->now-86400]);
                 $this->q('INSERT INTO server_compat VALUES(?,?)',[$sid,json_encode(array_values(array_unique($clients)))]);
             }
             if(isset($data['coop'])){
@@ -121,6 +346,9 @@ trait HubServers {
             $row=$this->lockLobby($sid);demand($row&&$row['last_seen']>$this->now-90,'Server is offline',404);demand($row['status']==='lobby','Match already started. Choose an open lobby.',409);demand($row['players']<$row['capacity'],'Lobby is full. Choose another server.',409);
             demand(!$this->one("SELECT 1 FROM party_ballots WHERE server=? AND winning<>'' AND expires>?",[$sid,$this->now]),
                 'Lobby is changing maps. Try again shortly.',409);demand(empty($data['engine'])||$data['engine']===$row['engine'],'Engine version differs',409);$fingerprint=$data['content']??'';demand(is_string($fingerprint)&&($fingerprint===''||preg_match('/^[0-9a-f]{64}$/D',$fingerprint)),'Invalid content fingerprint');demand($fingerprint===''||!preg_match('/^[0-9a-f]{64}$/D',$row['mods'])||hash_equals($row['mods'],$fingerprint),'Campaign/map or configuration/mod content differs',409);
+            $this->requireAvailableForJoins($sid);
+            demand(!$this->lobbyLocked($sid),'The administrator locked this lobby',409);
+            demand(!$this->lobbyKicked($sid,$uid),'You were removed from this lobby',403);
             $requiresAccount=in_array($row['kind'],['dedicated','community'],true);
             if($requiresAccount)demand($uid,'Sign in again to join this public dedicated server',401);
             $this->requireRoomCode($sid,$uid);
@@ -132,23 +360,37 @@ trait HubServers {
             }if($uid&&$match){if(!$requiresAccount)$this->q('INSERT OR IGNORE INTO participants(match,user) VALUES(?,?)',[$match['id'],$uid]);$ticket=api_token();$this->q('INSERT INTO tickets(token,server,user,expires) VALUES(?,?,?,?)',[hash('sha256',$ticket),$sid,$uid,$this->now+($requiresAccount?60:600)]);$answer['identity_ticket']=$ticket;}return $answer;
         }
         $row=$this->hostCredential($sid,$token);
+        if($action==='drained'){
+            demand($this->maintenanceState($sid)==='draining','Maintenance was cancelled',409);
+            $this->q("UPDATE dedicated_maintenance SET state='restarting'
+                WHERE host IN (SELECT id FROM dedicated_hosts WHERE server=?)",[$sid]);
+            return ['ok'=>true];
+        }
+        if($action==='admin-command'){
+            $command=$this->one('SELECT command,expires FROM dedicated_commands WHERE server=?'.
+                ($this->mysql?' FOR UPDATE':''),[$sid]);
+            if($command)$this->q('DELETE FROM dedicated_commands WHERE server=?',[$sid]);
+            return ['command'=>$command&&$command['expires']>$this->now&&$row['status']==='lobby'?
+                $command['command']:null,'draining'=>$this->maintenanceState($sid)==='draining',
+                'kicks'=>array_column($this->rows('SELECT user FROM lobby_kicks WHERE server=?',[$sid]),'user')];
+        }
         if($action==='room-code'){
             $this->lockLobby($sid);
             demand($this->one('SELECT 1 FROM server_room_codes WHERE server=?',[$sid]),'This server is not a code room',404);
             return $this->rotateRoomCode($sid,($data['revoke']??false)===true);
         }
         if($action==='map-ballot'){
-            demand($this->one('SELECT 1 FROM server_voting WHERE server=?',[$sid]),'Map voting unavailable',403);
             $ballot=$this->one("SELECT party,winning FROM party_ballots WHERE server=? AND winning<>'' AND expires>?
                 ORDER BY expires,party LIMIT 1",[$sid,$this->now]);
             return ['ballot'=>$ballot?:null];
         }
         if($action==='map-applied'){
-            demand($this->one('SELECT 1 FROM server_voting WHERE server=?',[$sid]),'Map voting unavailable',403);
             $map=api_text($data['map']??null,80);
             $party=api_text($data['party']??null,32);
             demand(in_array($map,json_decode($row['rotation'],true)?:[],true),'Map not in rotation',409);
             $ballot=$this->one('SELECT 1 FROM party_ballots WHERE party=? AND server=? AND winning=?',[$party,$sid,$map]);
+            demand($ballot,'Map selection is unavailable',409);
+            $this->q('DELETE FROM lobby_reconnects WHERE server=?',[$sid]);
             $this->q('DELETE FROM lobby_epochs WHERE server=?',[$sid]);
             $this->q('DELETE FROM party_seat_holds WHERE server=?',[$sid]);
             $this->q("UPDATE servers SET map=?,mods='',status='lobby',players=1,last_seen=? WHERE id=?",[$map,$this->now,$sid]);
@@ -171,17 +413,23 @@ trait HubServers {
                 if($data['lobby_epoch']===($current['epoch']??'')){
                     $lobby=$this->one("SELECT id FROM matches WHERE server=? AND status='lobby' AND ended=0",[$sid]);
                     if($lobby)foreach($this->lobbyAdmissions($lobby['id'],true) as $seat){
-                        if(!($mask&(1<<(int)$seat['peer'])))$this->q('DELETE FROM identities WHERE match=? AND peer=?',
-                            [$lobby['id'],$seat['peer']]);
+                        if(!($mask&(1<<(int)$seat['peer']))){
+                            $this->reserveLobbyReconnect($sid,$seat['user']);
+                            $this->q('DELETE FROM identities WHERE match=? AND peer=?',[$lobby['id'],$seat['peer']]);
+                        }
                     }
                 }else return ['ok'=>true];
             }
             $players=$data['players']??1;$status=$data['status']??'lobby';demand(is_int($players)&&$players>=0&&$players<=4,'Invalid player count');demand(in_array($status,['lobby','playing','offline'],true),'Invalid server status');$map=mb_substr((string)($data['map']??$row['map']),0,80);
             $mods=mb_substr((string)($data['mods']??$row['mods']),0,64);
-            if($status!=='lobby'||$map!==$row['map']||$mods!==$row['mods'])$this->q('DELETE FROM party_seat_holds WHERE server=?',[$sid]);
+            if($status!=='lobby'||$map!==$row['map']||$mods!==$row['mods']){
+                $this->q('DELETE FROM party_seat_holds WHERE server=?',[$sid]);
+                $this->q('DELETE FROM lobby_reconnects WHERE server=?',[$sid]);
+            }
             $this->q('UPDATE servers SET last_seen=?,players=?,status=?,map=?,mods=? WHERE id=?',[$this->now,$players,$status,$map,$mods,$sid]);if($status==='offline')$this->q("UPDATE matches SET ended=?,status=CASE WHEN status='lobby' THEN 'cancelled' ELSE 'abandoned' END WHERE server=? AND ended=0",[$this->now,$sid]);if($status==='playing')$this->q("UPDATE matches SET status='playing',map=? WHERE server=? AND status='lobby' AND ended=0",[$map,$sid]);return ['ok'=>true];
         }
         if($action==='admit'){
+            $this->requireAvailableForJoins($sid);
             $row=$this->lockLobby($sid);
             demand($row,'Server is offline',404);
             demand(!$this->one("SELECT 1 FROM party_ballots WHERE server=? AND winning<>'' AND expires>?",[$sid,$this->now]),
@@ -193,6 +441,8 @@ trait HubServers {
             $digest=hash('sha256',api_text($data['ticket']??null,100));
             $ticket=$this->one('SELECT user FROM tickets WHERE token=? AND server=? AND expires>? AND peer=-1',[$digest,$sid,$this->now]);
             demand($ticket,'Identity ticket rejected',403);
+            demand(!$this->lobbyLocked($sid),'The administrator locked this lobby',409);
+            demand(!$this->lobbyKicked($sid,$ticket['user']),'You were removed from this lobby',403);
             $this->requireRoomCode($sid,$ticket['user']);
             $match=$this->one("SELECT id FROM matches WHERE server=? AND ended=0 AND status='lobby' ORDER BY started DESC LIMIT 1",[$sid]);
             demand($match,'No active lobby',409);
@@ -200,7 +450,10 @@ trait HubServers {
             $joined=[];
             foreach($this->lobbyAdmissions($match['id'],true) as $seat){
                 if($occupied&(1<<(int)$seat['peer']))$joined[]=$seat['user'];
-                else $this->q('DELETE FROM identities WHERE match=? AND peer=?',[$match['id'],$seat['peer']]);
+                else{
+                    $this->reserveLobbyReconnect($sid,$seat['user']);
+                    $this->q('DELETE FROM identities WHERE match=? AND peer=?',[$match['id'],$seat['peer']]);
+                }
             }
             demand(!in_array($ticket['user'],$joined,true),'Account already connected',409);
             $seated=1;
@@ -209,6 +462,11 @@ trait HubServers {
             demand($this->q('DELETE FROM tickets WHERE token=? AND server=? AND peer=-1',[$digest,$sid])->rowCount()===1,'Identity ticket already used',403);
             $this->q('DELETE FROM identities WHERE match=? AND (peer=? OR user=?)',[$match['id'],$peer,$ticket['user']]);
             $this->q('INSERT INTO identities VALUES(?,?,?)',[$match['id'],$peer,$ticket['user']]);
+            if($this->q('DELETE FROM lobby_reconnects WHERE server=? AND user=? AND expires>?',
+                [$sid,$ticket['user'],$this->now])->rowCount()){
+                $this->q('INSERT OR IGNORE INTO dedicated_performance(match) VALUES(?)',[$match['id']]);
+                $this->q('UPDATE dedicated_performance SET reconnects=reconnects+1 WHERE match=?',[$match['id']]);
+            }
             $this->q('INSERT OR IGNORE INTO participants(match,user) VALUES(?,?)',[$match['id'],$ticket['user']]);
             $membership=$this->one('SELECT m.party FROM party_members m JOIN party_rooms p ON p.id=m.party
                 WHERE m.user=? AND p.server=? AND p.prompt_expires>?',[$ticket['user'],$sid,$this->now]);
@@ -221,7 +479,7 @@ trait HubServers {
             return ['user'=>$ticket['user'],'lobby_epoch'=>$epoch];
         }
         if($action==='identity'){
-            $ticket=$this->one('SELECT * FROM tickets WHERE token=? AND server=? AND expires>?',[hash('sha256',api_text($data['ticket']??null,100)),$sid,$this->now]);$peer=$data['peer']??null;demand(is_int($peer)&&$peer>=1&&$peer<4,'Invalid peer');demand($ticket&&in_array($ticket['peer'],[-1,$peer],true),'Identity ticket rejected',403);$mid=$this->one('SELECT id FROM matches WHERE server=? AND ended=0 ORDER BY started DESC LIMIT 1',[$sid]);demand($mid,'No active match',409);$old=$this->one('SELECT user FROM identities WHERE match=? AND peer=?',[$mid['id'],$peer]);demand(!$old||$old['user']===$ticket['user'],'Peer identity is already bound',409);$other=$this->one('SELECT peer FROM identities WHERE match=? AND user=?',[$mid['id'],$ticket['user']]);demand(!$other||$other['peer']===$peer,'Account already occupies a peer',409);$this->q('INSERT OR IGNORE INTO identities VALUES(?,?,?)',[$mid['id'],$peer,$ticket['user']]);$this->q('UPDATE tickets SET peer=? WHERE token=?',[$peer,$ticket['token']]);return ['user'=>$ticket['user'],'peer'=>$peer];
+            $ticket=$this->one('SELECT * FROM tickets WHERE token=? AND server=? AND expires>?',[hash('sha256',api_text($data['ticket']??null,100)),$sid,$this->now]);$peer=$data['peer']??null;demand(is_int($peer)&&$peer>=1&&$peer<4,'Invalid peer');demand($ticket&&in_array($ticket['peer'],[-1,$peer],true),'Identity ticket rejected',403);$mid=$this->one('SELECT id FROM matches WHERE server=? AND ended=0 ORDER BY started DESC LIMIT 1',[$sid]);demand($mid,'No active match',409);$old=$this->one('SELECT user FROM identities WHERE match=? AND peer=?',[$mid['id'],$peer]);demand(!$old||$old['user']===$ticket['user'],'Peer identity is already bound',409);$other=$this->one('SELECT peer FROM identities WHERE match=? AND user=?',[$mid['id'],$ticket['user']]);demand(!$other||$other['peer']===$peer,'Account already occupies a peer',409);$this->q('INSERT OR IGNORE INTO identities VALUES(?,?,?)',[$mid['id'],$peer,$ticket['user']]);$this->q('INSERT OR IGNORE INTO participants(match,user) VALUES(?,?)',[$mid['id'],$ticket['user']]);$this->q('UPDATE tickets SET peer=? WHERE token=?',[$peer,$ticket['token']]);return ['user'=>$ticket['user'],'peer'=>$peer];
         }
         if($action==='result'){
             demand($row['kind']==='dedicated','Only a trusted dedicated engine may verify results',403);$mid=api_text($data['match']??null,32);$match=$this->one('SELECT * FROM matches WHERE id=? AND server=?',[$mid,$sid]);demand($match&&!$match['ended'],'Match is missing or closed',409);$results=$data['results']??null;demand(is_array($results)&&array_is_list($results)&&count($results)>0&&count($results)<=3,'Invalid engine results');$ids=array_column($this->rows('SELECT user FROM identities WHERE match=?',[$mid]),'user');$users=[];$winners=[];foreach($results as $result){demand(is_array($result)&&is_string($result['user']??null)&&in_array($result['result']??null,['won','lost','draw'],true),'Unfinished or disconnected matches cannot be verified');$users[]=$result['user'];if($result['result']==='won')$winners[]=$result['user'];}sort($ids);$sorted=$users;sort($sorted);demand(count(array_unique($users))===count($users)&&$ids===$sorted,'Results must cover the authenticated game peers',409);demand(count($winners)<=1||!empty($data['cooperative']),'Multiple winners require a cooperative host result');foreach($results as $result)$this->q('UPDATE participants SET result=? WHERE match=? AND user=?',[$result['result'],$mid,$result['user']]);$this->q("UPDATE matches SET ended=?,status='finished',winner=?,verification='verified' WHERE id=?",[$this->now,$winners[0]??'',$mid]);$finish=$data['siege_finish']??0;
@@ -233,7 +491,29 @@ trait HubServers {
             return ['ok'=>true,'verification'=>'verified'];
         }
         if($action==='stream')return $this->streamWrite($row,$sid,$data);
+        if($action==='performance'){
+            $match=api_text($data['match']??null,32);
+            demand($this->one('SELECT 1 FROM matches WHERE id=? AND server=?',[$match,$sid]),'Match not found',404);
+            $turns=$data['turns']??null;$logic=$data['logic_ms']??null;
+            $peak=$data['peak_ms']??null;$slow=$data['slow_frames']??null;
+            demand(is_int($turns)&&$turns>=0&&is_int($slow)&&$slow>=0&&
+                (is_float($logic)||is_int($logic))&&$logic>=0&&$logic<=1e12&&
+                (is_float($peak)||is_int($peak))&&$peak>=0&&$peak<=1e9,'Invalid performance report');
+            $this->q('INSERT OR IGNORE INTO dedicated_performance(match) VALUES(?)',[$match]);
+            $this->q('UPDATE dedicated_performance SET turns=?,logic_ms=?,peak_ms=?,slow_frames=? WHERE match=?',
+                [$turns,$logic,$peak,$slow,$match]);
+            if(isset($data['p95_ms'])){
+                $p95=$data['p95_ms'];
+                demand((is_int($p95)||is_float($p95))&&$p95>=0&&$p95<=1e9,'Invalid percentile');
+                $this->q('INSERT OR IGNORE INTO dedicated_percentiles(match,p95_ms) VALUES(?,?)',[$match,$p95]);
+                $this->q('UPDATE dedicated_percentiles SET p95_ms=? WHERE match=?',[$p95,$match]);
+            }
+            return ['ok'=>true];
+        }
         if($action==='close'){
+            $this->clearLobbyModeration($sid);
+            $this->q('DELETE FROM lobby_reconnects WHERE server=?',[$sid]);
+            $this->q('DELETE FROM dedicated_commands WHERE server=?',[$sid]);
             $departed=$data['departed']??[];
             demand(is_array($departed)&&array_is_list($departed)&&count($departed)<=3,'Invalid disconnect list');
             $active=$this->one("SELECT id FROM matches WHERE server=? AND status='playing' AND ended=0",[$sid]);
@@ -248,7 +528,11 @@ trait HubServers {
             $this->q('DELETE FROM server_room_access WHERE server=?',[$sid]);
             $this->q('DELETE FROM server_room_codes WHERE server=?',[$sid]);
             $this->q('DELETE FROM siege_hosts WHERE server=?',[$sid]);
-            $this->q("UPDATE matches SET ended=?,status=CASE WHEN status='lobby' THEN 'cancelled' ELSE 'abandoned' END WHERE server=? AND ended=0",[$this->now,$sid]);$this->q('DELETE FROM servers WHERE id=?',[$sid]);return ['ok'=>true];}
+            $this->q("UPDATE matches SET ended=?,status=CASE WHEN status='lobby' THEN 'cancelled' ELSE 'abandoned' END WHERE server=? AND ended=0",[$this->now,$sid]);if($this->one('SELECT 1 FROM dedicated_host_history WHERE server=?',[$sid]))
+                $this->q("UPDATE servers SET status='offline',secret='' WHERE id=?",[$sid]);
+            else $this->q('DELETE FROM servers WHERE id=?',[$sid]);
+            return ['ok'=>true];
+        }
         if($action==='match'){
             $participants=$data['participants']??[];demand(is_array($participants)&&array_is_list($participants)&&count($participants)<=4,'Invalid participants');foreach($participants as $id)demand(is_string($id)&&$this->one('SELECT 1 FROM users WHERE id=?',[$id]),'Unknown participant');demand(count(array_unique($participants))===count($participants),'Duplicate participants');$mid=bin2hex(random_bytes(16));$this->q('INSERT INTO matches(id,server,started,map,engine) VALUES(?,?,?,?,?)',[$mid,$sid,$this->now,$row['map'],$row['engine']]);foreach($participants as $id)$this->q('INSERT INTO participants(match,user) VALUES(?,?)',[$mid,$id]);$this->q("UPDATE servers SET status='playing' WHERE id=?",[$sid]);return ['id'=>$mid];
         }

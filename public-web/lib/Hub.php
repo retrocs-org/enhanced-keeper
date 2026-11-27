@@ -98,6 +98,8 @@ final class KeeperHub {
         return $answer;
     }
     private function read(string $route,array $parts,array $query,array|false $session,?string $uid): array {
+        if($route==='/api/rejoin-lobby')return $this->lobbyReconnect($uid);
+        if($route==='/api/dedicated-hosts')return $this->dedicatedHosts($uid);
         if($route==='/api/health'){ return ['ok'=>true,'protocol'=>1,'relay'=>false,'authority'=>'client-simulated','http_backend'=>'php'];}
         if($route==='/api/session'){
             $answer=['signed_in'=>(bool)$session,'name'=>$session['name']??'','csrf'=>$session['csrf']??''];
@@ -123,8 +125,13 @@ final class KeeperHub {
             return $row?['revision'=>(int)$row['revision'],'settings'=>$row['settings']]:['revision'=>0,'settings'=>''];
         }
         if($route==='/api/me'){demand($uid,'Sign in first',401);return $this->one('SELECT u.id,u.name,u.public,p.email,COALESCE(p.avatar,1) AS avatar FROM users u LEFT JOIN cloud_profiles p ON p.user=u.id WHERE u.id=?',[$uid]);}
-        if($route==='/api/servers'){$this->q("UPDATE matches SET ended=?,status=CASE WHEN status='lobby' THEN 'cancelled' ELSE 'abandoned' END WHERE ended=0 AND server IN (SELECT id FROM servers WHERE last_seen<?)",[$this->now,$this->now-90]);$servers=$this->rows('SELECT s.id,s.name,s.endpoint,s.engine,s.map,s.mods,s.players,s.capacity,s.password,s.region,s.kind,s.status,c.versions,o.ai_style,CASE WHEN v.server IS NULL THEN 0 ELSE 1 END AS voting FROM servers s LEFT JOIN server_compat c ON c.server=s.id LEFT JOIN server_coop o ON o.server=s.id LEFT JOIN server_voting v ON v.server=s.id WHERE s.last_seen>? AND NOT EXISTS(SELECT 1 FROM server_room_codes rc WHERE rc.server=s.id) ORDER BY s.name LIMIT 128',[$this->now-90]);
-            foreach($servers as &$server){$server['client_versions']=json_decode($server['versions']??'[]',true)?:[];unset($server['versions']);}
+        if($route==='/api/servers'){$this->q("UPDATE matches SET ended=?,status=CASE WHEN status='lobby' THEN 'cancelled' ELSE 'abandoned' END WHERE ended=0 AND server IN (SELECT id FROM servers WHERE last_seen<?)",[$this->now,$this->now-90]);$servers=$this->rows('SELECT s.id,s.name,s.endpoint,s.engine,s.map,s.mods,s.players,s.capacity,s.password,s.region,s.kind,s.status,c.versions,o.ai_style,CASE WHEN v.server IS NULL THEN 0 ELSE 1 END AS voting FROM servers s LEFT JOIN server_compat c ON c.server=s.id LEFT JOIN server_coop o ON o.server=s.id LEFT JOIN server_voting v ON v.server=s.id WHERE s.last_seen>? AND (s.status<>\'offline\' OR EXISTS(SELECT 1 FROM dedicated_hosts dh
+            JOIN dedicated_maintenance dm ON dm.host=dh.id WHERE dh.server=s.id AND dm.state=\'restarting\')) AND NOT EXISTS(SELECT 1 FROM server_room_codes rc WHERE rc.server=s.id) ORDER BY s.name LIMIT 128',[$this->now-90]);
+            foreach($servers as &$server){
+                $server['client_versions']=json_decode($server['versions']??'[]',true)?:[];
+                if($this->maintenanceState($server['id'])!=='')$server['status']='maintenance';
+                unset($server['versions']);
+            }
             unset($server);
             return ['servers'=>$servers];}
         if($route==='/api/friends'){demand($uid,'Sign in first',401);return ['friends'=>$this->rows('SELECT u.id,u.name,f.status,f.a AS requester FROM friends f JOIN users u ON u.id=CASE WHEN f.a=? THEN f.b ELSE f.a END WHERE f.a=? OR f.b=?',[$uid,$uid,$uid])];}

@@ -37,7 +37,15 @@ app=Path(os.environ.get('KFX_TEST_APP','/Applications/Keeper-Enhanced.app'));lau
 def port(udp=False):
  with socket.socket(socket.AF_INET,socket.SOCK_DGRAM if udp else socket.SOCK_STREAM) as s:s.bind(('127.0.0.1',0));return s.getsockname()[1]
 def profile(name):
- p=work/name;env=dict(os.environ,KFX_USER_DATA_DIR=str(p));subprocess.run([str(launcher),'--import',os.environ.get('KFX_TEST_IMPORT',str(root/'.local/keeperfx'))],env=env,check=True,stdout=subprocess.DEVNULL);subprocess.run([str(launcher),'--prepare-only'],env=env,check=True,stdout=subprocess.DEVNULL);return p
+ p=work/name
+ if runtime:=os.environ.get('KFX_TEST_RUNTIME'):
+  p.mkdir();(p/'save').mkdir()
+  subprocess.run(['ditto',runtime,str(p/'GameData')],check=True)
+ else:
+  env=dict(os.environ,KFX_USER_DATA_DIR=str(p))
+  subprocess.run([str(launcher),'--import',os.environ.get('KFX_TEST_IMPORT',str(root/'.local/keeperfx'))],env=env,check=True,stdout=subprocess.DEVNULL)
+  subprocess.run([str(launcher),'--prepare-only'],env=env,check=True,stdout=subprocess.DEVNULL)
+ return p
 def config_api(p,apiport):
  f=p/'GameData/keeper-enhanced.cfg';s=f.read_text();s=re.sub(r'(?m)^API_ENABLED=.*$','API_ENABLED=TRUE',s);s=re.sub(r'(?m)^API_PORT=.*$',f'API_PORT={apiport}',s);f.write_text(s)
 connections={};buffers={};serial=0
@@ -78,9 +86,14 @@ manual_start=os.getenv('KFX_TEST_MANUAL_COOP')=='1'
 test_vote=os.getenv('KFX_TEST_MAP_VOTE')=='1'
 test_siege=os.getenv('KFX_TEST_SIEGE')=='1'
 test_party=test_coop or os.environ.get('KFX_TEST_PARTY')=='1'
-lobby_only=test_party or os.environ.get('KFX_TEST_LOBBY_ONLY')=='1'
+test_ready=os.environ.get('KFX_TEST_READY_CHECK')=='1'
+lobby_only=test_ready or test_party or os.environ.get('KFX_TEST_LOBBY_ONLY')=='1'
 try:
- hostprofile=profile('host');hostport=port(True);cfg=dict(name='Local Dedicated QA',engine_binary=os.environ.get('KFX_TEST_SERVER_ENGINE',str(engine)),user_data=str(hostprofile),hub_url=base,endpoint='127.0.0.1:'+str(hostport),visibility='public',port=hostport,rotation=([{'campaign':'original','level':53}] if test_vote else [])+[{'campaign':'original','level':60 if test_siege else 52}],allow_party_map_votes=test_vote,twin_hearts_siege=test_siege,manual_start=manual_start,humans=3 if manual_start else coop_humans if test_coop else 3 if test_party else 2 if lobby_only else 1,cooperative=test_coop,ai_style=os.getenv('KFX_TEST_AI_STYLE','defensive'),spectators=not lobby_only,app_resources=str(app/'Contents/Resources'));os.environ['KFX_HUB_ADMIN_KEY']=hub.admin_key;supervisor=ded.Host(cfg);hosterrors=[]
+ hostprofile=profile('host');hostport=port(True);cfg=dict(name='Local Dedicated QA',engine_binary=os.environ.get('KFX_TEST_SERVER_ENGINE',str(engine)),user_data=str(hostprofile),hub_url=base,endpoint='127.0.0.1:'+str(hostport),visibility='public',port=hostport,rotation=([{'campaign':'original','level':53}] if test_vote else [])+[{'campaign':'original','level':60 if test_siege else 52}],allow_party_map_votes=test_vote,twin_hearts_siege=test_siege,manual_start=manual_start,ready_check=test_ready,humans=1 if test_ready else 3 if manual_start else coop_humans if test_coop else 3 if test_party else 2 if lobby_only else 1,cooperative=test_coop,ai_style=os.getenv('KFX_TEST_AI_STYLE','defensive'),spectators=not lobby_only,app_resources=str(app/'Contents/Resources'));os.environ['KFX_HUB_ADMIN_KEY']=hub.admin_key
+ host_owner=hub.handle('POST','/api/register',{'name':'DedicatedQAOwner','password':'isolated dedicated QA password'})
+ provision=hub.handle('POST','/api/dedicated-hosts',{'action':'create','name':cfg['name']},host_owner['token'])
+ ded.save_owner_credential(hostprofile,base,provision['credential'])
+ supervisor=ded.Host(cfg);hosterrors=[]
  def run_host():
   try:supervisor.run()
   except Exception:hosterrors.append(traceback.format_exc())
@@ -128,7 +141,27 @@ try:
   until(buddy_in_lobby,seconds=20)
   print('PASS: the invited client joins through the party prompt and friends see its lobby status',flush=True)
  rpc(clientport,'community_action',command=2128 if test_party else 2040)
- if test_coop:
+ if test_ready:
+  until(lambda:rpc(clientport).get('active') and supervisor.status.get('players')==2)
+  client.terminate()
+  client.wait(timeout=10)
+  held=until(lambda:hub.handle('GET','/api/rejoin-lobby',{},user['token']).get('server'),seconds=65)
+  assert held['id']==supervisor.status['server_id']
+  clientport=port()
+  client=launch(clientprofile,clientport,user['token'])
+  rpc(clientport,'community_action',command=2029)
+  until(lambda:rpc(clientport,'community_status')['page']==21)
+  rpc(clientport,'community_action',command=2040)
+  until(lambda:rpc(clientport).get('active') and supervisor.status.get('players')==2)
+  assert not hub.handle('GET','/api/rejoin-lobby',{},user['token'])['server']
+  print('PASS: disconnected client uses Rejoin Lobby and consumes its held seat',flush=True)
+  time.sleep(3)
+  assert rpc(clientport).get('turn',0)==0
+  rpc(clientport,'lobby_ready_toggle')
+  until(lambda:rpc(clientport).get('turn',0)>20,seconds=75)
+  until(lambda:supervisor.status.get('timing',{}).get('turns',0)>0)
+  print('PASS: dedicated lobby waits for an explicit Ready and the running match reports timing',flush=True)
+ elif test_coop:
   ports=[clientport,buddy_port]
   if coop_humans==3:
    third=hub.handle('POST','/api/register',{'name':'ThirdKeeper','password':'local game test password'})
@@ -176,11 +209,16 @@ try:
  supervisor.stop=True
  hostthread.join(12)
  assert not hostthread.is_alive(), 'Public test host failed to stop'
+ if test_ready:
+  dashboard=hub.handle('GET','/api/dedicated-hosts',{},host_owner['token'])['hosts'][0]
+  assert dashboard['performance'][0]['turns']>0 and dashboard['performance'][0]['reconnects']==1,dashboard
+  assert any((hostprofile/'dedicated/performance').glob('*.json'))
+  print('PASS: match timing is saved locally and published to the owner dashboard',flush=True)
  web_process.terminate()
  web_process.wait(timeout=5)
  private_profile=profile('private-host')
  private_port=port(True)
- supervisor=ded.Host(dict(cfg,visibility='private',user_data=str(private_profile),port=private_port,spectators=False))
+ supervisor=ded.Host(dict(cfg,visibility='private',user_data=str(private_profile),port=private_port,spectators=False,ready_check=False))
  hostthread=threading.Thread(target=run_host,daemon=True)
  hostthread.start()
  until(lambda:supervisor.status.get('active'))

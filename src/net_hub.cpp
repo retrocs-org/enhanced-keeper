@@ -11,6 +11,7 @@
 #include <array>
 #include <chrono>
 #include <cstdio>
+#include <ctime>
 #include <cerrno>
 #include <cstring>
 #include <cctype>
@@ -30,12 +31,17 @@ namespace {
 std::string identity_ticket, login_ticket;std::array<std::string,4> identities;
 bool initializing=false;
 bool remember_session=false;
-bool remember_next_login=false;
 bool local_profile=false;
 bool host_started=false;
 std::string base="https://keeper-enhanced.retrocs.org",folder,account,name,account_id,server_id,server_secret,match_id,last_tag,last_body;
 struct Registration{std::string host,token,role;int port;};std::vector<Registration> registrations;
 long last_status=0;
+std::string rejoin_id,rejoin_account;
+Uint64 rejoin_until=0,rejoin_check_at=0;
+std::string managed_lobby,moderation_audit,moderation_latest,moderation_notice;
+std::array<std::string,3> moderation_players,moderation_ids;
+bool moderation_available=false,moderation_locked=false;
+Uint64 moderation_poll_at=0;
 struct Reply{std::string tag,body;long status=0;};std::future<Reply> job;Uint64 heartbeat_at=0;
 std::string lobby_epoch;
 struct Request{std::string tag,route,body,token;};std::deque<Request> queue;
@@ -121,7 +127,7 @@ Reply http(std::string url,std::string tag,std::string route,std::string body,st
   char *escaped=curl_easy_escape(c,route.c_str(),(int)route.size());
   if(escaped){std::string direct=url+"/index.php?route="+escaped;curl_free(escaped);reply.body.clear();curl_easy_setopt(c,CURLOPT_URL,direct.c_str());code=curl_easy_perform(c);curl_easy_getinfo(c,CURLINFO_RESPONSE_CODE,&reply.status);}
  }
- if(code!=CURLE_OK)reply.body="{\"error\":\"Community service unavailable. LAN and direct play remain available.\"}";
+ if(code!=CURLE_OK)reply.body="{\"error\":"+quote(std::string("Account connection failed. ")+curl_easy_strerror(code))+"}";
  curl_slist_free_all(headers);curl_easy_cleanup(c);return reply;
 }
 void restrict_user_file(FILE *file)
@@ -159,20 +165,106 @@ extern "C" int kfx_hub_set_url(const char *url){if(job.valid()||!queue.empty()||
 extern "C" int kfx_hub_request(const char *tag,const char *route,const char *body,int credentials){if(getenv("KFX_PRIVATE_SERVER"))return 0;if(queue.size()>=8||!tag||!route||strncmp(route,"/api/",5)||strlen(route)>200||strchr(route,'\r')||strchr(route,'\n'))return 0;std::string token=credentials==2?server_secret:credentials==1&&!local_profile?account:"";queue.push_back({tag,route,body?body:"",token});return 1;}
 namespace {std::string advertised_content;}
 extern "C" void kfx_hub_content(const char *value){advertised_content=value?value:"";}
+extern "C" int kfx_hub_rejoin_seconds(void)
+{
+    const auto now=SDL_GetTicks();
+    if(!kfx_hub_has_session()||rejoin_account!=account||rejoin_until<=now)return 0;
+    return static_cast<int>((rejoin_until-now+999)/1000);
+}
+extern "C" const char *kfx_hub_rejoin_id(void){return rejoin_id.c_str();}
+extern "C" void kfx_hub_rejoin_poll(void)
+{
+    const auto now=SDL_GetTicks();
+    if(!kfx_hub_has_session()||getenv("KFX_HEADLESS")||now<rejoin_check_at||kfx_hub_busy())return;
+    if(kfx_hub_request("quick-rejoin","/api/rejoin-lobby",nullptr,1)){
+        rejoin_account=account;
+        rejoin_check_at=now+3000;
+    }
+}
+extern "C" int kfx_lobby_manage_available(){return moderation_available;}
+extern "C" int kfx_lobby_manage_locked(){return moderation_locked;}
+extern "C" const char *kfx_lobby_manage_player(int index){
+    return index>=0&&index<3?moderation_players[index].c_str():"";
+}
+extern "C" const char *kfx_lobby_manage_audit(){return moderation_audit.c_str();}
+extern "C" const char *kfx_lobby_manage_last_action(){return moderation_latest.c_str();}
+extern "C" const char *kfx_lobby_manage_notice(){return moderation_notice.c_str();}
+extern "C" void kfx_lobby_manage_request(const char *action,int index){
+    if(managed_lobby.empty()||!kfx_hub_has_session()||!action)return;
+    std::string body="{\"server\":"+quote(managed_lobby)+",\"action\":"+quote(action);
+    if(index>=0&&index<3&&!moderation_ids[index].empty())body+=",\"user\":"+quote(moderation_ids[index]);
+    body+="}";
+    kfx_hub_request(!strcmp(action,"state")?"lobby-manage-state":"lobby-manage-change",
+        "/api/lobby-management",body.c_str(),1);
+}
+extern "C" void kfx_lobby_manage_poll(int in_lobby){
+    if(!in_lobby){
+        managed_lobby.clear();moderation_available=false;moderation_poll_at=0;
+        return;
+    }
+    const auto now=SDL_GetTicks();
+    if(!managed_lobby.empty()&&now>=moderation_poll_at&&!kfx_hub_busy()){
+        kfx_lobby_manage_request("state",-1);moderation_poll_at=now+3000;
+    }
+}
 extern "C" int kfx_hub_tick(int hosting,int players,int playing,const char *map){
  int ready=0;if(job.valid()&&job.wait_for(std::chrono::seconds(0))==std::future_status::ready){Reply r=job.get();last_tag=r.tag;last_body=r.body;last_status=r.status;Document d(r.body);std::string token=field(&d.root,"token");if((r.tag=="pair-poll"||r.tag=="cloud-verify"||r.tag=="cloud-login")&&!token.empty()){
-     local_profile=false;remember_session=r.tag=="pair-poll"||remember_next_login;
+     local_profile=false;remember_session=true;
      account=token;name=field(&d.root,"name");account_id=field(&d.root,"id");save_token();
  }
  if(((r.tag=="me"&&!local_profile)||r.tag=="picker-me")&&r.status==401){account.clear();save_token();}
  if(r.tag=="me"&&!local_profile&&!field(&d.root,"id").empty()){account_id=field(&d.root,"id");name=field(&d.root,"name");save_token();}
- if((r.tag=="publish"||r.tag=="join")&&!field(&d.root,"match_id").empty())match_id=field(&d.root,"match_id");
+ if((r.tag=="publish"||r.tag=="join"||r.tag=="windows-rejoin"||r.tag=="windows-public-join")&&!field(&d.root,"match_id").empty())match_id=field(&d.root,"match_id");
  if(r.tag=="publish"&&!field(&d.root,"secret").empty()){server_id=field(&d.root,"id");server_secret=field(&d.root,"secret");lobby_epoch.clear();heartbeat_at=0;}
  if(r.tag=="join"){
      const VALUE *required=value_dict_get(&d.root,"login_ticket_required");
      identity_ticket=required&&value_type(required)==VALUE_BOOL&&value_bool(required)?"":field(&d.root,"identity_ticket");
  }
  if(r.tag.rfind("identity:",0)==0){int peer=atoi(r.tag.c_str()+9);if(peer>0&&peer<4)identities[peer]=field(&d.root,"user");}
+ if(r.tag=="quick-rejoin"&&rejoin_account==account){
+     rejoin_until=0;
+     if(r.status==401){account.clear();save_token();}
+     if(r.status==200){
+         const VALUE *seconds=value_dict_get(&d.root,"seconds_left");
+         const VALUE *server=value_dict_get(&d.root,"server");
+         const int remaining=seconds&&(value_type(seconds)==VALUE_INT32||value_type(seconds)==VALUE_UINT32)?value_int32(seconds):0;
+         rejoin_id=server&&value_type(server)==VALUE_DICT?field(server,"id"):"";
+         if(rejoin_id.size()==24&&remaining>0&&remaining<=60)
+             rejoin_until=SDL_GetTicks()+1000ull*remaining;
+     }
+ }
+ if((r.tag=="join"||r.tag=="windows-public-join"||r.tag=="windows-rejoin")&&r.status==200){
+     managed_lobby=field(&d.root,"id");moderation_available=false;moderation_poll_at=0;
+ }
+ if(r.tag=="lobby-manage-state"||r.tag=="lobby-manage-change"){
+     if(r.status==200&&!managed_lobby.empty()){
+         moderation_available=true;
+         const auto *locked=value_dict_get(&d.root,"locked");
+         moderation_locked=locked&&value_type(locked)==VALUE_BOOL&&value_bool(locked);
+         moderation_players.fill({});moderation_ids.fill({});
+         const auto *roster=value_dict_get(&d.root,"players");
+         if(roster&&value_type(roster)==VALUE_ARRAY)for(size_t i=0;i<value_array_size(roster)&&i<3;++i){
+             const auto *row=value_array_get(roster,i);
+             moderation_players[i]=field(row,"name");moderation_ids[i]=field(row,"user");
+         }
+         moderation_audit.clear();moderation_latest.clear();
+         const auto *audit=value_dict_get(&d.root,"audit");
+         if(audit&&value_type(audit)==VALUE_ARRAY)for(size_t i=0;i<value_array_size(audit)&&i<12;++i){
+             const auto *row=value_array_get(audit,i);
+             const auto *created=value_dict_get(row,"created");
+             const time_t when=created?static_cast<time_t>(value_double(created)):0;
+             char stamp[24]={};
+             if(const auto *local=std::localtime(&when))std::strftime(stamp,sizeof(stamp),"%Y-%m-%d %H:%M",local);
+             const auto line=std::string(stamp)+" "+field(row,"actor")+": "+field(row,"action")+" "+field(row,"target");
+             moderation_audit+=line+"\n";
+             if(i==0)moderation_latest=line;
+         }
+         if(r.tag=="lobby-manage-change")moderation_notice="Lobby updated";
+     }else if(r.status>=400){
+         if(r.tag=="lobby-manage-state")moderation_available=false;
+         else moderation_notice=field(&d.root,"error");
+     }
+ }
  if(r.tag=="stream")live_reply(&d.root);
  if(r.tag=="heartbeat")apply_channels(&d.root);
  ready=1;}
@@ -201,7 +293,6 @@ extern "C" const char *kfx_hub_result_tag(){return last_tag.c_str();}
 extern "C" const char *kfx_hub_result(){return last_body.c_str();}
 extern "C" int kfx_hub_busy(){return job.valid()||!queue.empty();}
 extern "C" const char *kfx_hub_account_name(){return local_profile?"":name.c_str();}
-extern "C" void kfx_hub_remember_session(int remember){remember_next_login=remember!=0;}
 extern "C" int kfx_hub_session_remembered(){return remember_session&&!local_profile&&!name.empty();}
 extern "C" void kfx_hub_use_local_profile(){local_profile=true;identity_ticket.clear();match_id.clear();}
 extern "C" int kfx_hub_forget_cached_profile(const char *id)

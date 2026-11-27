@@ -3,7 +3,9 @@ struct LocalReplay {std::string file,title,campaign,date;int level=0,players=0;u
 std::vector<LocalReplay> replay_library;int replay_index=0,recovery_index=0;std::string replay_title;
 bool reset_confirm=false,recovery_noticed=false;Uint64 healthy_after=0,capture_until=0;
 SDL_Process *personal_process=nullptr;std::string personal_job;
-std::vector<double> frame_samples;std::vector<std::string> capture_rows;Uint64 sample_previous=0;
+std::deque<double> frame_samples;std::vector<std::string> capture_rows;Uint64 sample_previous=0;
+int performance_scenario=0, capture_scenario=0;
+const char *const performance_scenarios[]={"Main Menu","Large Dig Area","Busy Fight"};
 std::string profile_file(const char *name){return data_folder()+"/"+name;}
 void scan_replays(){
  replay_library.clear();namespace fs=std::filesystem;
@@ -35,8 +37,8 @@ void export_replay(void *,const char *const *files,int){
 }
 void library_rename(){if(replay_library.empty()||replay_title.empty()){notice="Enter a replay title.";return;}notice=write_small_file(replay_library[replay_index].file+".title",replay_title+"\n")?"Replay title saved.":"Replay title could not be saved.";scan_replays();editing=0;SDL_StopTextInput(SDL_GetKeyboardFocus());}
 void open_enhancement(int target){page=target;selected=0;focus_action=-1;notice.clear();if(target==30)scan_replays();if(target==35){scan_saves();recovery_index=0;}}
-int enhancement_count(){return page==30?6:page==31?5:page==32?5:page==33?5:page==34?3:page==35?3:0;}
-void enhancement_confirm(){const int library[]={1501,1502,1503,1504,1505,1506},tools[]={1511,1512,1513,1514,1515},setup[]={1521,1522,1523,1524,1525},comfort[]={1531,1532,1533,1534,1535},perf[]={1541,1542,1543},recover[]={1551,1552,1553};const int *commands=page==30?library:page==31?tools:page==32?setup:page==33?comfort:page==34?perf:recover;activate(commands[selected]);}
+int enhancement_count(){return page==30?6:page==31?5:page==32?5:page==33?5:page==34?4:page==35?3:0;}
+void enhancement_confirm(){const int library[]={1501,1502,1503,1504,1505,1506},tools[]={1511,1512,1513,1514,1515},setup[]={1521,1522,1523,1524,1525},comfort[]={1531,1532,1533,1534,1535},perf[]={1541,1542,1544,1543},recover[]={1551,1552,1553};const int *commands=page==30?library:page==31?tools:page==32?setup:page==33?comfort:page==34?perf:recover;activate(commands[selected]);}
 bool enhancement_action(int action){
  if(action==1500||action==1510||action==1520||action==1530||action==1540||action==1550){open_enhancement(action==1500?30:action==1510?31:action==1520?32:action==1530?33:action==1540?34:35);return true;}
  if(action==1501||action==1502){if(!replay_library.empty())replay_index=(replay_index+(action==1501?-1:1)+(int)replay_library.size())%replay_library.size();return true;}
@@ -59,7 +61,8 @@ bool enhancement_action(int action){
  if(action==1525){SDL_CreateDirectory((data_folder()+"/EnhancedData/music").c_str());open_folder(data_folder()+"/EnhancedData/music");return true;}
  if(action>=1531&&action<=1535){if(action==1531)kfx_caption_scale=kfx_caption_scale>=2?1:kfx_caption_scale+.25f;if(action==1532)kfx_reduce_flashes=!kfx_reduce_flashes;if(action==1533)kfx_high_contrast=!kfx_high_contrast;if(action==1534)env_number("KFX_CAMERA_RESPONSE",kfx_camera_response()>=3?1:kfx_camera_response()+.5);if(action==1535)kfx_tooltip_scale=kfx_tooltip_scale>=1.5?1:kfx_tooltip_scale+.25;persist();return true;}
  if(action==1541){performance_overlay=!performance_overlay;persist();return true;}
- if(action==1542){frame_samples.clear();capture_rows.clear();sample_previous=0;capture_until=SDL_GetTicks()+15000;notice="Capturing 15 seconds. Close the menu and play normally.";return true;}
+ if(action==1544){performance_scenario=(performance_scenario+1)%3;return true;}
+ if(action==1542){capture_scenario=performance_scenario;frame_samples.clear();capture_rows.clear();sample_previous=0;capture_until=SDL_GetTicks()+15000;notice="Close this panel, then perform the selected scenario.";return true;}
  if(action==1543){open_folder(path(""));return true;}
  if(action==1551||action==1552){int count=0;for(auto &s:all_saves)if(s.backup)count++;if(count)recovery_index=(recovery_index+(action==1551?-1:1)+count)%count;return true;}
  if(action==1553){int i=0;for(const auto &entry:all_saves)if(entry.backup&&i++==recovery_index){for(int n=0;n<(int)saves.size();n++)if(saves[n].slot==entry.slot){save_index=n;backup_choice=entry.backup;inspect_save();return true;}}notice="No recoverable backup is selected.";return true;}
@@ -76,16 +79,46 @@ void enhancement_tick(){
 }
 unsigned long performance_ping(){if(!network_is_active())return 0;if(!network_is_host())return GetPing(SERVER_ID);unsigned long result=0;for(int i=1;i<MAX_NET_USERS;i++)result=std::max(result,GetPing(i));return result;}
 void enhancement_sample(){
- Uint64 now=SDL_GetTicks();if(sample_previous&&now>sample_previous&&(performance_overlay||capture_until||page==34)){frame_samples.push_back(now-sample_previous);if(frame_samples.size()>4096)frame_samples.erase(frame_samples.begin());if(capture_until&&capture_rows.size()<4096){std::ostringstream row;row<<(now-sample_previous)<<","<<frametime_measurements.frametime_current[Frametime_Logic]<<","<<frametime_measurements.frametime_current[Frametime_Draw]<<","<<performance_ping();capture_rows.push_back(row.str());}}sample_previous=now;
- if(capture_until&&now>=capture_until){capture_until=0;std::ostringstream report;report<<"frame_ms,logic_ms,draw_ms,ping_ms\n";for(auto &value:capture_rows)report<<value<<"\n";notice=write_small_file(path("performance-capture.csv"),report.str())?"Performance capture saved.":"Performance capture could not be written.";}
+ const auto now=SDL_GetTicks();
+ const auto frame_time=SDL_GetTicksNS();
+ const bool capturing=performance_overlay||capture_until||
+     (kfx_controller_guide_visible&&page==34);
+ if(capturing&&sample_previous&&frame_time>sample_previous){
+    const double elapsed=(frame_time-sample_previous)/1000000.0;
+    frame_samples.push_back(elapsed);
+    if(frame_samples.size()>4096)frame_samples.pop_front();
+    if(capture_until&&capture_rows.size()<4096){
+        const char *scene=kfx_controller_guide_visible?"options":
+            frontend_menu_state==FeSt_MAIN_MENU?"main_menu":"game";
+        const bool gameplay=game.game_kind!=GKind_Unset&&frontend_menu_state==FeSt_INITIAL;
+        std::ostringstream row;
+        row<<scene<<","<<elapsed<<",";
+        if(gameplay)row<<frametime_measurements.frametime_current[Frametime_Logic]<<","
+                       <<frametime_measurements.frametime_current[Frametime_Draw]<<","
+                       <<frametime_measurements.frametime_current[Frametime_Sleep];
+        else row<<",,";
+        row<<","<<performance_ping();
+        capture_rows.push_back(row.str());
+    }
+ }
+ sample_previous=capturing?frame_time:0;
+ if(capture_until&&now>=capture_until){
+    capture_until=0;
+    std::ostringstream report;
+    report<<"scenario,scene,frame_ms,logic_ms,draw_ms,sleep_ms,ping_ms\n";
+    for(const auto &row:capture_rows)report<<performance_scenarios[capture_scenario]<<","<<row<<"\n";
+    const char *const reports[]={"performance-capture.csv","performance-dig.csv","performance-fight.csv"};
+    notice=write_small_file(path(reports[capture_scenario]),report.str())?
+        "Performance capture saved.":"Performance capture could not be written.";
+ }
 }
 void enhancement_draw(){
  if(page==30){if(replay_library.empty())wrapped_tools_text(42,105,"No local recordings. Put .pck recordings in the profile recordings folder, or use Open Local Replay.",4);else{const auto &r=replay_library[replay_index];centered(100,(r.favourite?"* ":"")+(editing==12?replay_title+"|":r.title),24);small_line(24,145,r.campaign+" / Map "+std::to_string(r.level),592);small_line(24,204,r.date,592);small_line(24,178,std::to_string(r.turns)+" turns / "+std::to_string(r.players)+" players / "+std::to_string(replay_index+1)+" of "+std::to_string(replay_library.size()),592);}const char *labels[]={"Previous","Next","Play Replay","Rename","Favourite","Export Replay"};for(int i=0;i<6;i++)button(i%2?332:24,232+(i/2)*54,284,labels[i],1501+i,selected==i,38);
  }else if(page==31){small_line(24,92,"Export excludes imported originals and account tokens.",592);const char *labels[]={"Export Personal Data","Open Exports Folder",access(profile_file("reset-profile-next.cfg").c_str(),F_OK)==0?"Cancel Scheduled Reset":reset_confirm?"Cancel Reset":"Reset Profile on Restart","Confirm Reset","Show App in Finder"};for(int i=0;i<5;i++)button(64,132+i*51,512,labels[i],1511+i,selected==i,38);
  }else if(page==32){int music=0;try{for(const auto &entry:std::filesystem::directory_iterator(std::string(keeper_runtime_directory)+"/music"))if(entry.is_regular_file())music++;}catch(...){}small_line(24,88,"Music files detected: "+std::to_string(music)+". Changes apply after restart.",592);const char *labels[]={"Display and Fullscreen","Test and Calibrate Controller","Import Original Game Data","Finish Setup","Open Music Folder"};for(int i=0;i<5;i++)button(64,127+i*51,512,labels[i],1521+i,selected==i,38);
  }else if(page==33){const std::string labels[]={"Caption size: "+std::to_string((int)(100*kfx_caption_scale))+"%",std::string("Reduced damage flashes: ")+(kfx_reduce_flashes?"On":"Off"),std::string("Contrast and focus marker: ")+(kfx_high_contrast?"On":"Off"),"Stick response curve: "+std::to_string(kfx_camera_response()).substr(0,3),"Tooltip size: "+std::to_string((int)(100*kfx_tooltip_scale))+"%"};for(int i=0;i<5;i++)button(50,108+i*57,540,labels[i],1531+i,selected==i,40);
- }else if(page==34){double ms=frame_samples.empty()?0:frame_samples.back();small_line(24,93,"Frame: "+std::to_string(ms).substr(0,5)+" ms / "+(ms>0?std::to_string((int)(1000/ms)):"?")+" FPS",592);int x=24;for(int i=std::max(0,(int)frame_samples.size()-148);i<(int)frame_samples.size();i++){int h=std::min(96,(int)frame_samples[i]);rect(x,230-h,3,h,224,200,140);x+=4;}button(64,257,512,performance_overlay?"Overlay: On":"Overlay: Off",1541,selected==0,38);button(64,309,512,capture_until?"Capturing...":"Capture 15 Seconds",1542,selected==1,38);button(64,361,512,"Open Capture Folder",1543,selected==2,38);
- }else if(page==35){int index=0,count=0;for(const Save &entry:all_saves)if(entry.backup){if(index++==recovery_index){centered(96,short_text(entry.title,36),24);small_line(24,140,entry.campaign+" / Map "+std::to_string(entry.level),592);small_line(24,176,entry.date+" / Backup "+std::to_string(entry.backup),592);SDL_Surface *image=IMG_Load((entry.path+".png").c_str());if(image){SDL_Rect to={215,215,210,100};SDL_BlitSurfaceScaled(image,nullptr,canvas,&to,SDL_SCALEMODE_LINEAR);SDL_DestroySurface(image);}}count++;}if(!count)centered(160,"No rotating save backups found.",22);button(24,330,284,"Previous Backup",1551,selected==0,38);button(332,330,284,"Next Backup",1552,selected==1,38);button(64,380,512,"Check and Restore to Free Slot",1553,selected==2,34);}
+ }else if(page==34){double ms=frame_samples.empty()?0:frame_samples.back();small_line(24,93,"Frame: "+std::to_string(ms).substr(0,5)+" ms / "+(ms>0?std::to_string((int)(1000/ms)):"?")+" FPS",592);int x=24;for(int i=std::max(0,(int)frame_samples.size()-148);i<(int)frame_samples.size();i++){int h=std::min(96,(int)frame_samples[i]);rect(x,230-h,3,h,224,200,140);x+=4;}button(64,257,512,performance_overlay?"Overlay: On":"Overlay: Off",1541,selected==0,38);button(64,309,512,capture_until?"Capturing...":"Capture 15 Seconds",1542,selected==1,38);button(64,361,250,performance_scenarios[performance_scenario],1544,selected==2,38);button(326,361,250,"Open Capture Folder",1543,selected==3,38);
+ }else if(page==35){int index=0,count=0;for(const Save &entry:all_saves)if(entry.backup){if(index++==recovery_index){centered(96,short_text(entry.title,36),24);small_line(24,140,entry.campaign+" / Map "+std::to_string(entry.level),592);small_line(24,176,entry.date+" / Backup "+std::to_string(entry.backup),592);SDL_Surface *image=IMG_Load((entry.path+".png").c_str());if(image){SDL_Rect to={215,215,210,100};blit_canvas(image,nullptr,to,SDL_SCALEMODE_LINEAR);SDL_DestroySurface(image);}}count++;}if(!count)centered(160,"No rotating save backups found.",22);button(24,330,284,"Previous Backup",1551,selected==0,38);button(332,330,284,"Next Backup",1552,selected==1,38);button(64,380,512,"Check and Restore to Free Slot",1553,selected==2,34);}
  if(page>=30&&page<=35&&!notice.empty())status_line(notice);
 }
 

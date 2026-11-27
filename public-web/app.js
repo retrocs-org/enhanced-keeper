@@ -16,7 +16,7 @@ async function refresh(){
  $('pair-panel').hidden=route!=='/device'||!session.signed_in;
  $('profile-panel').hidden=!session.signed_in||route!=='/profile';
  $('event').hidden=!session.signed_in;$('upload-replay').hidden=!session.signed_in;
- if(!session.signed_in){$('recovery-output').textContent='';$('recovery-output').hidden=true;me=null;}
+ if(!session.signed_in){$('dedicated-credential').value='';$('dedicated-credential-panel').hidden=true;$('dedicated-hosts').replaceChildren();$('dedicated-profile').open=false;$('recovery-output').textContent='';$('recovery-output').hidden=true;me=null;}
  else if(route==='/profile')await loadProfile();
  else if(['/events','/community'].includes(route))me=await api('me');
  if(['/lair','/servers','/community'].includes(route)){servers=(await api('servers')).servers;drawServers();}
@@ -240,3 +240,106 @@ profileSubmit('profile-delete-form',async data=>{
     await refresh();
     note('Your cloud account was deleted.');
 });
+
+function downloadMatchCsv(host){
+    const cell=value=>{
+        const text=String(value??'');
+        return '"'+(/^\s*[=+@-]|^[\t\r\n]/.test(text)?"'":"")+text.replaceAll('"','""')+'"';
+    };
+    const header=['map','engine','started_utc','turns','mean_logic_ms','p95_logic_ms','peak_logic_ms','slow_frames','lobby_reconnects'];
+    const rows=host.performance.map(match=>[
+        match.map,match.engine,new Date(Number(match.started)*1000).toISOString(),match.turns,
+        Number(match.turns)?Number(match.logic_ms)/Number(match.turns):'',match.p95_ms,
+        match.peak_ms,match.slow_frames,match.reconnects
+    ]);
+    const url=URL.createObjectURL(new Blob([[header,...rows].map(row=>row.map(cell).join(',')).join('\r\n')+'\r\n'],{type:'text/csv'}));
+    const link=document.createElement('a');
+    link.href=url;
+    link.download='keeper-server-performance.csv';
+    link.click();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+async function loadDedicatedHosts(){
+    const list=$('dedicated-hosts');
+    const {hosts}=await api('dedicated-hosts');
+    list.replaceChildren();
+    if(!hosts.length)node('p','No dedicated servers linked.',list);
+    for(const host of hosts){
+        const card=node('section','',list);
+        node('h4',host.name,card);
+        node('p',host.owner_name+' · '+(host.is_owner?'Owner':'Administrator')+' · '+host.status,card);
+        if(host.last_seen){
+            const seen=new Date(Number(host.last_seen)*1000).toLocaleString();
+            node('p','Last heartbeat '+seen+' · '+(host.map||'Map pending')+' · '+host.players+'/'+host.capacity+' seats',card);
+        }
+        if(host.client_versions.length)node('p','Compatible clients '+host.client_versions.join(', '),card);
+        if(host.maintenance)node('p',host.maintenance==='draining'?'Draining for maintenance':'Restarting',card);
+        if(host.status!=='offline'&&host.maintenance!=='restarting')
+            action(host.maintenance?'Cancel Maintenance':'Drain for Maintenance',async()=>{
+                await api('dedicated-hosts',{host:host.id,action:host.maintenance?'cancel-maintenance':'maintenance'});
+                await loadDedicatedHosts();
+            },card);
+        if(host.performance.length){
+            const performance=node('details','',card);
+            node('summary','Recent match performance',performance);
+            const samples=node('ul','',performance);
+            action('Download CSV',()=>downloadMatchCsv(host),performance);
+            for(const sample of host.performance.slice(0,5)){
+                const mean=sample.turns?Number(sample.logic_ms/sample.turns).toFixed(2)+' ms/turn':'No gameplay samples';
+                const p95=sample.p95_ms===null?'p95 unavailable':'p95 '+Number(sample.p95_ms).toFixed(2)+' ms';
+                node('li',sample.map+' · '+sample.turns+' turns · '+mean+' · '+p95+' · '+Number(sample.peak_ms).toFixed(1)+
+                    ' ms peak logic frame · '+sample.slow_frames+' logic frames over 50 ms · '+sample.reconnects+' lobby reconnects',samples);
+            }
+        }
+        const details=node('ul','',card);
+        for(const admin of host.admins){
+            const item=node('li',admin.name+' ',details);
+            if(host.is_owner)action('Remove',async()=>{
+                await api('dedicated-hosts',{host:host.id,action:'remove-admin',name:admin.name});
+                await loadDedicatedHosts();
+                note('Administrator removed.');
+            },item);
+        }
+        if(host.status==='lobby'&&!host.maintenance){
+            for(const [command,label] of [['start','Start Lobby'],['next','Next Map']])
+                action(label,async()=>{
+                    await api('dedicated-hosts',{host:host.id,action:command});
+                    note('Command queued for the server.');
+                },card);
+        }
+        if(!host.is_owner)continue;
+        const form=node('form','',card);
+        form.method='post';
+        const label=node('label','Cloud account name',form);
+        const input=node('input','',label);
+        input.required=true;
+        input.maxLength=24;
+        node('button','Add Administrator',form);
+        form.addEventListener('submit',async event=>{
+            event.preventDefault();
+            try{
+                await api('dedicated-hosts',{host:host.id,action:'add-admin',name:input.value.trim()});
+                await loadDedicatedHosts();
+                note('Administrator added.');
+            }catch(error){note(error.message);}
+        });
+        action('Revoke Server Access',async()=>{
+            if(!window.confirm('Take this server offline and revoke its credential?'))return;
+            await api('dedicated-hosts',{host:host.id,action:'revoke'});
+            $('dedicated-credential').value='';
+            $('dedicated-credential-panel').hidden=true;
+            await loadDedicatedHosts();
+        },card);
+    }
+}
+$('dedicated-profile').addEventListener('toggle',event=>{
+    if(event.target.open&&session.signed_in)loadDedicatedHosts().catch(error=>note(error.message));
+});
+profileSubmit('dedicated-host-form',async data=>{
+    const result=await api('dedicated-hosts',{action:'create',name:data.name.trim()});
+    $('dedicated-credential').value=result.credential;
+    $('dedicated-credential-panel').hidden=false;
+    await loadDedicatedHosts();
+});
+
+$('dedicated-refresh').addEventListener('click',()=>loadDedicatedHosts().catch(error=>note(error.message)));

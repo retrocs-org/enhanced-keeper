@@ -2,23 +2,59 @@
 """Headless KeeperFX host supervisor. Standard library, GPL-2.0-or-later.
 One synchronized AI host + up to three human players. Does not claim a fifth slot.
 """
-import argparse,base64,fcntl,json,os,re,secrets,signal,socket,subprocess,sys,threading,time,urllib.request,urllib.error,urllib.parse
+import argparse,getpass,stat,tempfile,base64,fcntl,json,os,re,secrets,signal,socket,subprocess,sys,threading,time,urllib.request,urllib.error,urllib.parse
 from ipaddress import IPv4Address
 from pathlib import Path
 import struct
 
+class NoCredentialRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, request, response, code, message, headers, new_url):
+        return None
+
+def owner_credential_path(profile):
+    return profile / 'dedicated' / 'owner-credential.json'
+
+def save_owner_credential(profile, base, credential):
+    if not re.fullmatch(r'[A-Za-z0-9_-]{43}', credential):
+        raise ValueError('Paste the dedicated server credential from your cloud profile')
+    destination=owner_credential_path(profile)
+    destination.parent.mkdir(mode=0o700,exist_ok=True)
+    with tempfile.NamedTemporaryFile(mode='w', dir=destination.parent, delete=False) as temporary:
+        try:
+            json.dump({'hub':base,'credential':credential},temporary)
+            temporary.flush()
+            os.fsync(temporary.fileno())
+            os.replace(temporary.name,destination)
+        finally:
+            Path(temporary.name).unlink(missing_ok=True)
+
+def read_owner_credential(profile, base):
+    try:
+        with os.fdopen(os.open(owner_credential_path(profile),os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)) as stream:
+            info=os.fstat(stream.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_uid!=os.geteuid() or info.st_mode&0o077:
+                raise ValueError('Credential file must be owned by the server user with mode 0600')
+            stored=json.loads(stream.read(4096))
+        credential=stored.get('credential','')
+        if stored.get('hub')!=base or not re.fullmatch(r'[A-Za-z0-9_-]{43}',credential):
+            raise ValueError('Credential belongs to another hub or is invalid')
+        return credential
+    except (OSError,ValueError,TypeError,AttributeError) as error:
+        raise RuntimeError(f'Public dedicated hosting needs a cloud owner credential. Run this supervisor with --link. {error}') from error
+
 def request(base,route,data=None,token=''):
     headers={'Content-Type':'application/json'}
     if token:headers['Authorization']='Bearer '+token
+    opener=urllib.request.build_opener(NoCredentialRedirect()).open if token else urllib.request.urlopen
     req=urllib.request.Request(base+route,data=json.dumps(data).encode() if data is not None else None,headers=headers)
     try:
-        with urllib.request.urlopen(req,timeout=5) as r:return json.load(r)
+        with opener(req,timeout=5) as r:return json.load(r)
     except urllib.error.HTTPError as error:
         if error.code!=404 or 'text/html' not in error.headers.get('Content-Type',''):raise
         # Same-origin fallback for PHP vhosts without rewrite rules.
         direct=base+'/index.php?route='+urllib.parse.quote(route,safe='')
         retry=urllib.request.Request(direct,data=req.data,headers=headers)
-        with urllib.request.urlopen(retry,timeout=5) as response:return json.load(response)
+        with opener(retry,timeout=5) as response:return json.load(response)
 
 def server_version(engine):
     version = subprocess.check_output([str(engine), '--server-build-info'], text=True, timeout=5).strip()
@@ -30,9 +66,9 @@ def supported_clients(engine):
     output = subprocess.check_output([str(engine), '--supported-client-versions'], text=True, timeout=5)
     return output.splitlines()
 
-def rpc(port,action="get_network_info"):
+def rpc(port,action="get_network_info",**fields):
     with socket.create_connection(('127.0.0.1',port),timeout=2) as c:
-        c.sendall((json.dumps({'action':action,'ack':1})+'\n').encode());raw=b''
+        c.sendall((json.dumps({'action':action,'ack':1,**fields})+'\n').encode());raw=b''
         while b'\n' not in raw and len(raw)<65536:
             chunk=c.recv(4096)
             if not chunk:break
@@ -114,6 +150,7 @@ def validate(config):
     if config.get('twin_hearts_siege'):
         assert config.get('cooperative') and config.get('humans')==2,'Twin Hearts Siege needs exactly two co-op keepers'
         assert not config.get('manual_start'),'Twin Hearts Siege starts when both keepers are ready'
+    assert type(config.get('ready_check',False)) is bool,'ready_check must be true or false'
     assert type(config.get('manual_start',False)) is bool,'manual_start must be true or false'
     assert type(config.get('cooperative', False)) is bool, 'cooperative must be true or false'
     assert config.get('visibility','public') in ('private','public','code'),'Visibility must be private, public, or code'
@@ -128,7 +165,7 @@ def validate(config):
     assert config.get('hub_url','').startswith(('http://127.0.0.1:','http://localhost:','https://')),'Use local HTTP or HTTPS';return engine,profile
 
 class Host:
-    def __init__(self,config):self.config=config;self.engine,self.profile=validate(config);self.stop=False;self.next=False;self.process=None;self.index=0;self.status={};self.lobby_override=None;self.api_port=None;self.lock=threading.Lock()
+    def __init__(self,config):self.config=config;self.engine,self.profile=validate(config);self.stop=False;self.next=False;self.maintenance_restart=False;self.process=None;self.index=0;self.status={};self.lobby_override=None;self.api_port=None;self.lock=threading.Lock()
     def command(self,line):
         try:
             data=json.loads(line)
@@ -167,8 +204,19 @@ class Host:
             try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
             except BlockingIOError:raise RuntimeError('This dedicated profile already has a running host')
             self._run_locked()
+    def finish_drain(self, base, room):
+        try:
+            request(base,f"/api/servers/{room['id']}/drained",{},room['secret'])
+        except urllib.error.HTTPError as error:
+            if error.code==409:return False
+            raise
+        self.maintenance_restart=True
+        self.stop=True
+        return True
+
     def _run_locked(self):
         cfg=self.config;code_room=cfg.get('visibility')=='code';public=cfg.get('visibility','public')!='private';base=cfg.get('hub_url','').rstrip('/');key=os.environ.get('KFX_HUB_ADMIN_KEY','');state=self.profile/'dedicated';state.mkdir(mode=0o700,exist_ok=True)
+        credential=read_owner_credential(self.profile,base) if public else ''
         startfile=state/'start.request';startfile.unlink(missing_ok=True);stopfile=state/'stop.request';nextfile=state/'next.request';stopfile.unlink(missing_ok=True);nextfile.unlink(missing_ok=True)
         code_file=state/'room-code.json'
         code_request=state/'room-code.request'
@@ -234,7 +282,12 @@ class Host:
                     registration['endpoint'] = endpoint
                 if key:
                     registration['admin_key'] = key
-                room = request(base, '/api/servers/register', registration)
+                try:
+                    room = request(base, '/api/servers/register', registration, credential)
+                except urllib.error.HTTPError as error:
+                    if error.code in (401,403):
+                        raise RuntimeError('Public registration rejected. Check the owner credential and optional ranking key.') from error
+                    raise
                 if code_room:write_code(room)
             trusted = public and room.get('trusted', bool(key))
             spectators = trusted and not code_room and not os.environ.get('KFX_SERVER_PASSWORD') and cfg.get('spectators', False)
@@ -247,6 +300,8 @@ class Host:
                 env.pop('KFX_PRIVATE_SERVER',None)
                 env['KFX_PUBLIC_DEDICATED']='1'
                 env.pop('KFX_HUB_ADMIN_KEY',None)
+            env.pop('KFX_LOBBY_READY_CHECK',None)
+            if cfg.get('ready_check'):env['KFX_LOBBY_READY_CHECK']='1'
             env.pop('KFX_DEDICATED_COOP',None)
             env.pop('KFX_DEDICATED_AI_STYLE',None)
             env.pop('KFX_COOP_MANUAL_START',None)
@@ -262,6 +317,9 @@ class Host:
             self.api_port=api_port
             next_ballot_at=0
             departed=set()
+            next_admin_at=0
+            timing={}
+            draining=False
             print('Headless lobby ready:',cfg['name'],'map',item['campaign'],item['level'],flush=True)
             try:
                 while not self.stop and not self.next and self.process.poll() is None:
@@ -281,11 +339,31 @@ class Host:
                             startfile.unlink()
                             self.command('{"command":"start"}')
                         status=rpc(api_port);self.status={**status,'server_id':room['id'],'map':item,'humans':humans,'ai_style':ai_style,'cooperative':bool(cfg.get('cooperative'))};(state/'status.json').write_text(json.dumps(self.status));failures=0
+                        if public and time.monotonic()>=next_admin_at:
+                            next_admin_at=time.monotonic()+5
+                            try:
+                                controls=request(base,f"/api/servers/{room['id']}/admin-command",{},room['secret'])
+                                remote=controls.get('command')
+                                draining=bool(controls.get('draining'))
+                                if not status.get('turn',0):
+                                    for account in controls.get('kicks',[]):
+                                        if any(row.get('account')==account and not row.get('departed') for row in status.get('users',[])):
+                                            rpc(api_port,'kick_lobby_peer',account=account)
+                            except urllib.error.HTTPError as error:
+                                if error.code in (401,403):
+                                    raise RuntimeError('Public server access was revoked or replaced') from error
+                                remote=None
+                            if draining and not had_game and not status.get('turn',0):
+                                if self.finish_drain(base,room):
+                                    break
+                                draining=False
+                            if not draining and not had_game and not status.get('turn',0) and remote in ('start','next'):
+                                self.command(json.dumps({'command':remote}))
                         if applying and status.get('active'):
                             request(base,f"/api/servers/{room['id']}/map-applied",
                                 {'party':applying['party'],'map':applying['winning']},room['secret'])
                             applying=None
-                        if voting and not applying and status.get('active') and status.get('players')==1 and not had_game and time.monotonic()>=next_ballot_at:
+                        if not draining and public and not applying and status.get('active') and status.get('players')==1 and not had_game and time.monotonic()>=next_ballot_at:
                             next_ballot_at=time.monotonic()+3
                             vote=request(base,f"/api/servers/{room['id']}/map-ballot",{},room['secret']).get('ballot')
                             if vote:
@@ -294,6 +372,9 @@ class Host:
                                 break
                         departed.update(user['account'] for user in status.get('users',[]) if user.get('departed') and user.get('account'))
                         if status.get('turn',0)>0 and status.get('active'):had_game=True
+                        measurements=status.get('timing',{})
+                        if measurements.get('turns',0)>timing.get('turns',0):
+                            timing=measurements
                         if spectators and replay.exists() and not stream_truncated:
                             with replay.open('rb') as f:f.seek(offset);raw=f.read(32768)
                             if raw:answer=request(base,'/api/servers/'+room['id']+'/stream',{'offset':offset,'data':base64.b64encode(raw).decode()},room['secret']);offset=answer['offset'];stream_truncated=bool(answer.get('truncated'))
@@ -304,12 +385,20 @@ class Host:
                             if trusted and identified and all(v.get('verified_finish') for v in human_players):
                                 try:request(base,'/api/servers/'+room['id']+'/result',{'match':room['match_id'],'results':identified,'cooperative':bool(cfg.get('cooperative',False)),'siege_finish':status.get('siege_finish',0)},room['secret']);verified=True
                                 except Exception:pass # Unverified/disconnected games never become ranked wins.
+                            if draining:self.finish_drain(base,room)
                             break
                     except (OSError,ValueError):
                         failures+=1
                         if failures>30:raise RuntimeError('Headless engine status unavailable for one minute')
                     time.sleep(1)
             finally:
+                if self.process.poll() is None:
+                    try:
+                        final_timing=rpc(api_port).get('timing',{})
+                        if final_timing.get('turns',0)>timing.get('turns',0):
+                            timing=final_timing
+                    except (OSError,ValueError):
+                        pass
                 self.api_port=None;self.finish_child();log.close()
                 if code_room and not retained_room:code_file.unlink(missing_ok=True)
                 if spectators and replay.exists() and not stream_truncated:
@@ -320,6 +409,19 @@ class Host:
                             try:answer=request(base,'/api/servers/'+room['id']+'/stream',{'offset':offset,'data':base64.b64encode(raw).decode(),'finished':finished},room['secret']);offset=answer['offset'];stream_truncated=bool(answer.get('truncated'))
                             except Exception:break
                             if finished:break
+                if timing:
+                    summary={'turns':int(timing['turns']),'logic_ms':timing['logic_ms'],
+                             'peak_ms':timing['peak_ms'],'slow_frames':int(timing['slow_frames'])}
+                    if 'p95_ms' in timing:summary['p95_ms']=timing['p95_ms']
+                    reports=state/'performance'
+                    reports.mkdir(mode=0o700,exist_ok=True)
+                    (reports/(room['id']+'.json')).write_text(json.dumps({'map':item,**summary}))
+                    if public:
+                        try:
+                            request(base,f"/api/servers/{room['id']}/performance",
+                                    {'match':room['match_id'],**summary},room['secret'])
+                        except (OSError,ValueError):
+                            print('Could not upload match timing. The local report was kept.',file=sys.stderr)
                 try:
                     if public and not retained_room:request(base,'/api/servers/'+room['id']+'/close',{'departed':sorted(departed)[:3]},room['secret'])
                 except Exception:pass
@@ -340,11 +442,16 @@ def lobby_setup(config):
                 rotation=[config['rotation'][map_number-1]])
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('config',type=Path);p.add_argument('--check',action='store_true');p.add_argument('--setup',action='store_true');a=p.parse_args();cfg=json.loads(a.config.read_text())
+    p=argparse.ArgumentParser();p.add_argument('config',type=Path);p.add_argument('--check',action='store_true');p.add_argument('--link',action='store_true');p.add_argument('--setup',action='store_true');a=p.parse_args();cfg=json.loads(a.config.read_text())
     if a.setup:
         try:cfg=lobby_setup(cfg)
         except (ValueError,EOFError) as error:p.error(str(error))
-    validate(cfg)
+    _,profile=validate(cfg)
+    if a.link:
+        if cfg.get('visibility','public')=='private':p.error('Private servers do not need a cloud account')
+        try:save_owner_credential(profile,cfg['hub_url'].rstrip('/'),getpass.getpass('Dedicated server credential: ').strip())
+        except (OSError,ValueError) as error:p.error(str(error))
+        print('Cloud owner credential stored. Start the supervisor normally.');return
     if a.check:print('Dedicated configuration is valid');return
     host=Host(cfg);signal.signal(signal.SIGTERM,lambda *_:setattr(host,'stop',True));signal.signal(signal.SIGINT,lambda *_:setattr(host,'stop',True))
     def commands():
@@ -352,4 +459,5 @@ def main():
     threading.Thread(target=commands,daemon=True).start()
     try:host.run()
     finally:host.finish_child()
+    if host.maintenance_restart:raise SystemExit(75)
 if __name__=='__main__':main()

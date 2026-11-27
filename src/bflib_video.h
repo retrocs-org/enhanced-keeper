@@ -127,6 +127,8 @@ enum TbVideoModeFlags {
     Lb_VF_BORDERLESS  = 0x0020,
     Lb_VF_DESKTOP     = 0x0040,
     Lb_VF_FILLALL     = 0x0080,
+    Lb_VF_FIXED_RENDER = 0x0100,
+    Lb_VF_NATIVE_PIXELS = 0x0200,
 };
 
 struct GraphicsWindow {
@@ -276,6 +278,9 @@ extern unsigned short units_per_pixel_menu;
 extern unsigned short units_per_pixel_landview;
 extern unsigned short units_per_pixel_landview_frame;
 extern unsigned short units_per_pixel_ui;
+#if defined(__APPLE__)
+void set_macos_hud_scale(int percent);
+#endif
 extern unsigned long aspect_ratio_factor_HOR_PLUS;
 extern unsigned long aspect_ratio_factor_HOR_PLUS_AND_VERT_PLUS;
 extern unsigned long first_person_horizontal_fov;

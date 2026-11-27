@@ -93,6 +93,11 @@ trait HubAccounts {
         $this->q("UPDATE matches SET winner='' WHERE winner=?",[$uid]);
         foreach(['a','b','winner'] as $column)$this->q("UPDATE bracket SET $column='' WHERE $column=?",[$uid]);
         foreach(['servers','events'] as $table)$this->q("UPDATE $table SET owner='' WHERE owner=?",[$uid]);
+        foreach($this->rows('SELECT * FROM dedicated_hosts WHERE owner=?',[$uid]) as $host)
+            $this->removeDedicatedHost($host);
+        $this->q('DELETE FROM lobby_reconnects WHERE user=?',[$uid]);
+        $this->q('DELETE FROM dedicated_admins WHERE user=?',[$uid]);
+        $this->q('DELETE FROM dedicated_commands WHERE requester=?',[$uid]);
         $this->q('DELETE FROM users WHERE id=?',[$uid]);
         return ['ok'=>true];
     }

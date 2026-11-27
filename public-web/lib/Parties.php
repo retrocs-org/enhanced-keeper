@@ -49,6 +49,8 @@ trait HubParties {
 
     private function partyServerBlocker(array|false $server,int $count): string {
         if(!$server||$server['status']!=='lobby')return 'Server lobby unavailable';
+        if($this->maintenanceState($server['id'])!=='')return 'Server is draining for maintenance';
+        if($this->lobbyLocked($server['id']))return 'The administrator locked this lobby';
         if($server['password'])return 'Server requires a password';
         if($server['capacity']-$server['players']<$count)return 'Not enough room for the party';
         return '';
@@ -265,6 +267,32 @@ trait HubParties {
                     $this->q('DELETE FROM party_checks WHERE party=? AND user=?',[$id,$member]);
                     $this->q('DELETE FROM party_map_votes WHERE party=? AND user=?',[$id,$member]);
                     $this->q('DELETE FROM party_seat_holds WHERE party=? AND user=?',[$id,$member]);
+                }elseif($action==='prepare-rematch'){
+                    $previous=api_text($data['server']??null,24);
+                    $prior=$this->one("SELECT m.map,h.server FROM matches m
+                        JOIN match_party_roster r ON r.match=m.id
+                        JOIN dedicated_host_history hh ON hh.server=m.server
+                        JOIN dedicated_hosts h ON h.id=hh.host
+                        WHERE m.server=? AND r.party=? AND r.user=? AND m.ended>0
+                          AND m.status IN ('finished','abandoned') ORDER BY m.started DESC LIMIT 1",[$previous,$id,$user]);
+                    demand($prior,'No finished match found for this party',404);
+                    $this->lockLobby($prior['server']);
+                    $listing=$this->partyServer($prior['server']);
+                    $members=(int)$this->one('SELECT COUNT(*) AS size FROM party_members WHERE party=?',[$id])['size'];
+                    $blocker=$this->partyServerBlocker($listing,$members);
+                    demand($blocker==='',$blocker,409);
+                    if($listing['map']===$prior['map']){
+                        $this->resetPartyTarget($party,$listing);
+                    }else{
+                        demand((int)$listing['players']===1&&in_array($prior['map'],json_decode($listing['rotation'],true)?:[],true),
+                            'The server needs an empty lobby and the previous map in its rotation',409);
+                        demand(!$this->lobbyHeldUsers($listing['id'],[],true),'Wait for existing seat holds to expire',409);
+                        demand(!$this->one("SELECT 1 FROM party_ballots WHERE server=? AND winning<>'' AND expires>?",
+                            [$listing['id'],$this->now]),'The server is already changing maps',409);
+                        $this->q('DELETE FROM party_ballots WHERE party=?',[$id]);
+                        $this->q('DELETE FROM party_map_votes WHERE party=?',[$id]);
+                        $this->q('INSERT INTO party_ballots VALUES(?,?,?,?)',[$id,$listing['id'],$prior['map'],$this->now+45]);
+                    }
                 }elseif($action==='open-map-vote'){
                     $server=api_text($data['server']??null,32);
                     $listing=$this->partyServer($server);

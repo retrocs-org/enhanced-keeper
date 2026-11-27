@@ -113,13 +113,37 @@ void frontnet_messages_down_maintain(struct GuiButton *gbtn)
 
 void frontnet_start_game_maintain(struct GuiButton *gbtn)
 {
+    if(kfx_lobby_ready_visible()){
+        gbtn->flags&=~(LbBtnF_Visible|LbBtnF_Enabled);
+        return;
+    }
+    gbtn->flags|=LbBtnF_Visible;
     TbBool enabled = net_number_of_enum_players > 1;
     gbtn->flags ^= (gbtn->flags ^ LbBtnF_Enabled * enabled) & LbBtnF_Enabled;
+}
+
+void frontnet_ready_click(struct GuiButton *gbtn)
+{
+    (void)gbtn;
+    kfx_lobby_ready_toggle();
+}
+
+void frontnet_ready_maintain(struct GuiButton *gbtn)
+{
+    if(kfx_lobby_ready_visible())gbtn->flags|=LbBtnF_Visible|LbBtnF_Enabled;
+    else gbtn->flags&=~(LbBtnF_Visible|LbBtnF_Enabled);
+}
+
+void frontnet_ready_draw(struct GuiButton *gbtn)
+{
+    frontend_draw_button(gbtn,0,kfx_lobby_ready_marked(netstate.my_id)?
+        "Unready [F5]":"Ready [F5]",Lb_TEXT_HALIGN_CENTER);
 }
 
 TbBool frontnet_start_input(void)
 {
     struct PlayerInfo *player = get_my_player();
+    if(lbInkey==KC_F5&&kfx_lobby_ready_toggle()){lbInkey=KC_UNASSIGNED;return true;}
     if (lbInkey == KC_RETURN) {
         if(kfx_readiness_submit_start(player->mp_message_text)){memset(player->mp_message_text,0,PLAYER_MP_MESSAGE_LEN);return true;}
         if (player->mp_message_text[0] != '\0') {
@@ -393,6 +417,12 @@ void frontnet_draw_net_start_players(struct GuiButton *gbtn)
             snprintf(player_text, sizeof(player_text), "%s", text);
         }
 
+        int peer = -1;
+        int row=netplyr_idx;
+        for (int candidate=0; candidate<MAX_NET_USERS; ++candidate)
+            if (IsUserActive(candidate)&&row--==0) { peer=candidate; break; }
+        const size_t name_length=strlen(player_text);
+        snprintf(player_text+name_length,sizeof(player_text)-name_length,"%s",kfx_lobby_ready_label(peer));
         LbTextSetWindow(gbtn->scr_pos_x + spr->SWidth * fs_units_per_px / 16, gbtn->scr_pos_y + shift_y, gbtn->width - spr->SWidth * fs_units_per_px / 16, height);
         LbTextDrawResized(0, 0, tx_units_per_px, player_text);
     }

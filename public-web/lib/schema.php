@@ -3,6 +3,20 @@ if (!defined('KFX_API_INTERNAL')) { http_response_code(404); exit; }
 return <<<'SQL'
 
         PRAGMA journal_mode=WAL;
+        CREATE TABLE IF NOT EXISTS dedicated_hosts(id TEXT PRIMARY KEY,name TEXT NOT NULL,owner TEXT NOT NULL,credential TEXT NOT NULL UNIQUE,server TEXT NOT NULL);
+        CREATE INDEX IF NOT EXISTS dedicated_hosts_owner ON dedicated_hosts(owner);
+        CREATE TABLE IF NOT EXISTS dedicated_admins(host TEXT NOT NULL,user TEXT NOT NULL,PRIMARY KEY(host,user));
+        CREATE TABLE IF NOT EXISTS dedicated_host_history(host TEXT NOT NULL,server TEXT PRIMARY KEY);
+        CREATE INDEX IF NOT EXISTS dedicated_history_host ON dedicated_host_history(host);
+        CREATE TABLE IF NOT EXISTS lobby_reconnects(server TEXT NOT NULL,user TEXT NOT NULL,expires REAL NOT NULL,PRIMARY KEY(server,user));
+        CREATE TABLE IF NOT EXISTS lobby_locks(server TEXT PRIMARY KEY);
+        CREATE TABLE IF NOT EXISTS lobby_kicks(server TEXT NOT NULL,user TEXT NOT NULL,PRIMARY KEY(server,user));
+        CREATE TABLE IF NOT EXISTS lobby_audit(id TEXT PRIMARY KEY,host TEXT NOT NULL,actor TEXT NOT NULL,action TEXT NOT NULL,target TEXT NOT NULL,created REAL NOT NULL);
+        CREATE INDEX IF NOT EXISTS lobby_audit_host ON lobby_audit(host,created);
+        CREATE TABLE IF NOT EXISTS dedicated_maintenance(host TEXT PRIMARY KEY,state TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS dedicated_percentiles(match TEXT PRIMARY KEY,p95_ms REAL NOT NULL);
+        CREATE TABLE IF NOT EXISTS dedicated_performance(match TEXT PRIMARY KEY,turns INTEGER NOT NULL DEFAULT 0,logic_ms REAL NOT NULL DEFAULT 0,peak_ms REAL NOT NULL DEFAULT 0,slow_frames INTEGER NOT NULL DEFAULT 0,reconnects INTEGER NOT NULL DEFAULT 0);
+        CREATE TABLE IF NOT EXISTS dedicated_commands(server TEXT PRIMARY KEY,requester TEXT NOT NULL,command TEXT NOT NULL,expires REAL NOT NULL);
         CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY,name TEXT UNIQUE COLLATE NOCASE,salt TEXT,password TEXT,public INTEGER DEFAULT 0,created REAL);
         CREATE TABLE IF NOT EXISTS cloud_profiles(user TEXT PRIMARY KEY,email TEXT UNIQUE,avatar INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS cloud_settings(user TEXT PRIMARY KEY,revision INTEGER NOT NULL,settings TEXT NOT NULL);

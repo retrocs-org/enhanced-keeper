@@ -109,9 +109,17 @@ static TbScreenMode active_mode=2;
 static bool fail_display=false;
 TbScreenMode LbScreenActiveMode(void){return active_mode;}
 TbScreenModeInfo *LbScreenGetModeInfo(TbScreenMode){static TbScreenModeInfo info={};info.Width=1280;info.Height=800;info.VideoFlags=Lb_VF_WINDOWED;return &info;}
+void set_macos_hud_scale(int){}
+static unsigned long registered_fullscreen_flags;
+TbScreenMode LbRegisterVideoMode(const char *, TbScreenCoord, TbScreenCoord, unsigned short, unsigned long flags){
+    registered_fullscreen_flags=flags;
+    return 3;
+}
 TbScreenMode LbRegisterVideoModeString(const char *mode){return !strcmp(mode,"DESKTOP")?3:2;}
 static TbScreenMode configured_frontend=3,configured_movies=2;
 TbScreenMode get_frontend_vidmode(void){return configured_frontend;}
+TbScreenMode get_movies_vidmode(void){return configured_movies;}
+TbScreenMode get_game_vidmode(uint){return active_mode;}
 void set_movies_vidmode(TbScreenMode mode){configured_movies=mode;}
 void set_frontend_vidmode(TbScreenMode mode){configured_frontend=mode;}
 void set_game_vidmode(uint,TbScreenMode){}
@@ -121,6 +129,9 @@ void init_gui(void){}
 void reinit_all_menus(void){}
 
 FrontendMenuState frontend_set_state(FrontendMenuState state){frontend_menu_state=state;return state;}
+RendererType RendererGetActiveType(void){return RENDERER_SOFTWARE;}
+const char *log_file_name="keeperfx.log";
+extern "C" { const char *kfx_join_failure_reason=""; }
 TbScreenCoord RendererScreenWidth(void){return 960;}
 TbScreenCoord RendererScreenHeight(void){return 720;}
 TbBool RendererPresentImage(const RendererPresentImageDesc *desc){SDL_Surface *surface=SDL_CreateSurfaceFrom(desc->src_w,desc->src_h,SDL_PIXELFORMAT_RGBA32,(void*)desc->src,desc->src_pitch);assert(surface);assert(IMG_SavePNG(surface,render_file.c_str()));SDL_DestroySurface(surface);return 1;}
@@ -154,9 +165,19 @@ int main(){
  scan_saves();assert(saves.size()==1&&saves[0].backup==1&&saves[0].level==7);open_panel(2);render_file="/tmp/kfx-options-page-2.png";kfx_options_draw();load_selected();assert(page==29&&loaded_slot==-1);render_file="/tmp/kfx-save-requirements.png";kfx_options_draw();activate(1401);assert(loaded_slot==0);assert(access((test_folder+"/fx1g0000.sav").c_str(),F_OK)==0);assert(access((test_folder+"/fx1g0005.sav.backup1").c_str(),F_OK)==0);
  assert(!kfx_allow_cursor_grab(1,0,0));assert(kfx_allow_cursor_grab(1,1,0));assert(!kfx_allow_cursor_grab(1,1,1));
  kfx_window_cursor_lock=1;assert(kfx_allow_cursor_grab(1,0,0));assert(!kfx_allow_cursor_grab(0,0,0));assert(!kfx_allow_cursor_grab(1,0,1));kfx_window_cursor_lock=0;
+ const auto initial_movies=configured_movies,initial_frontend=configured_frontend;
  assert(!kfx_options_set_display(0,9999,9999));assert(kfx_options_set_display(0,800,600));kfx_options_apply_display();assert(display_confirmation&&!pending_display);assert(saved_display_mode==-1);assert(configured_movies==active_mode);
- display_deadline=0;kfx_options_apply_display();assert(!display_confirmation&&saved_display_mode==-1);assert(resolution_index==2);assert(configured_movies==active_mode);
+ display_deadline=0;kfx_options_apply_display();assert(!display_confirmation&&saved_display_mode==-1);assert(resolution_index==2);assert(configured_movies==initial_movies&&configured_frontend==initial_frontend);
  assert(kfx_options_set_display(0,800,600));kfx_options_apply_display();assert(kfx_options_confirm_display(1));assert(saved_display_mode==0&&saved_resolution==0);
+ assert(kfx_options_set_display(1,0,0));
+ hud_scale=80;kfx_options_apply_display();
+ assert(display_confirmation&&active_hud_scale==80&&(registered_fullscreen_flags&Lb_VF_NATIVE_PIXELS));
+ display_deadline=0;kfx_options_apply_display();
+ assert(!display_confirmation&&active_hud_scale==100&&saved_hud_scale==100);
+ assert(kfx_options_set_display(1,1920,1080));
+ kfx_options_apply_display();
+ assert(display_confirmation&&(registered_fullscreen_flags&Lb_VF_FIXED_RENDER));
+ assert(kfx_options_confirm_display(0));kfx_options_apply_display();
  display_mode=1;activate(500);fail_display=true;kfx_options_apply_display();assert(saved_display_mode==0);fail_display=false;
  saved_display_mode=-1;kfx_options_initialize();assert(saved_display_mode==0&&resolution_index==0);assert(configured_movies==configured_frontend);
  // The timeline preserves a snapshot when pinning a rotating backup.
@@ -208,6 +229,18 @@ int main(){
  // Original eight-frame highlight animation runs at the same 100ms cadence.
  const int animation[]={0,1,2,3,4,3,2,1,0};for(int i=0;i<9;i++)assert(button_animation_frame(i*100)==animation[i]);
  SDL_Point point;assert(menu_point(640,400,1280,800,point)&&point.x==320&&point.y==240);assert(!menu_point(0,0,1280,800,point));
+ for(const auto &dimensions:std::vector<std::pair<int,int>>{{800,600},{1920,1080},{1512,982}}){
+     const int w=dimensions.first,h=dimensions.second;
+     SDL_Point logical{},retina{};
+     assert(menu_point(w*.5f,h*.5f,w,h,logical));
+     assert(menu_point(w,h,2*w,2*h,retina));
+     assert(std::abs(logical.x-retina.x)<=1&&std::abs(logical.y-retina.y)<=1);
+ }
+ assert(options_density(1280,960)==2);
+ assert(ensure_options_canvas(2)&&canvas->w==1280&&canvas->h==960);
+ const auto physical=canvas_rect({20,30,40,50});
+ assert(physical.x==40&&physical.y==60&&physical.w==80&&physical.h==100);
+ assert(ensure_options_canvas(1));
  // Controller model follows the active hardware in Auto, and explicit label choices survive.
  label_model=-1;test_device_model=1;open_panel(0);kfx_options_draw();assert(kfx_controller_guide_ps5==1);test_device_model=0;kfx_options_draw();assert(!kfx_controller_guide_ps5);label_model=1;kfx_options_draw();assert(kfx_controller_guide_ps5);label_model=-1;
  open_panel(8);selected=10;confirm_control();assert(page==13);selected=3;confirm_control();assert(page==14);activate(901);assert(page==13);
@@ -257,7 +290,7 @@ int main(){
  activate(2211);
  assert(!startup_login&&!kfx_controller_guide_visible);
  assert(std::string(getenv("KFX_PLAYER_PROFILE_DIR"))==startup_test+"/CloudProfiles/"+cloud_id);
- profile_bar_action(3);
+ open_social_panel(7);
  assert(page==38&&party_tab==7);
  const auto previous_menu=frontend_menu_state;
  frontend_menu_state=FeSt_MAIN_MENU;
@@ -273,7 +306,7 @@ int main(){
  assert(!social_drawer);
  frontend_menu_state=previous_menu;
  close_panel();
- profile_bar_action(4);
+ kfx_options_show_page(40);
  assert(page==37&&startup_profile_offset==4&&selected==1);
  assert(!getenv("KFX_PLAYER_PROFILE_DIR")&&active_profile_name.empty()&&!kfx_hub_has_session());
  activate(2202);
@@ -281,15 +314,19 @@ int main(){
  assert(!startup_login&&active_profile_name=="Local1");
  const std::string saved_profile=startup_test+"/ContentProfiles/Local1";
  assert(write_small_file(saved_profile+"/save/preserved.txt","profile save"));
- choose_startup_profile();
- activate(2240);
- assert(profile_picker_dialog==ProfilePickerDialog::Edit&&editing==20);
- append_input("RenamedKeeper");
- finish_edit();
- assert(profile_picker_dialog==ProfilePickerDialog::None&&active_profile_name=="RenamedKeeper");
- assert(read_profile_label(saved_profile,"")=="RenamedKeeper");
- const int renamed_row=selected;
- activate(2250+renamed_row);
+ kfx_options_show_page(41);
+ assert(page==41);
+ kfx_options_draw();
+ assert(hits.size()==2&&hits[0].action==2263&&hits[1].action==2204);
+ const auto menu_before_quit=frontend_menu_state;
+ activate(2204);
+ assert(frontend_menu_state==FeSt_QUIT_GAME&&!kfx_controller_guide_visible);
+ frontend_menu_state=menu_before_quit;
+ kfx_options_show_page(41);
+ activate(2263);
+ assert(page==37&&active_profile_name.empty());
+ const int local_row=selected;
+ activate(2250+local_row);
  activate(901);
  assert(std::filesystem::is_directory(saved_profile));
  activate(2250+selected);
@@ -307,6 +344,10 @@ int main(){
  assert(!std::filesystem::exists(startup_test+"/CloudProfiles/"+cloud_id));
  assert(startup_profiles.size()==4);
  const auto menu_before_removal=frontend_menu_state;
+ activate(2204);
+ assert(frontend_menu_state==FeSt_QUIT_GAME&&!kfx_controller_guide_visible);
+ frontend_menu_state=menu_before_removal;
+ choose_startup_profile();
  setenv("KFX_CONTENT_PROFILE","Local2",1);
  setenv("KFX_APP_RESOURCES",startup_test.c_str(),1);
  activate(2250);
@@ -339,5 +380,9 @@ int main(){
  kfx_options_initialize();assert(configured_movies==3&&configured_frontend==3);
  saved_display_mode=0;persist();configured_frontend=3;configured_movies=3;
  kfx_options_initialize();assert(configured_movies==2&&configured_frontend==2);
+ {std::ofstream log(test_folder+"/keeperfx.log");log<<"Warning: synthetic audio warning\n";}
+ const auto report=diagnostic_report();
+ assert(report.find("Renderer: Software")!=std::string::npos);
+ assert(report.find("synthetic audio warning")!=std::string::npos);
  puts("PASS: in-game pages, persistent options, pause ownership, multiplayer continues, physical-button chord remapping, legacy-save metadata and nondestructive backup restoration");
 }

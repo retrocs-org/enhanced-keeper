@@ -4,6 +4,7 @@ std::vector<CloudSaveInfo> cloud_saves;
 std::string cloud_save_notice;
 int cloud_save_offset=0;
 bool cloud_save_pending=false;
+std::string cloud_upload_path, cloud_upload_revision;
 std::string selected_cloud_backup,cloud_restore_manifest,cloud_restore_account;
 std::vector<unsigned char> cloud_restore_data;
 int cloud_restore_slot=-1,cloud_restored_slot=-1;
@@ -164,6 +165,15 @@ void cloud_save_reply(const std::string &tag,const VALUE &root,const std::string
     cloud_save_pending=false;
     const auto suffix=tag.rfind(':');
     if(suffix==std::string::npos||tag.substr(suffix+1)!=kfx_hub_account_id())return;
+    if(tag.rfind("cloud-save:upload:",0)==0){
+        const auto source=std::exchange(cloud_upload_path,{});
+        const auto revision=std::exchange(cloud_upload_revision,{});
+        if(kfx_hub_result_status()==200&&!source.empty()&&!hub_field(&root,"id").empty()){
+            struct stat current{};
+            if(stat(source.c_str(),&current)==0&&save_revision(current)==revision&&
+               write_small_file(source+".cloud-backup",revision+"\n")&&page==39)scan_saves();
+        }
+    }
     if(kfx_hub_result_status()!=200){cloud_save_notice=error.empty()?"Cloud backup unavailable.":error;return;}
     if(tag.rfind("cloud-save:upload:",0)==0)cloud_save_notice="Manual save backed up.";
     else if(tag.rfind("cloud-save:review:",0)==0){
@@ -238,6 +248,8 @@ bool cloud_save_action(int action)
         const auto body="{\"title\":"+hub_quote(title)+",\"device\":"+hub_quote(named?short_text(hostname,50):"Mac")
             +",\"data\":"+hub_quote(encoded)+",\"requirements\":"+hub_quote(manifest)+"}";
         if(cloud_save_request("upload","/api/cloud/saves",body)){
+            cloud_upload_path=entry.path;
+            cloud_upload_revision=save_revision(info);
             open_panel(39);
             cloud_save_notice="Backing up this manual save...";
         }else notice="Wait for the current cloud backup request.";

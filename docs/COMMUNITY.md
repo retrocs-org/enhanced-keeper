@@ -127,13 +127,16 @@ Choose maps with enough player positions. The example runs original map 52 with
 one human and the AI host. The engine binary and GameData must have matching
 assets. The supervisor writes only into the dedicated profile, never the app.
 
-Start the supervisor without printing or copying its administrator key:
+For a public or room-code host, create a server credential under **My Keeper →
+Dedicated Servers** and run `python3 services/keeperhub/dedicated.py .local/dedicated.json --link`.
+The account that creates the credential owns the server and can manage admins
+in the same panel. Start the supervisor with:
 
 ```sh
 python3 services/keeperhub/run-local-host.py .local/dedicated.json
 ```
 
-`run-local-host.py` reads `.local/keeperhub/admin.key` into the child environment.
+`run-local-host.py` reads `.local/keeperhub/admin.key` if present for verified results.
 For a different service, set `KFX_HUB_ADMIN_KEY` through your own secret manager
 and invoke `dedicated.py CONFIG` directly. An optional `KFX_SERVER_PASSWORD`
 sets the game lobby password. Administrator and account tokens are never passed

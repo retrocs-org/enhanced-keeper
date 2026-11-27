@@ -27,9 +27,36 @@ std::string build_field(const char *key){
     if(pos==std::string::npos)return "development";pos=data.find(':',pos+field.size());if(pos==std::string::npos)return "development";pos=data.find('"',pos+1);if(pos==std::string::npos)return "development";size_t end=data.find('"',pos+1);return end==std::string::npos?"development":data.substr(pos+1,end-pos-1);
 }
 std::string diagnostic_report(){
-    std::string last_issue;size_t size=0;void *bytes=SDL_LoadFile(path("network-diagnostics.json").c_str(),&size);if(bytes){last_issue.assign((char*)bytes,std::min(size,(size_t)2048));SDL_free(bytes);}
-
-    return "Keeper-Enhanced "+build_field("appVersion")+" (build "+build_field("appBuild")+")\nEngine: "+VER_STRING+"\nPlatform: "+SDL_GetPlatform()+"\nSDL: "+std::to_string(SDL_MAJOR_VERSION)+"."+std::to_string(SDL_MINOR_VERSION)+"."+std::to_string(SDL_MICRO_VERSION)+"\nController: "+controller_device_name()+"\nButton labels: "+(kfx_controller_guide_ps5?"DualSense":"Xbox")+"\nDisplay: "+std::to_string(RendererScreenWidth())+" x "+std::to_string(RendererScreenHeight())+"\nMultiplayer: "+(network_is_active()?"connected":"not connected")+"\nHost address: "+join_ip+"\nData folder: "+data_folder()+"\n\nLast network issue: "+last_issue+"\n"+network_report;
+    const auto renderer=RendererGetActiveType();
+    const char *backend=renderer==RENDERER_OPENGL?"OpenGL":
+        renderer==RENDERER_SOFTWARE?"Software":"Unavailable";
+    const auto context=alcGetCurrentContext();
+    const auto device=context?alcGetContextsDevice(context):nullptr;
+    const char *audio=device?alcGetString(device,ALC_DEVICE_SPECIFIER):nullptr;
+    std::ifstream log(std::filesystem::path(PlatformManager_GetUserPrefDir())/log_file_name,std::ios::binary);
+    std::deque<std::string> recent;
+    if(log){
+        log.seekg(0,std::ios::end);
+        const auto length=log.tellg();
+        if(length>8192){log.seekg(length-std::streamoff(8192));std::string partial;std::getline(log,partial);}
+        else log.seekg(0);
+        for(std::string line;std::getline(log,line);){
+            if(line.rfind("Error:",0)&&line.rfind("Warning:",0))continue;
+            recent.push_back(line.substr(0,240));
+            if(recent.size()>5)recent.pop_front();
+        }
+    }
+    std::ostringstream report;
+    report<<"Keeper-Enhanced "<<KFX_APP_VERSION<<" (build "<<build_field("appBuild")<<")\n"
+          <<"Engine: "<<VER_STRING<<"\nPlatform: "<<SDL_GetPlatform()
+          <<"\nRenderer: "<<backend<<"\nResolution: "<<RendererScreenWidth()<<" x "<<RendererScreenHeight()
+          <<"\nGame audio output: "<<(audio?audio:"Unavailable")
+          <<"\nController: "<<controller_device_name()
+          <<"\nLast join error: "<<(*kfx_join_failure_reason?kfx_join_failure_reason:"None recorded")
+          <<"\nRecent engine warnings and errors:\n";
+    for(const auto &line:recent)report<<line<<"\n";
+    if(recent.empty())report<<"None found.\n";
+    return report.str();
 }
 void copy_report(){notice=SDL_SetClipboardText(diagnostic_report().c_str())?"Report copied. Paste it into your message.":"Clipboard unavailable. Try again with the game focused.";}
 bool persist_endpoint(const std::string &endpoint){
@@ -43,7 +70,6 @@ void load_network_profile(){
 }
 void launch_local_profile(const std::string &profile);
 void finish_edit(){
-    if(editing==20){activate(2230);return;}
     if(editing==19){editing=0;SDL_StopTextInput(SDL_GetKeyboardFocus());activate(2126);return;}
     if(editing==12){library_rename();return;}
     if(editing==11){if(!create_profile())return;editing=0;SDL_StopTextInput(SDL_GetKeyboardFocus());if(choosing_local_profile)launch_local_profile(new_profile);return;}
@@ -80,7 +106,7 @@ void save_feedback_draw(){
 }
 void small_line(int x,int y,const std::string &value,int width){
     int size=std::min(20,std::max(18,(int)round(18*kfx_text_scale)));std::string shown=value;SDL_Surface *image=label(shown,size);
-    while(image&&image->w>width&&shown.size()>4){shown=short_text(value,shown.size()-1);image=label(shown,size);}if(image){SDL_Rect to={x,y,image->w,image->h};SDL_BlitSurface(image,nullptr,canvas,&to);}
+    while(image&&label_width(image)>width&&shown.size()>4){shown=short_text(value,shown.size()-1);image=label(shown,size);}if(image)blit_label(image,x,y);
 }
 void status_line(const std::string &value){small_line(24,401,value,592);}
 void polish_draw_page(){

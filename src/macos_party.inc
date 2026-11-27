@@ -28,7 +28,7 @@ std::string party_scan_key;
 Uint64 party_check_at=0;
 std::string joining_prompt, pending_party_progress;
 bool party_join_connecting=false;
-std::string party_match_room,party_match_address,party_match_map,party_match_result;
+std::string party_match_room,party_match_address,party_match_map,party_match_result,party_match_server;
 std::array<bool,MAX_NET_USERS> party_match_departed{};
 bool party_match_active=false,party_rematch_pending=false;
 
@@ -367,12 +367,18 @@ bool party_action(int action)
         return true;
     }
     if(action==2136){
-        if(party_owner()&&party.id==party_match_room&&kfx_hub_request("servers","/api/servers",nullptr,0)){
-            party_rematch_pending=true;
-            party_notice="Looking for the next lobby...";
+        if(party_owner()&&party.id==party_match_room){
+            if(!party_match_server.empty()&&party_request("prepare-rematch","server",party_match_server)){
+                party_tab=1;
+                party_notice="Preparing the previous map. Party chat is open.";
+            }else if(kfx_hub_request("servers","/api/servers",nullptr,0)){
+                party_rematch_pending=true;
+                party_notice="Looking for the next lobby...";
+            }
         }
         return true;
     }
+    if(action==2190&&page==38){party_tab=1;selected=0;return true;}
     if(action==2137){browser_tab=0;open_panel(20);browser_refresh();return true;}
     if(action==2135){
         if(party_owner()&&party_all_ready()&&party.prompt.empty())
@@ -537,13 +543,14 @@ void party_draw()
         return;
     }
     if(party_tab==5&&party.id==party_match_room){
-        centered(154,party_match_result,24);
+        centered(104,party_match_result,24);
         const auto count=std::count(party_match_departed.begin(),party_match_departed.end(),true);
         small_line(96,216,std::to_string(count)+(count==1?" disconnect recorded":" disconnects recorded"),450);
         if(party_owner()){
             control(48,285,260,"Play Again",2136,40);
             control(329,285,263,"Choose Another Map",2137,40);
         }else small_line(96,278,"Your party leader can choose the next lobby.",450);
+        control(48,334,260,"Party Chat",2190,36);
         if(!party_notice.empty())small_line(48,388,party_notice,544);
         return;
     }

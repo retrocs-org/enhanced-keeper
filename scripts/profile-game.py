@@ -19,22 +19,32 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--app',type=Path,required=True)
     parser.add_argument('--engine',type=Path,required=True)
-    parser.add_argument('--game-dir',type=Path,required=True)
+    source=parser.add_mutually_exclusive_group(required=True)
+    source.add_argument('--game-dir',type=Path,help='original game data to import')
+    source.add_argument('--runtime-dir',type=Path,help='prepared GameData to copy into an isolated directory')
+    parser.add_argument('--resolution',default='1280x800',help='render size in pixels, for example 2560x1600')
     parser.add_argument('--save',type=Path)
     parser.add_argument('--seconds',type=int,default=30)
     parser.add_argument('--output',type=Path,required=True)
     args=parser.parse_args()
     if not 10<=args.seconds<=300 or args.output.exists():parser.error('Choose 10–300 seconds and a new output file')
+    if not re.fullmatch(r'[1-9][0-9]{2,3}x[1-9][0-9]{2,3}',args.resolution):
+        parser.error('Use WIDTHxHEIGHT for --resolution')
+    render_mode=args.resolution+'w32'
     metadata=plistlib.loads((args.app/'Contents/Info.plist').read_bytes())
     launcher=args.app/'Contents/MacOS'/metadata['CFBundleExecutable']
     with tempfile.TemporaryDirectory(prefix='keeperfx-profile-') as temporary:
         profile=Path(temporary);runtime=profile/'GameData';frames=profile/'frames.json'
         env=dict(os.environ,KFX_USER_DATA_DIR=str(profile),KFX_AUTOSAVE_SECONDS='0',KFX_FRAME_PROFILE=str(frames),KFX_APP_RESOURCES=str(args.app/'Contents/Resources'),ALSOFT_DRIVERS='null')
-        for flags in (['--import',str(args.game_dir.resolve())],['--prepare-only']):
-            subprocess.run([str(launcher),*flags],env=env,check=True,stdout=subprocess.DEVNULL)
+        if args.runtime_dir:
+            subprocess.run(['ditto',str(args.runtime_dir.resolve()),str(runtime)],check=True)
+            (profile/'save').mkdir()
+        else:
+            for flags in (['--import',str(args.game_dir.resolve())],['--prepare-only']):
+                subprocess.run([str(launcher),*flags],env=env,check=True,stdout=subprocess.DEVNULL)
         with socket.socket() as sock:sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
         cfg=runtime/'keeper-enhanced.cfg';text=cfg.read_text()
-        for key,value in {'API_ENABLED':'TRUE','API_PORT':str(port),'FRONTEND_RES':'640x480w32 1280x800w32 1280x800w32','INGAME_RES':'1280x800w32','FREEZE_GAME_ON_FOCUS_LOST':'FALSE'}.items():
+        for key,value in {'API_ENABLED':'TRUE','API_PORT':str(port),'FRONTEND_RES':'640x480w32 1280x800w32 1280x800w32','INGAME_RES':render_mode,'FREEZE_GAME_ON_FOCUS_LOST':'FALSE'}.items():
             text=re.sub(r'(?m)^'+key+r'=.*$',key+'='+value,text)
         cfg.write_text(text)
         if args.save:shutil.copy2(args.save,profile/'save/fx1g0000.sav')
@@ -64,7 +74,7 @@ def main():
                 try:process.wait(timeout=5)
                 except subprocess.TimeoutExpired:os.killpg(process.pid,signal.SIGKILL);process.wait()
         usage=resource.getrusage(resource.RUSAGE_CHILDREN)
-        report={'scenario':'saved dungeon' if args.save else 'campaign level 1','measurement_seconds':args.seconds,'process_elapsed_seconds':round(time.monotonic()-began,3),'process_cpu_seconds':round(usage.ru_utime+usage.ru_stime-baseline.ru_utime-baseline.ru_stime,3),'peak_rss_bytes':usage.ru_maxrss}
+        report={'scenario':'saved dungeon' if args.save else 'campaign level 1','render_resolution':args.resolution,'measurement_seconds':args.seconds,'process_elapsed_seconds':round(time.monotonic()-began,3),'process_cpu_seconds':round(usage.ru_utime+usage.ru_stime-baseline.ru_utime-baseline.ru_stime,3),'peak_rss_bytes':usage.ru_maxrss}
         if frames.exists():report['rendering']=json.loads(frames.read_text())
         args.output.parent.mkdir(parents=True,exist_ok=True)
         args.output.write_text(json.dumps(report,indent=2)+'\n')

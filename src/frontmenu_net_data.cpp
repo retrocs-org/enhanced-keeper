@@ -92,6 +92,13 @@ struct GuiButtonInit frontend_net_session_buttons[] = {
   {-1,  BID_DEFAULT, 0, 0, NULL,               NULL,        NULL,               0,   0,   0,   0,   0,  0,  0, NULL,                              0,           0,  0,       {0},            0, NULL },
 };
 
+#if defined(__APPLE__) || defined(_WIN32)
+void lobby_manage_open(struct GuiButton *);
+void lobby_manage_maintain(struct GuiButton *);
+void lobby_manage_open_draw(struct GuiButton *);
+void lobby_copy_content(struct GuiButton *);
+void lobby_copy_content_draw(struct GuiButton *);
+#endif
 struct GuiButtonInit frontend_net_start_buttons[] = {
   { LbBtnT_NormalBtn,  BID_MENU_TITLE, 0, 0, NULL,               NULL,   NULL,                    0, 999,  30, 999,  30, 371, 46, frontend_draw_large_menu_button,   0, GUIStr_Empty, 0,  {11},    0, NULL },
   { LbBtnT_NormalBtn,  BID_DEFAULT, 0, 0, NULL,               NULL,   NULL,                    0,  82,  78,  82,  78, 220, 26, frontnet_draw_scroll_box_tab,      0, GUIStr_Empty, 0,  {28},    0, NULL },
@@ -132,8 +139,13 @@ struct GuiButtonInit frontend_net_start_buttons[] = {
   { LbBtnT_HoldableBtn,BID_DEFAULT, 0, 0, NULL,               NULL,   NULL,                    0, 536, 285, 536, 285,  20, 88, frontnet_draw_messages_scroll_tab, 0, GUIStr_Empty, 0,  {40},    0, NULL },
   { LbBtnT_NormalBtn,  BID_DEFAULT, 0, 0, NULL,               NULL,   NULL,                    0,  82, 386,  82, 386, 459, 28, frontnet_draw_current_message,     0, GUIStr_Empty, 0,  {43},    0, NULL },
   { LbBtnT_NormalBtn,  BID_DEFAULT, 0, 0, NULL,               NULL,   NULL,                    0,  89, 273,  89, 273, 438,104, frontnet_draw_messages,            0, GUIStr_Empty, 0,  {44},    0, NULL },
+  { LbBtnT_NormalBtn, BID_DEFAULT, 0, 0, frontnet_ready_click, NULL, frontend_over_button, 0, 49, 412, 49, 412, 247, 46, frontnet_ready_draw, 0, GUIStr_Empty, 0, {15}, 0, frontnet_ready_maintain },
   { LbBtnT_NormalBtn,  BID_DEFAULT, 0, 0, set_packet_start,   NULL,   frontend_over_button,    0,  49, 412,  49, 412, 247, 46, frontend_draw_small_menu_button,   0, GUIStr_Empty, 0,  {15},    0, frontnet_start_game_maintain },
   { LbBtnT_NormalBtn,  BID_DEFAULT, 0, 0, frontnet_return_to_session_menu,NULL,frontend_over_button,1, 345,412,345,412,247,46, frontend_draw_small_menu_button,   0, GUIStr_Empty, 0,  {16},    0, NULL },
+#if defined(__APPLE__) || defined(_WIN32)
+  {LbBtnT_NormalBtn,BID_DEFAULT,0,0,lobby_copy_content,NULL,frontend_over_button,0,6,4,6,4,130,24,lobby_copy_content_draw,0,GUIStr_Empty,0,{15},0,NULL},
+  {LbBtnT_NormalBtn,BID_DEFAULT,0,0,lobby_manage_open,NULL,frontend_over_button,0,500,4,500,4,130,24,lobby_manage_open_draw,0,GUIStr_Empty,0,{15},0,lobby_manage_maintain},
+#endif
   {-1,  BID_DEFAULT, 0, 0, NULL,               NULL,   NULL,                    0,   0,   0,   0,   0,   0,  0, NULL,                              0,           0,  0,   {0},    0, NULL },
 };
 

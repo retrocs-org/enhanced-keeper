@@ -492,6 +492,7 @@ bool WindowSystemSDL::CreateWindow(const char* title, int x, int y, int w, int h
     // Translate KfxWindowFlags to SDL3 window creation flags.
     SDL_WindowFlags sdl3_flags = getenv("KFX_HEADLESS")?SDL_WINDOW_HIDDEN:0;
 #if defined(__APPLE__)
+    sdl3_flags |= SDL_WINDOW_HIGH_PIXEL_DENSITY;
     if (!(flags & (KFX_WF_FULLSCREEN_EXCLUSIVE | KFX_WF_FULLSCREEN_DESKTOP | KFX_WF_BORDERLESS)))
         sdl3_flags |= SDL_WINDOW_RESIZABLE;
 #endif

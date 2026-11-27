@@ -6,6 +6,7 @@
 #include "game_legacy.h"
 #include "config_campaigns.h"
 #include "config_mods.h"
+#include "custom_sprites.h"
 #include "front_network.h"
 #include "frontend.h"
 #include "net_game.h"
@@ -28,11 +29,11 @@
 #include <cstring>
 #include <cctype>
 #include "post_inc.h"
-#if defined(__APPLE__) || defined(KFX_DEDICATED)
+#if defined(__APPLE__) || defined(_WIN32) || defined(KFX_DEDICATED)
 #include "kfx/sha256.h"
 namespace {
 namespace fs=std::filesystem;
-struct ReadyDigest{std::string version,map,mods,error;bool complete=false;};
+struct ReadyDigest{std::string version,map,mods,error,category;bool complete=false;};
 struct ReadyInput{std::string base,campaign_file,levels;std::vector<std::string> mods;int level=0;};
 std::array<ReadyDigest,MAX_NET_USERS> reports;
 std::array<bool,MAX_NET_USERS> received={};
@@ -50,20 +51,34 @@ std::string hex_digest(KfxSha256Context &ctx){unsigned char bytes[32];KfxSha256F
 void hash_text(KfxSha256Context &ctx,const std::string &value){KfxSha256Update(&ctx,value.data(),(size_t)value.size());const char zero=0;KfxSha256Update(&ctx,&zero,1);}
 ReadyInput snapshot_input(int level){ReadyInput input;input.base=keeper_runtime_directory;input.level=level;input.levels=campaign.levels_location;short group=get_current_campaign_fgroup();if(group==FGrp_None)group=FGrp_Campgn;input.campaign_file=prepare_file_path(group,campaign.fname);const ModsConfig *mods=get_loaded_mods_conf();const ModConfigItem *lists[]={mods->after_base_item,mods->after_campaign_item,mods->after_map_item};int counts[]={mods->after_base_cnt,mods->after_campaign_cnt,mods->after_map_cnt};for(int stage=0;stage<3;stage++)for(int i=0;i<std::clamp(counts[stage],0,MOD_ITEM_MAX);i++)input.mods.push_back(std::to_string(stage)+":"+lists[stage][i].name);return input;}
 ReadyDigest scan_input(ReadyInput input,std::shared_ptr<std::atomic<bool>> stop){
-    ReadyDigest result;result.version=engine_version();KfxSha256Context mapctx,modctx;KfxSha256Init(&mapctx);KfxSha256Init(&modctx);uint64_t total=0;size_t files=0;auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(25);
+    ReadyDigest result;result.version=engine_version();KfxSha256Context mapctx,modctx;uint64_t total=0;size_t files=0;auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(25);
     auto file=[&](KfxSha256Context &ctx,const fs::path &path,const std::string &name){
         if(stop->load()||std::chrono::steady_clock::now()>deadline)throw std::runtime_error("Content scan cancelled or timed out.");
         if(fs::is_symlink(path)||!fs::is_regular_file(path))throw std::runtime_error("Content contains a link or a missing file.");
-        auto size=fs::file_size(path);auto modified=fs::last_write_time(path);if(++files>16000||(total+=size)>512ull*1024*1024)throw std::runtime_error("Content scan exceeds its size limit.");hash_text(ctx,name);FILE *stream=fopen(path.c_str(),"rb");if(!stream)throw std::runtime_error("A selected content file cannot be read.");
+        auto size=fs::file_size(path);auto modified=fs::last_write_time(path);if(++files>16000||(total+=size)>512ull*1024*1024)throw std::runtime_error("Content scan exceeds its size limit.");hash_text(ctx,name);
+#if defined(_WIN32)
+        FILE *stream=_wfopen(path.c_str(),L"rb");
+#else
+        FILE *stream=fopen(path.c_str(),"rb");
+#endif
+        if(!stream)throw std::runtime_error("A selected content file cannot be read.");
         unsigned char bytes[32768];size_t count;bool stopped=false;while((count=fread(bytes,1,sizeof(bytes),stream))>0){KfxSha256Update(&ctx,bytes,(size_t)count);if(stop->load()||std::chrono::steady_clock::now()>deadline){stopped=true;break;}}bool bad=ferror(stream)||stopped;fclose(stream);if(bad||fs::file_size(path)!=size||fs::last_write_time(path)!=modified)throw std::runtime_error("Content changed or could not be read. Retry the check.");
     };
     try{
+        KfxSha256Init(&mapctx);KfxSha256Init(&modctx);
+        result.category="sprites";
+        for(const char *archive:required_sprite_zips)
+            if(!fs::is_regular_file(fs::path(input.base)/"fxdata"/archive))
+                throw std::runtime_error(std::string("Missing sprite archive: ")+archive);
+        result.category="map";
         if(input.level<=0||input.level>99999)throw std::runtime_error("Choose a map before checking readiness.");
-        if(!fs::exists(input.campaign_file))throw std::runtime_error("The campaign configuration is missing.");file(mapctx,input.campaign_file,"campaign.cfg");
+        if(!fs::exists(input.campaign_file))throw std::runtime_error("The campaign configuration is missing.");
+        file(mapctx,input.campaign_file,"campaign.cfg");
         fs::path leveldir=fs::path(input.levels).is_absolute()?fs::path(input.levels):fs::path(input.base)/input.levels;char prefix[32];snprintf(prefix,sizeof(prefix),"map%05d.",input.level);std::vector<fs::path> maps;
         for(const auto &entry:fs::directory_iterator(leveldir)){if(maps.size()>16000||stop->load()||std::chrono::steady_clock::now()>deadline)throw std::runtime_error("Map scan cancelled or exceeds its limit.");if(entry.path().filename().string().rfind(prefix,0)==0)maps.push_back(entry.path());}std::sort(maps.begin(),maps.end());if(maps.empty())throw std::runtime_error("The selected map files are missing.");for(const auto &path:maps)file(mapctx,path,path.filename().string());
+        result.category="mods";
         for(const std::string &mod:input.mods){hash_text(modctx,mod);fs::path root=fs::path(input.base)/"mods"/mod.substr(mod.find(':')+1);if(!fs::is_directory(root))throw std::runtime_error("A selected mod is missing.");std::vector<fs::path> paths;for(const auto &entry:fs::recursive_directory_iterator(root)){if(paths.size()>16000||stop->load()||std::chrono::steady_clock::now()>deadline)throw std::runtime_error("Mod scan cancelled or exceeds its limit.");if(entry.is_symlink())throw std::runtime_error("A selected mod contains a link.");if(entry.is_regular_file()&&entry.path().filename()!=".DS_Store")paths.push_back(entry.path());}std::sort(paths.begin(),paths.end());for(const auto &path:paths)file(modctx,path,fs::relative(path,root).generic_string());}
-        result.map=hex_digest(mapctx);result.mods=hex_digest(modctx);result.complete=true;
+        result.map=hex_digest(mapctx);result.mods=hex_digest(modctx);result.complete=true;result.category.clear();
     }catch(const std::exception &error){result.error=error.what();}
     return result;
 }
@@ -74,12 +89,17 @@ void describe(){
     report_text="Map: "+target_campaign+" / "+std::to_string(target_level)+"\n";bool all=true;int count=0;
     for(int i=0;i<MAX_NET_USERS;i++)if(netstate.users[i].progress>=USER_LOGGEDIN){++count;std::string name(netstate.users[i].name,strnlen(netstate.users[i].name,sizeof(netstate.users[i].name)));if(name.size()>12){size_t length=12;while(length&&((unsigned char)name[length]&0xc0)==0x80)--length;name.resize(length);}std::string status;
         if(!received[i]){status=SDL_GetTicks()-started<4500?"Checking...":"Unchecked: no reply";all=false;}
-        else if(!reports[i].complete){status="Scan failed: check files";all=false;}
+        else if(!reports[i].complete){
+            const auto &category=reports[i].category;
+            status=category=="sprites"?"Missing sprite archives":category=="map"?"Check map files":
+                category=="mods"?"Check installed mods":"Content scan failed";
+            all=false;
+        }
         else if(!received[netstate.my_id]){status="Waiting for local scan";all=false;}
         else if(reports[i].version!=reports[netstate.my_id].version){status="Engine differs";all=false;}
         else if(reports[i].map!=reports[netstate.my_id].map){status="Map differs";all=false;}
         else if(reports[i].mods!=reports[netstate.my_id].mods){status="Mods differ";all=false;}
-        else status="Ready";
+        else status=kfx_lobby_ready_all()?"Ready":"Content matches";
         report_text+=name+": "+status+"\n";
     }
     if(received[netstate.my_id]&&!reports[netstate.my_id].error.empty())report_text+=reports[netstate.my_id].error+"\n";
@@ -89,18 +109,35 @@ bool matched(){if(netstate.my_id<0||netstate.my_id>=MAX_NET_USERS||!received[net
 void begin(const std::string &camp,int level){nonce=std::to_string(SDL_GetPerformanceCounter());target_campaign=camp;target_level=level;received.fill(false);started=SDL_GetTicks();roster=roster_signature();announced=false;send("KFXE_REQ2|"+nonce+"|"+std::to_string(level)+"|"+camp);start_work(level);}
 void finish_start(){std::string message=pending_start;pending=false;pending_start.clear();if(message.empty())return;kfx_options_hide();send_network_chat_message(netstate.my_id,message.c_str());process_frontend_chat_message(netstate.my_id,message.c_str());}
 }
+extern "C" void kfx_readiness_content_masks(unsigned *passed,unsigned *failed)
+{
+    *passed=*failed=0;
+    if(nonce.empty()||netstate.my_id!=SERVER_ID||!received[SERVER_ID])return;
+    const auto &host=reports[SERVER_ID];
+    for(int peer=1;peer<MAX_NET_USERS;++peer){
+        if(netstate.users[peer].progress!=USER_LOGGEDIN||!received[peer])continue;
+        const auto &client=reports[peer];
+        const bool matches=host.complete&&client.complete&&host.version==client.version&&
+            host.map==client.map&&host.mods==client.mods;
+        *(matches?passed:failed)|=1u<<peer;
+    }
+}
 extern "C" int kfx_readiness_message(int source,int sender,const char *message){
     if(!message||strncmp(message,"KFXE_",5))return 0;
     if(sender<0||sender>=MAX_NET_USERS||source<0||source>=MAX_NET_USERS)return 1;
     if(netstate.my_id==SERVER_ID&&source!=SERVER_ID&&source!=sender)return 1;
     if(netstate.my_id!=SERVER_ID&&source!=SERVER_ID)return 1;
-    if(strlen(message)>500)return 1;std::vector<std::string> fields;std::istringstream input(message);std::string value;while(std::getline(input,value,'|'))fields.push_back(value);
+    if(strlen(message)>500)return 1;
+    std::vector<std::string> fields;std::istringstream input(message);std::string value;while(std::getline(input,value,'|'))fields.push_back(value);
     if(fields.size()==4&&fields[0]=="KFXE_REQ2"&&sender==SERVER_ID&&netstate.my_id!=SERVER_ID){std::string camp;int level;if(!parse_start(fields[3]+":"+fields[2],camp,level)||fields[1].empty()||fields[1].size()>24)return 1;nonce=fields[1];target_campaign=camp;target_level=level;started=SDL_GetTicks();received.fill(false);start_work(level);}
-    if(fields.size()==6&&fields[0]=="KFXE_REP2"&&fields[1]==nonce){auto validhash=[](const std::string &s){return s.size()==64&&std::all_of(s.begin(),s.end(),[](unsigned char c){return std::isxdigit(c);});};bool complete=fields[5]=="1";if(fields[2].size()>32||(complete&&(!validhash(fields[3])||!validhash(fields[4]))))return 1;reports[sender]={fields[2],fields[3],fields[4],"",complete};received[sender]=true;describe();}
+    if(fields.size()==6&&fields[0]=="KFXE_REP2"&&fields[1]==nonce){auto validhash=[](const std::string &s){return s.size()==64&&std::all_of(s.begin(),s.end(),[](unsigned char c){return std::isxdigit(c);});};bool complete=fields[5]=="1";if(fields[2].size()>32||(complete&&(!validhash(fields[3])||!validhash(fields[4]))))return 1;const auto category=!complete&&(fields[3]=="sprites"||fields[3]=="map"||fields[3]=="mods")?fields[3]:"";
+        reports[sender]={fields[2],fields[3],fields[4],"",category,complete};received[sender]=true;describe();}
     return 1;
 }
 extern "C" int kfx_readiness_submit_start(const char *text){
-    if(!network_is_host()||!text)return 0;std::string camp;int level;if(!parse_start(text,camp,level))return 0;
+    if(!network_is_host()||!text)return 0;
+    if(pending&&pending_start==text)return 1;
+    std::string camp;int level;if(!parse_start(text,camp,level))return 0;
     char filename[DISKPATH_SIZE];uint8_t pack=prepare_campaign_file_name(camp.c_str(),filename,sizeof(filename));if(pack==CampgnT_Default&&is_campaign_in_list(filename,&mp_mappacks_list))pack=CampgnT_MultiplayerMappack;
     if(!change_campaign(pack,filename)||strcasecmp(campaign.fname,filename)){report_text="The selected campaign cannot be loaded.";kfx_options_show_page(19);return 1;}
     if(work.valid()){report_text="A content scan is still finishing. Retry Start shortly.";kfx_options_show_page(19);return 1;}
@@ -108,16 +145,31 @@ extern "C" int kfx_readiness_submit_start(const char *text){
 }
 extern "C" void kfx_readiness_tick(void){
     if(!network_is_active()||frontend_menu_state!=FeSt_NET_START){if(cancelled)cancelled->store(true);pending=false;pending_start.clear();nonce.clear();}
-    if(work.valid()&&work.wait_for(std::chrono::seconds(0))==std::future_status::ready){ReadyDigest result=work.get();if(!nonce.empty()&&work_nonce==nonce&&netstate.my_id>=0&&netstate.my_id<MAX_NET_USERS){reports[netstate.my_id]=result;received[netstate.my_id]=true;send("KFXE_REP2|"+nonce+"|"+result.version+"|"+(result.complete?result.map:"-")+"|"+(result.complete?result.mods:"-")+"|"+(result.complete?"1":"0"));describe();}}
+    if(work.valid()&&work.wait_for(std::chrono::seconds(0))==std::future_status::ready){ReadyDigest result=work.get();if(!nonce.empty()&&work_nonce==nonce&&netstate.my_id>=0&&netstate.my_id<MAX_NET_USERS){reports[netstate.my_id]=result;received[netstate.my_id]=true;send("KFXE_REP2|"+nonce+"|"+result.version+"|"+(result.complete?result.map:result.category.empty()?"-":result.category)+"|"+(result.complete?result.mods:"-")+"|"+(result.complete?"1":"0"));describe();}}
     if(!nonce.empty()&&!work.valid()&&netstate.my_id>=0&&netstate.my_id<MAX_NET_USERS&&!received[netstate.my_id])start_work(target_level);
     if(pending&&roster_signature()!=roster){pending=false;pending_start.clear();nonce.clear();if(cancelled)cancelled->store(true);report_text="Lobby players changed. Choose a map and Start again.";kfx_options_show_page(19);}
-    if(pending){describe();if(matched()){finish_start();return;}if(SDL_GetTicks()-started>=4500&&!announced){announced=true;kfx_options_show_page(19);}}
+    if(pending){describe();if(matched()&&kfx_lobby_ready_all()){finish_start();return;}if(SDL_GetTicks()-started>=4500&&!announced){announced=true;kfx_options_show_page(19);}}
 }
 extern "C" void kfx_readiness_check(void){if(!network_is_active()){report_text="Join a lobby before checking readiness.";return;}if(!network_is_host()){report_text="The host must choose a map and start the check.";return;}if(pending_start.empty()){report_text="Choose a map in the lobby, then press Start.\nThe check runs before the start message is sent.";return;}if(work.valid()){report_text="A content scan is still running.";return;}pending=true;frontnet_send_campaign_change_message(campaign.fname);begin(target_campaign,target_level);}
-extern "C" void kfx_readiness_override(void){if(!network_is_host()||pending_start.empty()){report_text="There is no pending host start to override.";return;}finish_start();}
+extern "C" void kfx_readiness_override(void){if(!network_is_host()||pending_start.empty()){report_text="There is no pending host start to override.";return;}if(!kfx_lobby_ready_all()){report_text="Wait until every connected player marks Ready.";return;}finish_start();}
 extern "C" void kfx_readiness_cancel(void){pending=false;pending_start.clear();}
 extern "C" const char *kfx_readiness_report(void){if(!network_is_active())return "Join a lobby before checking readiness.";if(frontend_menu_state!=FeSt_NET_START)return "Readiness checks run in the pre-game lobby.";return report_text.c_str();}
+extern "C" const char *kfx_readiness_details(void)
+{
+    static std::string details;
+    details=kfx_readiness_report();
+    if(!nonce.empty())for(int peer=0;peer<MAX_NET_USERS;++peer){
+        if(!received[peer]||netstate.users[peer].progress!=USER_LOGGEDIN)continue;
+        const auto &report=reports[peer];
+        details+="\n"+std::string(netstate.users[peer].name)+": "+report.version;
+        if(report.complete)details+="\n  map SHA-256: "+report.map+"\n  mods SHA-256: "+report.mods;
+        else if(!report.error.empty())details+="\n  "+report.error;
+    }
+    return details.c_str();
+}
 #else
+extern "C" const char *kfx_readiness_details(void){return kfx_readiness_report();}
+extern "C" void kfx_readiness_content_masks(unsigned *passed,unsigned *failed){*passed=*failed=0;}
 extern "C" int kfx_readiness_message(int,int,const char*){return 0;}
 extern "C" int kfx_readiness_submit_start(const char*){return 0;}
 extern "C" void kfx_readiness_tick(void){}

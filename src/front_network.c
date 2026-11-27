@@ -17,6 +17,7 @@
  */
 /******************************************************************************/
 #include "pre_inc.h"
+#include "macos_readiness.h"
 #include "kfx/renderer/RendererManager.h"
 #include "front_network.h"
 
@@ -572,6 +573,131 @@ void frontnet_send_campaign_change_message(const char* campaign_fname)
     send_network_chat_message(netstate.my_id, msg);
 }
 
+static unsigned lobby_ready_mask, lobby_content_passed, lobby_content_failed;
+static TbBool lobby_ready_enabled;
+static TbClockMSec lobby_ready_broadcast;
+
+static unsigned lobby_human_mask(void)
+{
+    unsigned mask = 0;
+    for (int peer = 1; peer < MAX_NET_USERS; ++peer)
+        if (netstate.users[peer].progress == USER_LOGGEDIN)
+            mask |= 1u << peer;
+    return mask;
+}
+
+static void lobby_ready_reset(void)
+{
+    lobby_ready_mask = lobby_content_passed = lobby_content_failed = 0;
+    lobby_ready_enabled = false;
+    lobby_ready_broadcast = 0;
+}
+
+static TbBool lobby_ready_required(void)
+{
+    return network_is_host() && getenv("KFX_HEADLESS") && getenv("KFX_LOBBY_READY_CHECK");
+}
+
+TbBool kfx_lobby_ready_all(void)
+{
+    if (!lobby_ready_required())
+        return true;
+    const unsigned humans = lobby_human_mask();
+    return humans && (lobby_ready_mask & humans) == humans;
+}
+
+int kfx_lobby_ready_message(int source, int sender, const char *message)
+{
+    if (strncmp(message, "KFXRDY|", 7))
+        return 0;
+    if (frontend_menu_state != FeSt_NET_START)
+        return 1;
+    const char *payload = message + 7;
+    if (lobby_ready_required() && source == sender && sender > 0 &&
+        sender < MAX_NET_USERS && netstate.users[sender].progress == USER_LOGGEDIN &&
+        (!strcmp(payload, "0") || !strcmp(payload, "1")))
+    {
+        const unsigned bit = 1u << sender;
+        if (*payload == '1')
+            lobby_ready_mask |= bit;
+        else
+            lobby_ready_mask &= ~bit;
+        lobby_ready_broadcast = 0;
+    }
+    else if (!network_is_host() && source == SERVER_ID && sender == SERVER_ID &&
+        payload[0] == 'M' && payload[1] && !payload[2] &&
+        payload[1] >= '0' && payload[1] <= '7')
+    {
+        lobby_ready_enabled = true;
+        lobby_ready_mask = (unsigned)(payload[1] - '0') << 1;
+    }
+    else if (!network_is_host() && source == SERVER_ID && sender == SERVER_ID &&
+        strlen(payload)==3 && payload[0]=='C' &&
+        payload[1]>='0' && payload[1]<='7' && payload[2]>='0' && payload[2]<='7')
+    {
+        lobby_content_passed=(unsigned)(payload[1]-'0')<<1;
+        lobby_content_failed=(unsigned)(payload[2]-'0')<<1;
+    }
+    return 1;
+}
+
+void kfx_lobby_ready_peer_joined(int peer)
+{
+    if (peer > 0 && peer < MAX_NET_USERS)
+        lobby_ready_mask &= ~(1u << peer);
+}
+
+static void lobby_ready_publish(void)
+{
+    if (!lobby_ready_required())
+        return;
+    lobby_ready_enabled = true;
+    lobby_ready_mask &= lobby_human_mask();
+    const TbClockMSec now = LbTimerClock();
+    if (now < lobby_ready_broadcast)
+        return;
+    lobby_ready_broadcast = now + 1000;
+    char message[] = "KFXRDY|M0";
+    message[8] = '0' + (lobby_ready_mask >> 1);
+    send_network_chat_message(SERVER_ID, message);
+    kfx_readiness_content_masks(&lobby_content_passed,&lobby_content_failed);
+    char content[]="KFXRDY|C00";
+    content[8]='0'+(lobby_content_passed>>1);
+    content[9]='0'+(lobby_content_failed>>1);
+    send_network_chat_message(SERVER_ID,content);
+}
+
+TbBool kfx_lobby_ready_toggle(void)
+{
+    if (!lobby_ready_enabled || netstate.my_id <= 0 || netstate.my_id >= MAX_NET_USERS)
+        return false;
+    const TbBool ready = (lobby_ready_mask & (1u << netstate.my_id)) != 0;
+    send_network_chat_message(netstate.my_id, ready ? "KFXRDY|0" : "KFXRDY|1");
+    return true;
+}
+
+TbBool kfx_lobby_ready_visible(void)
+{
+    return lobby_ready_enabled && netstate.my_id>0 && netstate.my_id<MAX_NET_USERS;
+}
+
+TbBool kfx_lobby_ready_marked(int peer)
+{
+    return peer>0&&peer<MAX_NET_USERS&&(lobby_ready_mask&(1u<<peer));
+}
+
+const char *kfx_lobby_ready_label(int peer)
+{
+    if (!lobby_ready_enabled || peer <= 0 || peer >= MAX_NET_USERS)
+        return "";
+    const unsigned bit=1u<<peer;
+    if(lobby_content_failed&bit)
+        return kfx_lobby_ready_marked(peer)?" / Ready / Content mismatch":" / Waiting / Content mismatch";
+    if(lobby_content_passed&bit)
+        return kfx_lobby_ready_marked(peer)?" / Ready / Content passed":" / Waiting / Content passed";
+    return kfx_lobby_ready_marked(peer)?" / Ready / Content pending":" / Waiting / Content pending";
+}
+
 TbBool kfx_manual_coop_start_requested=false;
 
 void handle_autostart_multiplayer_messaging(void)
@@ -622,6 +748,10 @@ void frontnet_start_update(void)
       player_last_time = LbTimerClock();
     }
 
+#if defined(_WIN32)
+    kfx_readiness_tick();
+#endif
+    lobby_ready_publish();
     handle_autostart_multiplayer_messaging();
 
     if ((net_number_of_messages <= 0) || (net_message_scroll_offset < 0))
@@ -739,6 +869,7 @@ void frontnet_session_setup(void)
 
 void frontnet_start_setup(void)
 {
+    lobby_ready_reset();
     set_selected_level_number(SINGLEPLAYER_NOTSTARTED);
     previous_active_players = 0;
     memset(net_screen_packet, 0, sizeof(net_screen_packet));

@@ -330,6 +330,11 @@ static TbBool LbHwCheckIsModeAvailable(TbScreenMode mode, unsigned short display
     // else if this is the real or fake desktop fullscreen mode
     else if (mdinfo->VideoFlags & Lb_VF_DESKTOP)
     {
+        if (mdinfo->VideoFlags & Lb_VF_FIXED_RENDER)
+        {
+            mdinfo->Available = true;
+            return true;
+        }
         // We actually need to setup this mode now, as it is flexible to the user's setup
         // Get current desktop display width and height (after DPI scaling)
         int desktop_w = 0, desktop_h = 0;
@@ -338,7 +343,18 @@ static TbBool LbHwCheckIsModeAvailable(TbScreenMode mode, unsigned short display
             ERRORLOG("PlatformManager_GetDesktopDisplayMode failed: %s", SDL_GetError());
             return false; // for some reason we can't get the current desktop resolution!
         }
-        // update the mode's width and height to the desktop resolution of the current monitor
+#if defined(__APPLE__)
+        if (mdinfo->VideoFlags & Lb_VF_NATIVE_PIXELS)
+        {
+            const SDL_DisplayMode *desktop = SDL_GetDesktopDisplayMode(display_sdlid);
+            if (desktop && desktop->pixel_density > 0)
+            {
+                desktop_w = (int)(desktop->w * desktop->pixel_density + 0.5f);
+                desktop_h = (int)(desktop->h * desktop->pixel_density + 0.5f);
+            }
+        }
+#endif
+        // Update the render surface dimensions.
         mdinfo->Width = desktop_w;
         mdinfo->Height = desktop_h;
     }

@@ -1,7 +1,7 @@
 from pathlib import Path
 import subprocess,shlex
 r=Path(__file__).resolve().parents[2];b=r/'build-mac-universal'
-commands=subprocess.check_output(['ninja','-t','commands','keeperfx'],cwd=b,text=True).splitlines()
+commands=subprocess.check_output(['ninja','-t','commands','keeper-enhanced'],cwd=b,text=True).splitlines()
 a=next(shlex.split(x) for x in commands if '/macos_readiness.cpp.o ' in x);flags=[];i=1
 while i<len(a):
  x=a[i]

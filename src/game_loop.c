@@ -688,6 +688,22 @@ static void gameplay_loop_timestep()
     }
 }
 
+struct KfxMatchTiming kfx_match_timing;
+enum { MatchTimingBuckets=4096 };
+static unsigned long match_timing_buckets[MatchTimingBuckets];
+
+double kfx_match_timing_p95(void)
+{
+    const unsigned long rank=kfx_match_timing.turns-kfx_match_timing.turns/20;
+    unsigned long count=0;
+    if(!rank)return 0;
+    for(int i=0;i<MatchTimingBuckets-1;++i){
+        count+=match_timing_buckets[i];
+        if(count>=rank)return min((i+1)*0.25,kfx_match_timing.peak_ms);
+    }
+    return kfx_match_timing.peak_ms;
+}
+
 static void keeper_gameplay_loop(void)
 {
     struct PlayerInfo *player;
@@ -704,6 +720,9 @@ static void keeper_gameplay_loop(void)
     LbSleepExtInit();
 
     reset_autosave_timer();
+    memset(&kfx_match_timing,0,sizeof(kfx_match_timing));
+    memset(match_timing_buckets,0,sizeof(match_timing_buckets));
+    const TbBool measure_match=getenv("KFX_HEADLESS")&&network_is_host();
     //the main gameplay loop starts
     while ((!quit_game) && (!exit_keeper))
     {
@@ -711,7 +730,19 @@ static void keeper_gameplay_loop(void)
         frametime_start_measurement(Frametime_FullFrame);
         if (frametime_enabled())
             framerate_measurement_capture(Framerate_FullFrame);
+        const unsigned long turn_before=get_gameturn();
+        const uint64_t logic_start=measure_match?SDL_GetTicksNS():0;
         gameplay_loop_logic();
+        if(measure_match&&get_gameturn()>turn_before){
+            const double elapsed=(SDL_GetTicksNS()-logic_start)/1000000.0;
+            const unsigned long turns=get_gameturn()-turn_before;
+            const unsigned bucket=(unsigned)min((double)(MatchTimingBuckets-1),elapsed*4/turns);
+            match_timing_buckets[bucket]+=turns;
+            kfx_match_timing.turns+=turns;
+            kfx_match_timing.logic_ms+=elapsed;
+            if(elapsed>kfx_match_timing.peak_ms)kfx_match_timing.peak_ms=elapsed;
+            if(elapsed>50.0)++kfx_match_timing.slow_frames;
+        }
         if(!quit_game && !exit_keeper) update_autosave();
         gameplay_loop_draw();
         gameplay_loop_network();
